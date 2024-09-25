@@ -1,11 +1,5 @@
-[package]
-name = "brightnes"
-version = "0.1.0"
-edition = "2021"
-
-[toolchain]
-targets = ["x86_64-unknown-uefi"]
-
-[dependencies]
-log = "0.4.22"
-uefi = { version = "0.32.0", features = ["logger", "panic_handler"] }
+[workspace]
+members = [
+    "bootloader",
+    "kernel"
+]
