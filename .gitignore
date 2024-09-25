@@ -1,0 +1,7 @@
+/target
+
+#
+# Excluded
+#
+dest/
+OVMF.fd
