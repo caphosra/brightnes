@@ -5,6 +5,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 
 #[no_mangle]
+#[inline(never)]
 pub extern "C" fn kernel_main() -> ! {
     loop {
         unsafe {
