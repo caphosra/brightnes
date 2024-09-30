@@ -4,8 +4,10 @@
 use core::mem::transmute;
 use core::slice::from_raw_parts_mut;
 
+use frame_buffer::NativeFrameBuffer;
 use log::info;
-use uefi::boot::{AllocateType, MemoryType};
+use uefi::boot::{get_handle_for_protocol, open_protocol_exclusive, AllocateType, MemoryType};
+use uefi::proto::console::gop::GraphicsOutput;
 use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode};
 use uefi::{cstr16, entry, Status};
 
@@ -64,16 +66,21 @@ fn main() -> Status {
 
     info!("Loaded the kernel");
 
+    let gop_handle = get_handle_for_protocol::<GraphicsOutput>().unwrap();
+    let mut gop = open_protocol_exclusive::<GraphicsOutput>(gop_handle).unwrap();
+
+    let mut frame_buffer = NativeFrameBuffer::new(&mut gop);
+
     uefi::boot::stall(STALL_TIME);
 
     unsafe {
         let _ = uefi::boot::exit_boot_services(MemoryType::BOOT_SERVICES_DATA);
     }
 
-    let entry_point: extern "sysv64" fn() -> ! = unsafe { transmute(elf_header.e_entry) };
-    entry_point();
-
-    Status::SUCCESS
+    let entry_point: extern "sysv64" fn(*mut NativeFrameBuffer) -> ! =
+        unsafe { transmute(elf_header.e_entry) };
+    entry_point(&mut frame_buffer as *mut NativeFrameBuffer);
 }
 
 mod elf;
+mod frame_buffer;
