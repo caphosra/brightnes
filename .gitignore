@@ -5,3 +5,4 @@
 #
 dest/
 OVMF.fd
+.gdb_history
