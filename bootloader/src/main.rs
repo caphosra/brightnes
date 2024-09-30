@@ -8,7 +8,9 @@ use uefi::boot::{AllocateType, MemoryType};
 use uefi::prelude::*;
 use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode};
 
-const KERNEL_ADDR: u64 = 0x100000;
+use crate::elf::{extract_elf_program, load_elf_header};
+
+const KERNEL_DATA_ADDR: u64 = 0x200000;
 const FILE_INFO_SIZE: usize = 0x1000;
 
 #[entry]
@@ -30,7 +32,7 @@ fn main() -> Status {
     let file_info_size = FILE_INFO_SIZE;
     let info_buffer = uefi::boot::allocate_pages(
         AllocateType::AnyPages,
-        MemoryType::LOADER_DATA,
+        MemoryType::BOOT_SERVICES_DATA,
         file_info_size / 0x1000,
     )
     .unwrap();
@@ -42,8 +44,8 @@ fn main() -> Status {
 
     let kernel_size = info.file_size() as usize;
     let kernel_buffer = uefi::boot::allocate_pages(
-        AllocateType::Address(KERNEL_ADDR),
-        MemoryType::LOADER_DATA,
+        AllocateType::Address(KERNEL_DATA_ADDR),
+        MemoryType::BOOT_SERVICES_DATA,
         (kernel_size + 0xfff) / 0x1000,
     )
     .unwrap();
@@ -51,6 +53,12 @@ fn main() -> Status {
 
     let read_size = kernel_file.read(kernel_buffer).unwrap();
     info!("Read {} bytes to {:p}", read_size, kernel_buffer.as_ptr());
+
+    let elf_header = load_elf_header(kernel_buffer).unwrap();
+
+    info!("Entry: {:#x}", elf_header.e_entry);
+
+    extract_elf_program(kernel_buffer, elf_header);
 
     boot::stall(10_000_000);
 
@@ -60,3 +68,5 @@ fn main() -> Status {
 
     Status::SUCCESS
 }
+
+mod elf;
