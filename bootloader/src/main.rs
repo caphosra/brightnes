@@ -1,17 +1,19 @@
 #![no_main]
 #![no_std]
 
+use core::mem::transmute;
 use core::slice::from_raw_parts_mut;
 
 use log::info;
 use uefi::boot::{AllocateType, MemoryType};
-use uefi::prelude::*;
 use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode};
+use uefi::{cstr16, entry, Status};
 
 use crate::elf::{extract_elf_program, load_elf_header};
 
 const KERNEL_DATA_ADDR: u64 = 0x200000;
 const FILE_INFO_SIZE: usize = 0x1000;
+const STALL_TIME: usize = 3_000_000;
 
 #[entry]
 fn main() -> Status {
@@ -60,11 +62,16 @@ fn main() -> Status {
 
     extract_elf_program(kernel_buffer, elf_header);
 
-    boot::stall(10_000_000);
+    info!("Loaded the kernel");
+
+    uefi::boot::stall(STALL_TIME);
 
     unsafe {
         let _ = uefi::boot::exit_boot_services(MemoryType::BOOT_SERVICES_DATA);
     }
+
+    let entry_point: extern "sysv64" fn() -> ! = unsafe { transmute(elf_header.e_entry) };
+    entry_point();
 
     Status::SUCCESS
 }
