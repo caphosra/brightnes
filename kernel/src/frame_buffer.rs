@@ -20,21 +20,13 @@ impl FrameBuffer {
     pub fn make_color(&self, r: u8, g: u8, b: u8) -> PixelColor {
         if cfg!(target_endian = "little") {
             match self.mode {
-                PixelColorMode::Rgb => {
-                    r as u32 | ((g as u32) << 8) | ((b as u32) << 16)
-                }
-                PixelColorMode::Bgr => {
-                    b as u32 | ((g as u32) << 8) | ((r as u32) << 16)
-                }
+                PixelColorMode::Rgb => r as u32 | ((g as u32) << 8) | ((b as u32) << 16),
+                PixelColorMode::Bgr => b as u32 | ((g as u32) << 8) | ((r as u32) << 16),
             }
         } else {
             match self.mode {
-                PixelColorMode::Rgb => {
-                    ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8)
-                }
-                PixelColorMode::Bgr => {
-                    ((b as u32) << 24) | ((g as u32) << 16) | ((r as u32) << 8)
-                }
+                PixelColorMode::Rgb => ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8),
+                PixelColorMode::Bgr => ((b as u32) << 24) | ((g as u32) << 16) | ((r as u32) << 8),
             }
         }
     }
