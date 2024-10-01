@@ -1,8 +1,8 @@
 use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
 
 #[repr(C)]
-pub struct NativeFrameBuffer {
-    pub buffer: usize,
+pub struct FrameBuffer {
+    buffer: *mut u32,
     pub width: usize,
     pub height: usize,
     pub mode: PixelColorMode,
@@ -10,11 +10,11 @@ pub struct NativeFrameBuffer {
 
 #[repr(C)]
 pub enum PixelColorMode {
-    Rgb,
-    Bgr,
+    Rgb = 0,
+    Bgr = 1,
 }
 
-impl NativeFrameBuffer {
+impl FrameBuffer {
     pub fn new(gop: &mut GraphicsOutput) -> Self {
         let mode_info = gop.current_mode_info();
         let (width, height) = mode_info.resolution();
@@ -28,9 +28,9 @@ impl NativeFrameBuffer {
 
         assert_eq!(gop.frame_buffer().size(), width * height * 4);
 
-        let buffer = gop.frame_buffer().as_mut_ptr() as usize;
+        let buffer = gop.frame_buffer().as_mut_ptr() as *mut u32;
 
-        NativeFrameBuffer {
+        FrameBuffer {
             buffer,
             width: width as usize,
             height: height as usize,

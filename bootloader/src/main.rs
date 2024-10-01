@@ -4,7 +4,7 @@
 use core::mem::transmute;
 use core::slice::from_raw_parts_mut;
 
-use frame_buffer::NativeFrameBuffer;
+use frame_buffer::FrameBuffer;
 use log::info;
 use uefi::boot::{get_handle_for_protocol, open_protocol_exclusive, AllocateType, MemoryType};
 use uefi::proto::console::gop::GraphicsOutput;
@@ -15,7 +15,7 @@ use crate::elf::{extract_elf_program, load_elf_header};
 
 const KERNEL_DATA_ADDR: u64 = 0x200000;
 const FILE_INFO_SIZE: usize = 0x1000;
-const STALL_TIME: usize = 3_000_000;
+const STALL_TIME: usize = 1_000;
 
 #[entry]
 fn main() -> Status {
@@ -69,7 +69,7 @@ fn main() -> Status {
     let gop_handle = get_handle_for_protocol::<GraphicsOutput>().unwrap();
     let mut gop = open_protocol_exclusive::<GraphicsOutput>(gop_handle).unwrap();
 
-    let mut frame_buffer = NativeFrameBuffer::new(&mut gop);
+    let mut frame_buffer = FrameBuffer::new(&mut gop);
 
     uefi::boot::stall(STALL_TIME);
 
@@ -77,9 +77,9 @@ fn main() -> Status {
         let _ = uefi::boot::exit_boot_services(MemoryType::BOOT_SERVICES_DATA);
     }
 
-    let entry_point: extern "sysv64" fn(*mut NativeFrameBuffer) -> ! =
+    let entry_point: extern "sysv64" fn(*mut FrameBuffer) -> ! =
         unsafe { transmute(elf_header.e_entry) };
-    entry_point(&mut frame_buffer as *mut NativeFrameBuffer);
+    entry_point(&mut frame_buffer as *mut FrameBuffer);
 }
 
 mod elf;

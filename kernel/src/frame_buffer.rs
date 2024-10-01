@@ -1,24 +1,8 @@
-use core::slice::from_raw_parts_mut;
-
-#[repr(C)]
-pub struct PixelColor {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-    reserved: u8,
-}
+pub type PixelColor = u32;
 
 #[repr(C)]
 pub struct FrameBuffer {
-    buffer: &'static mut [PixelColor],
-    pub width: usize,
-    pub height: usize,
-    pub mode: PixelColorMode,
-}
-
-#[repr(C)]
-pub struct NativeFrameBuffer {
-    pub buffer: usize,
+    buffer: *mut u32,
     pub width: usize,
     pub height: usize,
     pub mode: PixelColorMode,
@@ -27,40 +11,38 @@ pub struct NativeFrameBuffer {
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub enum PixelColorMode {
-    Rgb,
-    Bgr,
-}
-
-impl From<*mut NativeFrameBuffer> for FrameBuffer {
-    fn from(native: *mut NativeFrameBuffer) -> Self {
-        let native = unsafe { native.as_mut() }.unwrap();
-        let buffer = unsafe { from_raw_parts_mut(native.buffer as *mut PixelColor, native.width * native.height) };
-
-        FrameBuffer {
-            buffer,
-            width: native.width,
-            height: native.height,
-            mode: native.mode,
-        }
-    }
+    Rgb = 0,
+    Bgr = 1,
 }
 
 impl FrameBuffer {
-    #[inline]
-    pub fn set_pixel(&mut self, x: usize, y: usize, r: u8, g: u8, b: u8) {
-        match self.mode {
-            PixelColorMode::Rgb => {
-                let color = &mut self.buffer[y * self.width + x];
-                color.r = r;
-                color.g = g;
-                color.b = b;
+    #[inline(always)]
+    pub fn make_color(&self, r: u8, g: u8, b: u8) -> PixelColor {
+        if cfg!(target_endian = "little") {
+            match self.mode {
+                PixelColorMode::Rgb => {
+                    r as u32 | ((g as u32) << 8) | ((b as u32) << 16)
+                }
+                PixelColorMode::Bgr => {
+                    b as u32 | ((g as u32) << 8) | ((r as u32) << 16)
+                }
             }
-            PixelColorMode::Bgr => {
-                let color = &mut self.buffer[y * self.width + x];
-                color.r = b;
-                color.g = g;
-                color.b = r;
+        } else {
+            match self.mode {
+                PixelColorMode::Rgb => {
+                    ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8)
+                }
+                PixelColorMode::Bgr => {
+                    ((b as u32) << 24) | ((g as u32) << 16) | ((r as u32) << 8)
+                }
             }
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_pixel(&mut self, x: usize, y: usize, color: PixelColor) {
+        unsafe {
+            self.buffer.add(y * self.width + x).write(color);
         }
     }
 }
