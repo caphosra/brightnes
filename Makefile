@@ -1,4 +1,4 @@
-.PHONY: kernel bootloader qemu
+.PHONY: kernel bootloader qemu gdb
 
 kernel: ./kernel/Cargo.toml ./kernel/kernel.ld ./kernel/src/main.rs
 	cargo build \
@@ -19,3 +19,7 @@ qemu: kernel bootloader
 		-bios ./OVMF.fd \
 		-drive format=raw,file=fat:rw:./dest \
 		-S -gdb tcp::31415
+
+gdb:
+	gdb -x ./.gdbinit
+
