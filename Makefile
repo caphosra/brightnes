@@ -1,28 +1,38 @@
-.PHONY: kernel bootloader run run-dbg gdb
+.PHONY: resources run run-dbg gdb
 
-kernel: ./kernel/Cargo.toml ./kernel/kernel.ld ./kernel/src/main.rs
+OUT_DIR = ./dest
+
+QEMU_FLAGS = -m 2G -bios ./OVMF.fd -drive format=raw,file=fat:rw:$(OUT_DIR)
+
+KERNEL_SOURCES = ./kernel/Cargo.toml ./kernel/kernel.ld ./kernel/src/main.rs
+BOOTLOADER_SOURCES = ./bootloader/Cargo.toml ./bootloader/src/main.rs
+
+$(OUT_DIR)/kernel: $(KERNEL_SOURCES)
 	cargo build \
 		--package brightnes-kernel \
 		--target x86_64-unknown-none
-	mkdir -p ./dest
-	cp ./target/x86_64-unknown-none/debug/brightnes-kernel ./dest/kernel
+	mkdir -p $(OUT_DIR)
+	cp ./target/x86_64-unknown-none/debug/brightnes-kernel $(OUT_DIR)/kernel
 
-bootloader: ./bootloader/Cargo.toml ./bootloader/src/main.rs
+$(OUT_DIR)/efi/boot/bootx64.efi: $(BOOTLOADER_SOURCES)
 	cargo build \
 		--package brightnes-bootloader \
 		--target x86_64-unknown-uefi
-	mkdir -p ./dest/efi/boot
-	cp ./target/x86_64-unknown-uefi/debug/brightnes-bootloader.efi ./dest/efi/boot/bootx64.efi
+	mkdir -p $(OUT_DIR)/efi/boot
+	cp ./target/x86_64-unknown-uefi/debug/brightnes-bootloader.efi $(OUT_DIR)/efi/boot/bootx64.efi
 
-run: kernel bootloader
-	qemu-system-x86_64 -m 2G \
-		-bios ./OVMF.fd \
-		-drive format=raw,file=fat:rw:./dest
+resources: ./res/font/Tamsyn8x16r.pcf
+	mkdir -p $(OUT_DIR)/res/font
+	cp ./res/font/Tamsyn8x16r.pcf $(OUT_DIR)/res/font/Tamsyn8x16r.pcf
 
-run-dbg: kernel bootloader
-	qemu-system-x86_64 -m 2G \
-		-bios ./OVMF.fd \
-		-drive format=raw,file=fat:rw:./dest \
+build: $(OUT_DIR)/kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
+	@echo "Build complete."
+
+run: $(OUT_DIR)/kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
+	qemu-system-x86_64 $(QEMU_FLAGS)
+
+run-dbg: $(OUT_DIR)/kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
+	qemu-system-x86_64 $(QEMU_FLAGS) \
 		-S -gdb tcp::31415
 
 gdb:
