@@ -1,6 +1,7 @@
 #![no_main]
 #![no_std]
 
+use core::arch::asm;
 use core::mem::transmute;
 use core::slice::from_raw_parts_mut;
 
@@ -13,7 +14,7 @@ use uefi::{cstr16, entry, Status};
 
 use crate::elf::{extract_elf_program, load_elf_header};
 
-const KERNEL_DATA_ADDR: u64 = 0x200000;
+const KERNEL_DATA_ADDR: u64 = 0x400000;
 const FILE_INFO_SIZE: usize = 0x1000;
 const STALL_TIME: usize = 1_000;
 
@@ -67,9 +68,18 @@ fn main() -> Status {
     info!("Loaded the kernel");
 
     let gop_handle = get_handle_for_protocol::<GraphicsOutput>().unwrap();
-    let mut gop = open_protocol_exclusive::<GraphicsOutput>(gop_handle).unwrap();
 
-    let mut frame_buffer = FrameBuffer::new(&mut gop);
+    let mut gop = open_protocol_exclusive::<GraphicsOutput>(gop_handle);
+    if gop.is_err() {
+        info!("Failed to open GraphicsOutput protocol: {:?}", gop.err());
+        return Status::UNSUPPORTED;
+    }
+    info!("Opened graphic output protocol");
+
+    let mut gop = gop.unwrap();
+
+    let frame_buffer = FrameBuffer::new();
+    frame_buffer.init(&mut gop);
 
     uefi::boot::stall(STALL_TIME);
 
@@ -77,9 +87,8 @@ fn main() -> Status {
         let _ = uefi::boot::exit_boot_services(MemoryType::BOOT_SERVICES_DATA);
     }
 
-    let entry_point: extern "sysv64" fn(*mut FrameBuffer) -> ! =
-        unsafe { transmute(elf_header.e_entry) };
-    entry_point(&mut frame_buffer as *mut FrameBuffer);
+    let entry_point: extern "sysv64" fn() -> ! = unsafe { transmute(elf_header.e_entry) };
+    entry_point();
 }
 
 mod elf;
