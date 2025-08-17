@@ -26,7 +26,7 @@ impl FrameBuffer {
     pub fn new() -> &'static mut Self {
         let frame_buffer = uefi::boot::allocate_pages(
             AllocateType::Address(FRAME_BUFFER_ADDR),
-            MemoryType::BOOT_SERVICES_DATA,
+            MemoryType::RUNTIME_SERVICES_DATA,
             (size_of::<FrameBuffer>() + 0xfff) / 0x1000,
         )
         .unwrap();

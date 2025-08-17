@@ -69,7 +69,7 @@ fn main() -> Status {
 
     let gop_handle = get_handle_for_protocol::<GraphicsOutput>().unwrap();
 
-    let mut gop = open_protocol_exclusive::<GraphicsOutput>(gop_handle);
+    let gop = open_protocol_exclusive::<GraphicsOutput>(gop_handle);
     if gop.is_err() {
         info!("Failed to open GraphicsOutput protocol: {:?}", gop.err());
         return Status::UNSUPPORTED;
