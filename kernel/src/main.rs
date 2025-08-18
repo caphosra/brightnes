@@ -10,6 +10,7 @@ use crate::frame_buffer::FrameBuffer;
 #[no_mangle]
 #[inline(never)]
 pub extern "C" fn kernel_main() -> ! {
+    // Initialize the frame buffer.
     let frame_buffer = FrameBuffer::get();
     let grey = frame_buffer.make_color(0x20, 0x20, 0x20);
     for y in 0..frame_buffer.height {
@@ -18,17 +19,18 @@ pub extern "C" fn kernel_main() -> ! {
         }
     }
 
+    // Load the font data.
+    // This task is required to render texts on the screen.
     let header = FontManager::get_psf_header();
     FontManager::validate_psf_header(header);
     FontManager::init_glyph_index_table();
 
     let white = frame_buffer.make_color(0xff, 0xff, 0xff);
 
-    let text = b"Hello World";
-    for (i, &c) in text.iter().enumerate() {
-        let glyph = FontManager::get_glyph_by_char(c);
-        frame_buffer.draw_glyph(i * 8, 0, glyph, white);
-    }
+    let text = b"Hello World from the kernel.";
+    frame_buffer.draw_text(0, 0, text, white);
+    let text = b"It's time to enjoy BRIGHTNES!";
+    frame_buffer.draw_text(0, 16, text, white);
 
     loop {
         unsafe {

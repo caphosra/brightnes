@@ -1,3 +1,5 @@
+use crate::font::FontManager;
+
 pub type PixelColor = u32;
 
 const FRAME_BUFFER_ADDR: u64 = 0x700000;
@@ -57,6 +59,13 @@ impl FrameBuffer {
                     self.set_pixel(offset_x + x, offset_y + y, color);
                 }
             }
+        }
+    }
+
+    pub fn draw_text(&mut self, offset_x: usize, offset_y: usize, text: &[u8], color: PixelColor) {
+        for (i, &c) in text.iter().enumerate() {
+            let glyph = FontManager::get_glyph_by_char(c);
+            self.draw_glyph(offset_x + i * 8, offset_y, glyph, color);
         }
     }
 }
