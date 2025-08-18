@@ -71,7 +71,7 @@ impl<'a> FileHelper<'a> {
 
                     let size = regular_file.read(buffer)?;
 
-                    info!("Read {:#x} bytes from the file", size);
+                    info!("Read {:#x} bytes to {:#x}", size, buffer.as_ptr() as u64);
 
                     return Ok(buffer);
                 }

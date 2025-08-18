@@ -13,6 +13,7 @@ use crate::frame_buffer::FrameBuffer;
 use crate::fs::FileHelper;
 
 const KERNEL_DATA_ADDR: u64 = 0x400000;
+const FONT_DATA_ADDR: u64 = 0x600000;
 const FILE_INFO_SIZE: usize = 0x1000;
 const STALL_TIME: usize = 1_000;
 
@@ -37,11 +38,24 @@ fn main() -> Status {
 
     let elf_header = load_elf_header(kernel_file).unwrap();
 
-    info!("Entry: {:#x}", elf_header.e_entry);
+    let entry = elf_header.e_entry;
+    info!("Found the entry: {:#x}", entry);
 
     extract_elf_program(kernel_file, elf_header);
 
     info!("Loaded the kernel");
+
+    let font_file = file_helper.read_file(
+        cstr16!("system_font.psf"),
+        AllocateType::Address(FONT_DATA_ADDR),
+        MemoryType::BOOT_SERVICES_DATA,
+    );
+    if font_file.is_err() {
+        error!("Failed to read the system font file: {:?}", font_file.err());
+        return Status::NOT_FOUND;
+    }
+
+    info!("Loaded the system font");
 
     let gop_handle = get_handle_for_protocol::<GraphicsOutput>().unwrap();
 
@@ -63,7 +77,7 @@ fn main() -> Status {
         let _ = uefi::boot::exit_boot_services(MemoryType::BOOT_SERVICES_DATA);
     }
 
-    let entry_point: extern "sysv64" fn() -> ! = unsafe { transmute(elf_header.e_entry) };
+    let entry_point: extern "sysv64" fn() -> ! = unsafe { transmute(entry) };
     entry_point();
 }
 

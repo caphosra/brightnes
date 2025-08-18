@@ -43,4 +43,20 @@ impl FrameBuffer {
             self.buffer.add(y * self.width + x).write(color);
         }
     }
+
+    pub fn draw_glyph(
+        &mut self,
+        offset_x: usize,
+        offset_y: usize,
+        glyph: &'static [u8],
+        color: PixelColor,
+    ) {
+        for y in 0..0x10 {
+            for x in 0..8 {
+                if (glyph[y] & (1 << (7 - x))) != 0 {
+                    self.set_pixel(offset_x + x, offset_y + y, color);
+                }
+            }
+        }
+    }
 }
