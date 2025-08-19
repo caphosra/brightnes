@@ -27,7 +27,7 @@ impl FontManager {
         header.magic == [0x72, 0xb5, 0x4a, 0x86]
             && header.version == 0
             && header.header_size == 0x20
-            && header.flags == 0
+            && header.flags == 1
             && header.bytes_per_glyph == 0x10
             && header.height == 0x10
             && header.width == 0x8

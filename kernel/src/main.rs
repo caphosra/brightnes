@@ -22,7 +22,9 @@ pub extern "C" fn kernel_main() -> ! {
     // Load the font data.
     // This task is required to render texts on the screen.
     let header = FontManager::get_psf_header();
-    FontManager::validate_psf_header(header);
+    if !FontManager::validate_psf_header(header) {
+        panic!("Found an invalid PSF header.");
+    }
     FontManager::init_glyph_index_table();
 
     let white = frame_buffer.make_color(0xff, 0xff, 0xff);
