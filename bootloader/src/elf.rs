@@ -202,12 +202,12 @@ fn resolve_relocation(rel_table: &[Relocation], symbols: *const Symbol) {
         let symbol = unsafe { symbols.add(rel.r_info as usize >> 32).as_ref() }.unwrap();
         let dest: *mut usize = rel.r_offset as *mut usize;
         unsafe {
-            *dest = symbol.st_value as usize;
+            *dest = rel.r_addend as usize;
         }
 
         info!(
             "Resolved the address of symbol {} at {:#x} to {:#x}",
-            symbol.st_name, dest as usize, symbol.st_value
+            symbol.st_name, dest as usize, rel.r_addend
         );
     }
 }
