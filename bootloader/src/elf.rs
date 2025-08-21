@@ -1,7 +1,8 @@
 use core::cmp::{max, min};
 use core::ptr::copy_nonoverlapping;
+use core::slice::from_raw_parts;
 
-use log::info;
+use log::{info, warn};
 use uefi::boot::{AllocateType, MemoryType};
 
 #[repr(C)]
@@ -32,6 +33,37 @@ struct ProgramHeader {
     p_filesz: u64,
     p_memsz: u64,
     p_align: u64,
+}
+
+#[repr(C)]
+struct SectionHeader {
+    sh_name: u32,
+    sh_type: u32,
+    sh_flags: u64,
+    sh_addr: u64,
+    sh_offset: u64,
+    sh_size: u64,
+    sh_link: u32,
+    sh_info: u32,
+    sh_addralign: u64,
+    sh_entsize: u64,
+}
+
+#[repr(C)]
+struct Relocation {
+    r_offset: u64,
+    r_info: u64,
+    r_addend: i64,
+}
+
+#[repr(C)]
+struct Symbol {
+    st_name: u32,
+    st_info: u8,
+    st_other: u8,
+    st_shndx: u16,
+    st_value: u64,
+    st_size: u64,
 }
 
 const PT_LOAD: u16 = 1;
@@ -94,4 +126,99 @@ pub fn extract_elf_program(buffer: &[u8], elf_header: &ELFHeader) {
             }
         }
     }
+}
+
+pub fn resolve_global_offset_table(buffer: &[u8], elf_header: &ELFHeader) {
+    let section_header_name_table = unsafe {
+        (buffer.as_ptr().add(
+            elf_header.e_shoff as usize
+                + elf_header.e_shentsize as usize * elf_header.e_shstrndx as usize,
+        ) as *const SectionHeader)
+            .as_ref()
+    }
+    .unwrap();
+    let section_name_table = unsafe {
+        buffer
+            .as_ptr()
+            .add(section_header_name_table.sh_offset as usize) as *const u8
+    };
+
+    let mut symbol_table: Option<*const Symbol> = None;
+    let mut rela_dyn_table: Option<&[Relocation]> = None;
+    let mut rela_plt_table: Option<&[Relocation]> = None;
+    for idx in 0..elf_header.e_shnum {
+        let offset = elf_header.e_shoff as usize + elf_header.e_shentsize as usize * idx as usize;
+        let section_header =
+            unsafe { (buffer.as_ptr().add(offset) as *const SectionHeader).as_ref() }.unwrap();
+
+        let section_name = unsafe { section_name_table.add(section_header.sh_name as usize) };
+
+        if compare_section_name(section_name, b".rela.dyn") {
+            info!("Found .rela.dyn section at {:#x}", section_header.sh_offset);
+            rela_dyn_table = Some(unsafe {
+                from_raw_parts(
+                    buffer.as_ptr().add(section_header.sh_offset as usize) as *const Relocation,
+                    section_header.sh_size as usize / size_of::<Relocation>(),
+                )
+            });
+        } else if compare_section_name(section_name, b".rela.plt") {
+            info!("Found .rela.plt section at {:#x}", section_header.sh_offset);
+            rela_plt_table = Some(unsafe {
+                from_raw_parts(
+                    buffer.as_ptr().add(section_header.sh_offset as usize) as *const Relocation,
+                    section_header.sh_size as usize / size_of::<Relocation>(),
+                )
+            });
+        } else if compare_section_name(section_name, b".dynsym") {
+            info!("Found .dynsym section at {:#x}", section_header.sh_offset);
+            symbol_table = Some(unsafe {
+                buffer.as_ptr().add(section_header.sh_offset as usize) as *const Symbol
+            });
+        }
+    }
+
+    match symbol_table {
+        Some(symbols) => {
+            if let Some(rela_dyn) = rela_dyn_table {
+                resolve_relocation(rela_dyn, symbols);
+            } else {
+                warn!("No .rela.dyn section found");
+            }
+
+            if let Some(rela_plt) = rela_plt_table {
+                resolve_relocation(rela_plt, symbols);
+            } else {
+                warn!("No .rela.plt section found");
+            }
+        }
+        _ => {
+            warn!("Failed to find .dynsym section");
+        }
+    }
+}
+
+fn resolve_relocation(rel_table: &[Relocation], symbols: *const Symbol) {
+    for rel in rel_table {
+        let symbol = unsafe { symbols.add(rel.r_info as usize >> 32).as_ref() }.unwrap();
+        let dest: *mut usize = rel.r_offset as *mut usize;
+        unsafe {
+            *dest = rel.r_addend as usize;
+        }
+
+        info!(
+            "Resolved the address of symbol {} at {:#x} to {:#x}",
+            symbol.st_name, dest as usize, rel.r_addend
+        );
+    }
+}
+
+pub fn compare_section_name(name1: *const u8, name2: &[u8]) -> bool {
+    let mut i = 0;
+    while unsafe { *name1.add(i) } != 0 && i < name2.len() {
+        if unsafe { *name1.add(i) } != name2[i] {
+            return false;
+        }
+        i += 1;
+    }
+    i == name2.len() && unsafe { *name1.add(i) } == 0
 }

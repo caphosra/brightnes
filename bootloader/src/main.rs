@@ -8,7 +8,7 @@ use uefi::boot::{get_handle_for_protocol, open_protocol_exclusive, AllocateType,
 use uefi::proto::console::gop::GraphicsOutput;
 use uefi::{cstr16, entry, Status};
 
-use crate::elf::{extract_elf_program, load_elf_header};
+use crate::elf::{extract_elf_program, load_elf_header, resolve_global_offset_table};
 use crate::frame_buffer::FrameBuffer;
 use crate::fs::FileHelper;
 
@@ -42,6 +42,7 @@ fn main() -> Status {
     info!("Found the entry: {:#x}", entry);
 
     extract_elf_program(kernel_file, elf_header);
+    resolve_global_offset_table(kernel_file, elf_header);
 
     info!("Loaded the kernel");
 
