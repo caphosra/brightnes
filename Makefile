@@ -2,10 +2,13 @@
 
 OUT_DIR = ./dest
 
-QEMU_FLAGS = -m 2G -bios ./OVMF.fd -drive format=raw,file=fat:rw:$(OUT_DIR)
+QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
+	-drive format=raw,file=fat:rw:$(OUT_DIR)
 
 KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/kernel.ld \
+	./kernel/src/int/mod.rs \
+	./kernel/src/int/pic.rs \
 	./kernel/src/io/fs_driver.rs \
 	./kernel/src/font.rs \
 	./kernel/src/frame_buffer.rs \

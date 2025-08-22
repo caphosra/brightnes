@@ -1,15 +1,23 @@
 #![no_main]
 #![no_std]
+#![feature(abi_x86_interrupt)]
 
 use core::arch::asm;
 use core::panic::PanicInfo;
 
+use x86_64::instructions::interrupts;
+
 use crate::font::FontManager;
 use crate::frame_buffer::FrameBuffer;
+use crate::int::Interrupt;
 
 #[no_mangle]
 #[inline(never)]
 pub extern "C" fn kernel_main() -> ! {
+    if interrupts::are_enabled() {
+        interrupts::disable();
+    }
+
     // Initialize the frame buffer.
     let frame_buffer = FrameBuffer::get();
     let grey = frame_buffer.make_color(0x20, 0x20, 0x20);
@@ -27,12 +35,20 @@ pub extern "C" fn kernel_main() -> ! {
     }
     FontManager::init_glyph_index_table();
 
+    Interrupt::init();
+
     let white = frame_buffer.make_color(0xff, 0xff, 0xff);
 
     let text = b"Hello World from the kernel.";
     frame_buffer.draw_text(0, 0, text, white);
-    let text = b"It's time to enjoy BRIGHTNES!";
+
+    interrupts::enable();
+
+    let text = b"Interrupts are enabled.";
     frame_buffer.draw_text(0, 16, text, white);
+
+    let text = b"It's time to enjoy BRIGHTNES!";
+    frame_buffer.draw_text(0, 32, text, white);
 
     loop {
         unsafe {
@@ -48,3 +64,4 @@ fn panic(_info: &PanicInfo) -> ! {
 
 mod font;
 mod frame_buffer;
+mod int;
