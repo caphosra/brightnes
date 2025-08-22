@@ -15,6 +15,8 @@ impl Interrupt {
     pub fn init() {
         unsafe {
             IDT.double_fault.set_handler_fn(double_fault_handler);
+            IDT.general_protection_fault
+                .set_handler_fn(general_protection_fault_handler);
             IDT.page_fault.set_handler_fn(page_fault_handler);
             IDT[INT_TIMER].set_handler_fn(timer_handler);
             IDT[INT_KEYBOARD].set_handler_fn(keyboard_handler);
@@ -25,10 +27,16 @@ impl Interrupt {
     }
 }
 
-extern "x86-interrupt" fn double_fault_handler(
+extern "x86-interrupt" fn double_fault_handler(_stack_frame: InterruptStackFrame, _code: u64) -> ! {
+    loop {
+        hlt();
+    }
+}
+
+extern "x86-interrupt" fn general_protection_fault_handler(
     _stack_frame: InterruptStackFrame,
-    _dummy: u64,
-) -> ! {
+    _code: u64,
+) {
     loop {
         hlt();
     }
@@ -36,15 +44,16 @@ extern "x86-interrupt" fn double_fault_handler(
 
 extern "x86-interrupt" fn page_fault_handler(
     _stack_frame: InterruptStackFrame,
-    _error_code: PageFaultErrorCode,
+    _code: PageFaultErrorCode,
 ) {
+    loop {
+        hlt();
+    }
 }
 
 extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
-    let frame_buffer = FrameBuffer::get();
+    // Do nothing.
 
-    let white = frame_buffer.make_color(0xFF, 0xFF, 0xFF);
-    frame_buffer.draw_text(64, 128, b"TIMER", white);
     PIC::eoi(0x0);
 }
 
