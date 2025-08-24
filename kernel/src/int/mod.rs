@@ -1,3 +1,4 @@
+use spin::Lazy;
 use x86_64::instructions::hlt;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
@@ -6,22 +7,23 @@ use crate::int::pic::PIC;
 
 pub struct Interrupt;
 
-pub const INT_TIMER: u8 = 0x20;
-pub const INT_KEYBOARD: u8 = 0x21;
+const INT_TIMER: u8 = 0x20;
+const INT_KEYBOARD: u8 = 0x21;
 
-pub static mut IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();
+static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
+    let mut idt = InterruptDescriptorTable::new();
+    idt.double_fault.set_handler_fn(double_fault_handler);
+    idt.general_protection_fault
+        .set_handler_fn(general_protection_fault_handler);
+    idt.page_fault.set_handler_fn(page_fault_handler);
+    idt[INT_TIMER].set_handler_fn(timer_handler);
+    idt[INT_KEYBOARD].set_handler_fn(keyboard_handler);
+    idt
+});
 
 impl Interrupt {
     pub fn init() {
-        unsafe {
-            IDT.double_fault.set_handler_fn(double_fault_handler);
-            IDT.general_protection_fault
-                .set_handler_fn(general_protection_fault_handler);
-            IDT.page_fault.set_handler_fn(page_fault_handler);
-            IDT[INT_TIMER].set_handler_fn(timer_handler);
-            IDT[INT_KEYBOARD].set_handler_fn(keyboard_handler);
-            IDT.load();
-        }
+        IDT.load();
 
         PIC::remap_irq1();
     }
