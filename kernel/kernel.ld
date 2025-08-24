@@ -1,7 +1,7 @@
 ENTRY(kernel_main);
 
 SECTIONS {
-    . = 0x100000;
+    . = 0xF000000;
 
     .text : {
         *(.text.entry)

@@ -12,7 +12,8 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/io/fs_driver.rs \
 	./kernel/src/font.rs \
 	./kernel/src/frame_buffer.rs \
-	./kernel/src/main.rs
+	./kernel/src/main.rs \
+	./kernel/src/mem.rs
 BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 	./bootloader/src/elf.rs \
 	./bootloader/src/frame_buffer.rs \
