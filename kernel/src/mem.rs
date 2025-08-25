@@ -26,6 +26,7 @@ unsafe impl GlobalAlloc for MemoryAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Interrupt during memory allocation can corrupt the memory.
         // Also, it can cause a deadlock due to the mutexes.
+        let int_enabled = interrupts::are_enabled();
         interrupts::disable();
 
         let allocated = {
@@ -44,7 +45,9 @@ unsafe impl GlobalAlloc for MemoryAllocator {
             unsafe { self.arena.add(start_offset) }
         };
 
-        interrupts::enable();
+        if int_enabled {
+            interrupts::enable();
+        }
 
         allocated
     }
