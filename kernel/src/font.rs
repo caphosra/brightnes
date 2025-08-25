@@ -1,5 +1,7 @@
 use core::{mem::transmute, slice::from_raw_parts};
 
+use spin::{Lazy, RwLock};
+
 #[repr(C)]
 pub struct PSFHeader {
     magic: [u8; 4],
@@ -16,7 +18,7 @@ const FONT_ADDR: u64 = 0x600000;
 
 pub struct FontManager;
 
-pub static mut GLYPH_INDEX_TBL: [usize; 0x100] = [0; 0x100];
+static GLYPH_INDEX_TBL: Lazy<RwLock<[usize; 0x100]>> = Lazy::new(|| RwLock::new([0; 0x100]));
 
 impl FontManager {
     pub fn get_psf_header() -> &'static mut PSFHeader {
@@ -75,9 +77,7 @@ impl FontManager {
             }
 
             // The glyph is a single-byte character.
-            unsafe {
-                GLYPH_INDEX_TBL[first as usize] = glyph as usize;
-            }
+            GLYPH_INDEX_TBL.write()[first as usize] = glyph as usize;
             glyph += 1;
             current += 2;
         }
@@ -96,7 +96,7 @@ impl FontManager {
     }
 
     pub fn get_glyph_by_char(c: u8) -> &'static [u8] {
-        let index = unsafe { GLYPH_INDEX_TBL[c as usize] };
+        let index = GLYPH_INDEX_TBL.read()[c as usize];
         if index == 0 {
             panic!("The glyph for character '{}' is not found.", c as char);
         }
