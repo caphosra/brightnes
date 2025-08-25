@@ -2,6 +2,8 @@
 #![no_std]
 #![feature(abi_x86_interrupt)]
 
+extern crate alloc;
+
 use core::arch::asm;
 use core::panic::PanicInfo;
 
@@ -65,3 +67,4 @@ fn panic(_info: &PanicInfo) -> ! {
 mod font;
 mod frame_buffer;
 mod int;
+mod mem;

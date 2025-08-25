@@ -9,7 +9,6 @@ use uefi::boot::{
 };
 use uefi::mem::memory_map::MemoryMap;
 use uefi::proto::console::gop::GraphicsOutput;
-use uefi::proto::media::file::FileMode;
 use uefi::{cstr16, entry, Status};
 
 use crate::elf::{extract_elf_program, load_elf_header, resolve_global_offset_table};
@@ -17,6 +16,7 @@ use crate::frame_buffer::FrameBuffer;
 use crate::fs::FileHelper;
 
 const FONT_DATA_ADDR: u64 = 0x1_000_000;
+const NES_FILE_ADDR: u64 = 0x3_000_000;
 const FILE_INFO_SIZE: usize = 0x1000;
 const STALL_TIME: usize = 1_000;
 
@@ -44,7 +44,7 @@ fn main() -> Status {
     let entry = elf_header.e_entry;
     info!("Found the entry: {:#x}", entry);
 
-    let mem_map = uefi::boot::memory_map(MemoryType::LOADER_DATA).unwrap();
+    let mem_map = memory_map(MemoryType::LOADER_DATA).unwrap();
     for mem_idx in 0..mem_map.len() {
         let descriptor = mem_map.get(mem_idx).unwrap();
         match descriptor.ty {
@@ -77,6 +77,16 @@ fn main() -> Status {
     }
 
     info!("Loaded the system font");
+
+    let nes_file = file_helper.read_file(
+        cstr16!("game.nes"),
+        AllocateType::Address(NES_FILE_ADDR),
+        MemoryType::BOOT_SERVICES_DATA,
+    );
+    if nes_file.is_err() {
+        error!("Failed to read the NES file: {:?}", nes_file.err());
+        return Status::NOT_FOUND;
+    }
 
     let gop_handle = get_handle_for_protocol::<GraphicsOutput>().unwrap();
 

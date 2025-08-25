@@ -1,6 +1,7 @@
 .PHONY: resources run run-dbg gdb
 
 OUT_DIR = ./dest
+NES_FILE = ./res/nes/$(GAME)
 
 QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
 	-drive format=raw,file=fat:rw:$(OUT_DIR)
@@ -37,6 +38,8 @@ $(OUT_DIR)/efi/boot/bootx64.efi: $(BOOTLOADER_SOURCES)
 resources: ./res/font/Tamsyn8x16r.psf.gz
 	mkdir -p $(OUT_DIR)/res/font
 	gzip -d < ./res/font/Tamsyn8x16r.psf.gz > $(OUT_DIR)/system_font.psf
+
+	cp $(NES_FILE) $(OUT_DIR)/game.nes
 
 build: $(OUT_DIR)/kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 	@echo "Build complete."
