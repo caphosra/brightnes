@@ -3,7 +3,7 @@ use core::{ptr::NonNull, slice::from_raw_parts_mut};
 use log::info;
 use uefi::{
     boot::{AllocateType, MemoryType},
-    proto::media::file::{Directory, File, FileAttribute, FileInfo, FileMode},
+    proto::media::file::{Directory, File, FileAttribute, FileInfo, FileMode, RegularFile},
     CStr16, Status,
 };
 
@@ -36,15 +36,12 @@ impl<'a> FileHelper<'a> {
         }
     }
 
-    pub fn read_file(
+    pub fn open_file(
         &mut self,
         file_name: &CStr16,
-        alloc_ty: AllocateType,
-        mem_ty: MemoryType,
-    ) -> uefi::Result<&mut [u8]> {
-        let file = self
-            .volume
-            .open(file_name, FileMode::Read, FileAttribute::empty())?;
+        mode: FileMode,
+    ) -> uefi::Result<(RegularFile, u64)> {
+        let file = self.volume.open(file_name, mode, FileAttribute::empty())?;
         let mut regular_file = file
             .into_regular_file()
             .ok_or_else(|| uefi::Error::new(Status::NOT_FOUND, ()))?;
@@ -59,21 +56,7 @@ impl<'a> FileHelper<'a> {
                         info.file_size()
                     );
 
-                    // Allocate a buffer for the file content.
-                    let buffer = uefi::boot::allocate_pages(
-                        alloc_ty,
-                        mem_ty,
-                        (info.file_size() as usize + 0xfff) / 0x1000,
-                    )
-                    .unwrap();
-                    let buffer =
-                        unsafe { from_raw_parts_mut(buffer.as_ptr(), info.file_size() as usize) };
-
-                    let size = regular_file.read(buffer)?;
-
-                    info!("Read {:#x} bytes to {:#x}", size, buffer.as_ptr() as u64);
-
-                    return Ok(buffer);
+                    return Ok((regular_file, info.file_size()));
                 }
                 Err(e) => match e.status() {
                     Status::BUFFER_TOO_SMALL => {
@@ -106,5 +89,25 @@ impl<'a> FileHelper<'a> {
                 },
             }
         }
+    }
+
+    pub fn read_file(
+        &mut self,
+        file_name: &CStr16,
+        alloc_ty: AllocateType,
+        mem_ty: MemoryType,
+    ) -> uefi::Result<&mut [u8]> {
+        let (mut file, size) = self.open_file(file_name, FileMode::Read)?;
+
+        // Allocate a buffer for the file content.
+        let buffer =
+            uefi::boot::allocate_pages(alloc_ty, mem_ty, (size as usize + 0xfff) / 0x1000).unwrap();
+        let buffer = unsafe { from_raw_parts_mut(buffer.as_ptr(), size as usize) };
+
+        let size = file.read(buffer)?;
+
+        info!("Read {:#x} bytes to {:#x}", size, buffer.as_ptr() as u64);
+
+        Ok(buffer)
     }
 }

@@ -2,7 +2,7 @@ use crate::font::FontManager;
 
 pub type PixelColor = u32;
 
-const FRAME_BUFFER_ADDR: u64 = 0x700000;
+const FRAME_BUFFER_ADDR: u64 = 0x2_000_000;
 
 #[repr(C)]
 pub struct FrameBuffer {
@@ -12,7 +12,6 @@ pub struct FrameBuffer {
     pub mode: PixelColorMode,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub enum PixelColorMode {
     Rgb = 0,

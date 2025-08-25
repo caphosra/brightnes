@@ -4,16 +4,19 @@
 use core::mem::transmute;
 
 use log::{error, info};
-use uefi::boot::{get_handle_for_protocol, open_protocol_exclusive, AllocateType, MemoryType};
+use uefi::boot::{
+    get_handle_for_protocol, memory_map, open_protocol_exclusive, AllocateType, MemoryType,
+};
+use uefi::mem::memory_map::MemoryMap;
 use uefi::proto::console::gop::GraphicsOutput;
+use uefi::proto::media::file::FileMode;
 use uefi::{cstr16, entry, Status};
 
 use crate::elf::{extract_elf_program, load_elf_header, resolve_global_offset_table};
 use crate::frame_buffer::FrameBuffer;
 use crate::fs::FileHelper;
 
-const KERNEL_DATA_ADDR: u64 = 0x400000;
-const FONT_DATA_ADDR: u64 = 0x600000;
+const FONT_DATA_ADDR: u64 = 0x1_000_000;
 const FILE_INFO_SIZE: usize = 0x1000;
 const STALL_TIME: usize = 1_000;
 
@@ -27,7 +30,7 @@ fn main() -> Status {
 
     let kernel_file = file_helper.read_file(
         cstr16!("kernel"),
-        AllocateType::Address(KERNEL_DATA_ADDR),
+        AllocateType::AnyPages,
         MemoryType::BOOT_SERVICES_DATA,
     );
     if kernel_file.is_err() {
@@ -40,6 +43,23 @@ fn main() -> Status {
 
     let entry = elf_header.e_entry;
     info!("Found the entry: {:#x}", entry);
+
+    let mem_map = uefi::boot::memory_map(MemoryType::LOADER_DATA).unwrap();
+    for mem_idx in 0..mem_map.len() {
+        let descriptor = mem_map.get(mem_idx).unwrap();
+        match descriptor.ty {
+            MemoryType::CONVENTIONAL => {
+                info!(
+                    "Mem: {:?} {:#x}-{:#x} ({:#x} bytes)",
+                    descriptor.ty,
+                    descriptor.phys_start,
+                    descriptor.phys_start + descriptor.page_count * 0x1000,
+                    descriptor.page_count * 0x1000,
+                );
+            }
+            _ => {}
+        }
+    }
 
     extract_elf_program(kernel_file, elf_header);
     resolve_global_offset_table(kernel_file, elf_header);

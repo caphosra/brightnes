@@ -14,7 +14,7 @@ pub struct PSFHeader {
     width: u32,
 }
 
-const FONT_ADDR: u64 = 0x600000;
+const FONT_ADDR: u64 = 0x1_000_000;
 
 pub struct FontManager;
 

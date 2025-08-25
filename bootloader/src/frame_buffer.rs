@@ -6,7 +6,7 @@ use uefi::{
     proto::console::gop::{GraphicsOutput, PixelFormat},
 };
 
-const FRAME_BUFFER_ADDR: u64 = 0x700000;
+const FRAME_BUFFER_ADDR: u64 = 0x2_000_000;
 
 #[repr(C)]
 pub struct FrameBuffer {
