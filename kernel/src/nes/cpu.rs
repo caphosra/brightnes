@@ -1,6 +1,7 @@
 use spin::{Lazy, RwLock};
 
 use crate::log;
+use crate::nes::bus::NESBus;
 use crate::nes::instr::{AddrMode, InstrType, Instruction};
 use crate::nes::rom::NES_ROM;
 
@@ -9,8 +10,8 @@ pub struct NESCPU {
     pub reg_x: u8,
     pub reg_y: u8,
     pub reg_pc: u16,
-    pub reg_sp: u16,
-    pub reg_p: u16,
+    pub reg_sp: u8,
+    pub reg_p: u8,
     pub stall_cycles: u8,
 }
 
@@ -54,6 +55,18 @@ impl NESCPU {
         } else {
             self.reg_p &= !(1 << flag);
         }
+    }
+
+    pub fn push_stack(&mut self, data: u8) {
+        let addr = 0x0100 | self.reg_sp as u16;
+        NESBus::write(addr, data);
+        self.reg_sp = self.reg_sp.wrapping_sub(1);
+    }
+
+    pub fn pop_stack(&mut self) -> u8 {
+        self.reg_sp = self.reg_sp.wrapping_add(1);
+        let addr = 0x0100 | self.reg_sp as u16;
+        NESBus::read(addr)
     }
 
     pub fn execute(&mut self) {
@@ -108,6 +121,104 @@ impl NESCPU {
 
                 // ASL does not have additional cycle on page crossing
                 inst.cycles
+            }
+            InstrType::BCC => {
+                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                if self.get_flag(CARRY_FLAG) == 0 {
+                    self.reg_pc = addr as u16;
+                    inst.cycles + additional_cycle + 1
+                } else {
+                    inst.cycles
+                }
+            }
+            InstrType::BCS => {
+                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                if self.get_flag(CARRY_FLAG) != 0 {
+                    self.reg_pc = addr as u16;
+                    inst.cycles + additional_cycle + 1
+                } else {
+                    inst.cycles
+                }
+            }
+            InstrType::BEQ => {
+                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                if self.get_flag(ZERO_FLAG) != 0 {
+                    self.reg_pc = addr as u16;
+                    inst.cycles + additional_cycle + 1
+                } else {
+                    inst.cycles
+                }
+            }
+            InstrType::BIT => {
+                let (mem, _) = inst.addr_mode.resolve(self);
+                self.set_flag(NEG_FLAG, mem & 0x80 != 0);
+                self.set_flag(OVERFLOW_FLAG, mem & 0x40 != 0);
+                self.set_flag(ZERO_FLAG, (self.reg_a & mem) == 0);
+                inst.cycles
+            }
+            InstrType::BMI => {
+                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                if self.get_flag(NEG_FLAG) != 0 {
+                    self.reg_pc = addr as u16;
+                    inst.cycles + additional_cycle + 1
+                } else {
+                    inst.cycles
+                }
+            }
+            InstrType::BNE => {
+                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                if self.get_flag(ZERO_FLAG) == 0 {
+                    self.reg_pc = addr as u16;
+                    inst.cycles + additional_cycle + 1
+                } else {
+                    inst.cycles
+                }
+            }
+            InstrType::BPL => {
+                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                if self.get_flag(NEG_FLAG) == 0 {
+                    self.reg_pc = addr as u16;
+                    inst.cycles + additional_cycle + 1
+                } else {
+                    inst.cycles
+                }
+            }
+            InstrType::BRK => {
+                self.set_flag(BRK_FLAG, true);
+
+                if self.get_flag(INT_FLAG) == 0 {
+                    // Ensure that the interrupt flag is not set.
+                    self.set_flag(INT_FLAG, true);
+
+                    self.reg_pc += 1;
+                    self.push_stack((self.reg_pc >> 8) as u8);
+                    self.push_stack((self.reg_pc & 0x00FF) as u8);
+                    self.push_stack(self.reg_p | 0b110000);
+
+                    let lo = NESBus::read(0xFFFE);
+                    let hi = NESBus::read(0xFFFF);
+                    self.reg_pc = u16::from_le_bytes([lo, hi]);
+                }
+
+                inst.cycles
+            }
+            InstrType::BVC => {
+                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                if self.get_flag(OVERFLOW_FLAG) == 0 {
+                    self.reg_pc = addr as u16;
+                    inst.cycles + additional_cycle + 1
+                } else {
+                    inst.cycles
+                }
+            }
+            InstrType::BVS => {
+                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                if self.get_flag(OVERFLOW_FLAG) != 0 {
+                    self.reg_pc = addr as u16;
+                    inst.cycles + additional_cycle + 1
+                } else {
+                    inst.cycles
+                }
             }
             _ => {
                 log!("[CPU] Unimplemented instruction at PC={:#06x}", self.reg_pc);

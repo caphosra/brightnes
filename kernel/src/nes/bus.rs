@@ -29,7 +29,8 @@ impl NESBus {
             0
         } else {
             // ROM
-            0
+            let rom = NES_ROM.get().unwrap();
+            rom.prg_rom[addr as usize - 0x8000]
         }
     }
 

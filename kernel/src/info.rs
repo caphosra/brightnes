@@ -111,35 +111,35 @@ impl InfoProc {
         buffer.draw_text(
             offset_x,
             offset_y,
-            format!("REG A: {:#010x}", cpu.reg_a).as_bytes(),
+            format!("REG A: {:#04x}", cpu.reg_a).as_bytes(),
             color,
             background,
         );
         buffer.draw_text(
             offset_x,
             offset_y + FONT_HEIGHT as usize,
-            format!("REG X: {:#010x}", cpu.reg_x).as_bytes(),
+            format!("REG X: {:#04x}", cpu.reg_x).as_bytes(),
             color,
             background,
         );
         buffer.draw_text(
             offset_x,
             offset_y + FONT_HEIGHT as usize * 2,
-            format!("REG Y: {:#010x}", cpu.reg_y).as_bytes(),
+            format!("REG Y: {:#04x}", cpu.reg_y).as_bytes(),
             color,
             background,
         );
         buffer.draw_text(
             offset_x,
             offset_y + FONT_HEIGHT as usize * 3,
-            format!("REG PC: {:#018x}", cpu.reg_pc).as_bytes(),
+            format!("REG PC: {:#06x}", cpu.reg_pc).as_bytes(),
             color,
             background,
         );
         buffer.draw_text(
             offset_x,
             offset_y + FONT_HEIGHT as usize * 4,
-            format!("REG SP: {:#018x}", cpu.reg_sp).as_bytes(),
+            format!("REG SP: {:#04x}", cpu.reg_sp).as_bytes(),
             color,
             background,
         );
