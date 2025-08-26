@@ -323,6 +323,59 @@ impl NESCPU {
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
+            InstrType::EOR => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                self.reg_a ^= mem;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::INC => {
+                let (mem, _) = inst.addr_mode.resolve(self);
+                let result = mem.wrapping_add(1);
+
+                self.set_flag(ZERO_FLAG, result == 0);
+                self.set_flag(NEG_FLAG, result & 0x80 != 0);
+
+                inst.addr_mode.write(self, result);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::INX => {
+                self.reg_x = self.reg_x.wrapping_add(1);
+
+                self.set_flag(ZERO_FLAG, self.reg_x == 0);
+                self.set_flag(NEG_FLAG, self.reg_x & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::INY => {
+                self.reg_y = self.reg_y.wrapping_add(1);
+
+                self.set_flag(ZERO_FLAG, self.reg_y == 0);
+                self.set_flag(NEG_FLAG, self.reg_y & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::JMP => {
+                let (addr, _) = inst.addr_mode.resolve(self);
+                self.reg_pc = addr as u16;
+                inst.cycles
+            }
+            InstrType::JSR => {
+                let (addr, _) = inst.addr_mode.resolve(self);
+                let return_addr = self.reg_pc + 2;
+                self.push_stack((return_addr >> 8) as u8);
+                self.push_stack((return_addr & 0x00FF) as u8);
+                self.reg_pc = addr as u16;
+                inst.cycles
+            }
             _ => {
                 log!("[CPU] Unimplemented instruction at PC={:#06x}", self.reg_pc);
                 0
