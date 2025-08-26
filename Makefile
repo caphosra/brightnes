@@ -9,10 +9,10 @@ QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
 KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/kernel.ld \
 	./kernel/src/int/mod.rs \
-	./kernel/src/int/pic.rs \
 	./kernel/src/io/fs_driver.rs \
 	./kernel/src/font.rs \
 	./kernel/src/frame_buffer.rs \
+	./kernel/src/logger.rs \
 	./kernel/src/main.rs \
 	./kernel/src/mem.rs
 BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \

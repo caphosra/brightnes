@@ -39,7 +39,7 @@ impl Logger {
         if added >= height {
             // Need to scroll the screen.
             for idx in 0..height {
-                let text = self.buffer[idx - height + added].as_bytes();
+                let text = self.buffer[idx + added - height].as_bytes();
                 buffer.draw_text(0, idx * FONT_HEIGHT as usize, text, font_color);
             }
         } else {
