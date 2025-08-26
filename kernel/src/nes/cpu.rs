@@ -89,6 +89,7 @@ impl NESCPU {
                 self.set_flag(NEG_FLAG, sum & 0x80 != 0);
 
                 self.reg_a = sum;
+                self.reg_pc += inst.addr_mode.size();
                 inst.cycles + additional_cycle
             }
             InstrType::AND => {
@@ -97,6 +98,8 @@ impl NESCPU {
 
                 self.set_flag(ZERO_FLAG, self.reg_a == 0);
                 self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
                 inst.cycles + additional_cycle
             }
             InstrType::ASL => {
@@ -120,6 +123,7 @@ impl NESCPU {
                 };
 
                 // ASL does not have additional cycle on page crossing
+                self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
             InstrType::BCC => {
@@ -128,6 +132,7 @@ impl NESCPU {
                     self.reg_pc = addr as u16;
                     inst.cycles + additional_cycle + 1
                 } else {
+                    self.reg_pc += inst.addr_mode.size();
                     inst.cycles
                 }
             }
@@ -137,6 +142,7 @@ impl NESCPU {
                     self.reg_pc = addr as u16;
                     inst.cycles + additional_cycle + 1
                 } else {
+                    self.reg_pc += inst.addr_mode.size();
                     inst.cycles
                 }
             }
@@ -146,14 +152,18 @@ impl NESCPU {
                     self.reg_pc = addr as u16;
                     inst.cycles + additional_cycle + 1
                 } else {
+                    self.reg_pc += inst.addr_mode.size();
                     inst.cycles
                 }
             }
             InstrType::BIT => {
                 let (mem, _) = inst.addr_mode.resolve(self);
+
                 self.set_flag(NEG_FLAG, mem & 0x80 != 0);
                 self.set_flag(OVERFLOW_FLAG, mem & 0x40 != 0);
                 self.set_flag(ZERO_FLAG, (self.reg_a & mem) == 0);
+
+                self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
             InstrType::BMI => {
@@ -162,6 +172,7 @@ impl NESCPU {
                     self.reg_pc = addr as u16;
                     inst.cycles + additional_cycle + 1
                 } else {
+                    self.reg_pc += inst.addr_mode.size();
                     inst.cycles
                 }
             }
@@ -171,6 +182,7 @@ impl NESCPU {
                     self.reg_pc = addr as u16;
                     inst.cycles + additional_cycle + 1
                 } else {
+                    self.reg_pc += inst.addr_mode.size();
                     inst.cycles
                 }
             }
@@ -180,6 +192,7 @@ impl NESCPU {
                     self.reg_pc = addr as u16;
                     inst.cycles + additional_cycle + 1
                 } else {
+                    self.reg_pc += inst.addr_mode.size();
                     inst.cycles
                 }
             }
@@ -208,6 +221,7 @@ impl NESCPU {
                     self.reg_pc = addr as u16;
                     inst.cycles + additional_cycle + 1
                 } else {
+                    self.reg_pc += inst.addr_mode.size();
                     inst.cycles
                 }
             }
@@ -217,8 +231,66 @@ impl NESCPU {
                     self.reg_pc = addr as u16;
                     inst.cycles + additional_cycle + 1
                 } else {
+                    self.reg_pc += inst.addr_mode.size();
                     inst.cycles
                 }
+            }
+            InstrType::CLC => {
+                self.set_flag(CARRY_FLAG, false);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::CLD => {
+                self.set_flag(DECIMAL_FLAG, false);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::CLI => {
+                self.set_flag(INT_FLAG, false);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::CLV => {
+                self.set_flag(OVERFLOW_FLAG, false);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::CMP => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                let (res, borrow) = self.reg_a.overflowing_sub(mem);
+
+                self.set_flag(CARRY_FLAG, !borrow);
+                self.set_flag(ZERO_FLAG, res == 0);
+                self.set_flag(NEG_FLAG, res & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::CPX => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                let (res, borrow) = self.reg_x.overflowing_sub(mem);
+
+                self.set_flag(CARRY_FLAG, !borrow);
+                self.set_flag(ZERO_FLAG, res == 0);
+                self.set_flag(NEG_FLAG, res & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::CPY => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                let (res, borrow) = self.reg_y.overflowing_sub(mem);
+
+                self.set_flag(CARRY_FLAG, !borrow);
+                self.set_flag(ZERO_FLAG, res == 0);
+                self.set_flag(NEG_FLAG, res & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
             }
             _ => {
                 log!("[CPU] Unimplemented instruction at PC={:#06x}", self.reg_pc);

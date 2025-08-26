@@ -882,7 +882,7 @@ impl Instruction {
 }
 
 impl AddrMode {
-    pub fn size(&self) -> u8 {
+    pub fn size(&self) -> u16 {
         match self {
             AddrMode::Implied => 1,
             AddrMode::Immediate(_) => 2,
