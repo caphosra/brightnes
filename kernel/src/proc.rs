@@ -1,5 +1,4 @@
 use spin::{Lazy, RwLock};
-use x86_64::instructions::interrupts;
 
 use crate::{info::InfoProc, logger::Logger};
 
@@ -10,26 +9,39 @@ pub enum ProcessMode {
     Info,
 }
 
+impl ProcessMode {
+    pub fn shift(&self) -> ProcessMode {
+        match self {
+            ProcessMode::Log => ProcessMode::Game,
+            ProcessMode::Game => ProcessMode::Info,
+            ProcessMode::Info => ProcessMode::Log,
+        }
+    }
+}
+
 pub struct Process;
 
 static CURRENT_PROC_MODE: Lazy<RwLock<ProcessMode>> = Lazy::new(|| RwLock::new(ProcessMode::Log));
 
 impl Process {
     pub fn switch_proc(mode: ProcessMode) {
-        interrupts::without_interrupts(|| {
-            let mut proc_mode = CURRENT_PROC_MODE.write();
-            *proc_mode = mode;
+        let mut proc_mode = CURRENT_PROC_MODE.write();
+        *proc_mode = mode;
 
-            match mode {
-                ProcessMode::Log => {
-                    Logger::render_all();
-                }
-                ProcessMode::Game => {}
-                ProcessMode::Info => {
-                    InfoProc::render_all();
-                }
+        match mode {
+            ProcessMode::Log => {
+                Logger::render_all();
             }
-        });
+            ProcessMode::Game => {}
+            ProcessMode::Info => {
+                InfoProc::render_all();
+            }
+        };
+    }
+
+    pub fn shift_proc() {
+        let mode = CURRENT_PROC_MODE.read().shift();
+        Process::switch_proc(mode);
     }
 
     pub fn mode() -> ProcessMode {

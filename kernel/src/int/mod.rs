@@ -4,7 +4,7 @@ use x86_64::instructions::hlt;
 use x86_64::instructions::port::Port;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::log;
+use crate::int::keyboard::BKeyboard;
 
 const PIC_1_OFFSET: u8 = 0x20;
 const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -81,10 +81,12 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     let mut port = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
 
-    log!("Detected a keydown event {}", scancode);
+    BKeyboard::on_event(scancode);
 
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIdx::Keyboard as u8);
     }
 }
+
+mod keyboard;

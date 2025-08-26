@@ -13,7 +13,6 @@ use crate::font::FontManager;
 use crate::int::Interrupt;
 use crate::logger::Logger;
 use crate::nes::rom::NESROM;
-use crate::proc::Process;
 
 #[no_mangle]
 #[inline(never)]
@@ -43,8 +42,6 @@ pub extern "C" fn kernel_main() -> ! {
     log!("It's time to enjoy BRIGHTNES!");
 
     NESROM::load();
-
-    Process::switch_proc(proc::ProcessMode::Info);
 
     loop {
         unsafe {
