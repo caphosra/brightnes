@@ -271,7 +271,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::CPX => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                let (mem, _) = inst.addr_mode.resolve(self);
                 let (res, borrow) = self.reg_x.overflowing_sub(mem);
 
                 self.set_flag(CARRY_FLAG, !borrow);
@@ -279,10 +279,10 @@ impl NESCPU {
                 self.set_flag(NEG_FLAG, res & 0x80 != 0);
 
                 self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                inst.cycles
             }
             InstrType::CPY => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                let (mem, _) = inst.addr_mode.resolve(self);
                 let (res, borrow) = self.reg_y.overflowing_sub(mem);
 
                 self.set_flag(CARRY_FLAG, !borrow);
@@ -290,7 +290,38 @@ impl NESCPU {
                 self.set_flag(NEG_FLAG, res & 0x80 != 0);
 
                 self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                inst.cycles
+            }
+            InstrType::DEC => {
+                let (mem, _) = inst.addr_mode.resolve(self);
+
+                let result = mem.wrapping_sub(1);
+
+                self.set_flag(ZERO_FLAG, result == 0);
+                self.set_flag(NEG_FLAG, result & 0x80 != 0);
+
+                inst.addr_mode.write(self, result);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::DEX => {
+                self.reg_x = self.reg_x.wrapping_sub(1);
+
+                self.set_flag(ZERO_FLAG, self.reg_x == 0);
+                self.set_flag(NEG_FLAG, self.reg_x & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::DEY => {
+                self.reg_y = self.reg_y.wrapping_sub(1);
+
+                self.set_flag(ZERO_FLAG, self.reg_y == 0);
+                self.set_flag(NEG_FLAG, self.reg_y & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
             }
             _ => {
                 log!("[CPU] Unimplemented instruction at PC={:#06x}", self.reg_pc);
