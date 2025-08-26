@@ -1,5 +1,11 @@
 use spin::{Lazy, RwLock};
 
+use crate::{
+    frame_buffer::FrameBuffer,
+    info::InfoProc,
+    proc::{Process, ProcessMode},
+};
+
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum PadButton {
@@ -32,16 +38,18 @@ impl PadButton {
 const PAD_BUTTON_LEN: usize = 8;
 
 pub struct Pad {
+    pub player: usize,
     pub pressed: [bool; PAD_BUTTON_LEN],
     pub selected: PadButton,
     pub strobe_enabled: bool,
 }
 
-pub static PADS: Lazy<RwLock<[Pad; 2]>> = Lazy::new(|| RwLock::new([Pad::new(), Pad::new()]));
+pub static PADS: Lazy<RwLock<[Pad; 2]>> = Lazy::new(|| RwLock::new([Pad::new(0), Pad::new(1)]));
 
 impl Pad {
-    fn new() -> Self {
+    fn new(player: usize) -> Self {
         Pad {
+            player,
             pressed: [false; PAD_BUTTON_LEN],
             selected: PadButton::A,
             strobe_enabled: false,
@@ -50,10 +58,20 @@ impl Pad {
 
     pub fn press_button(&mut self, button: PadButton) {
         self.pressed[button as usize] = true;
+
+        if Process::mode() == ProcessMode::Info {
+            let buffer = FrameBuffer::get();
+            InfoProc::render_button(buffer, self.player, self, button);
+        }
     }
 
     pub fn release_button(&mut self, button: PadButton) {
         self.pressed[button as usize] = false;
+
+        if Process::mode() == ProcessMode::Info {
+            let buffer = FrameBuffer::get();
+            InfoProc::render_button(buffer, self.player, self, button);
+        }
     }
 
     pub fn read(&mut self) -> bool {

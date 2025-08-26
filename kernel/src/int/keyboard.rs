@@ -1,7 +1,10 @@
 use pc_keyboard::{layouts::Us104Key, HandleControl, KeyCode, KeyState, Keyboard, ScancodeSet1};
 use spin::{Lazy, RwLock};
 
-use crate::proc::Process;
+use crate::{
+    nes::pad::{PadButton, PADS},
+    proc::Process,
+};
 
 pub struct BKeyboard;
 
@@ -21,8 +24,45 @@ impl BKeyboard {
                 (KeyState::Down, KeyCode::Tab) => {
                     Process::shift_proc();
                 }
+                (state, KeyCode::Spacebar) => {
+                    BKeyboard::on_pad_button(state, PadButton::A);
+                }
+                (state, KeyCode::Return) => {
+                    BKeyboard::on_pad_button(state, PadButton::B);
+                }
+                (state, KeyCode::W) => {
+                    BKeyboard::on_pad_button(state, PadButton::Up);
+                }
+                (state, KeyCode::S) => {
+                    BKeyboard::on_pad_button(state, PadButton::Down);
+                }
+                (state, KeyCode::A) => {
+                    BKeyboard::on_pad_button(state, PadButton::Left);
+                }
+                (state, KeyCode::D) => {
+                    BKeyboard::on_pad_button(state, PadButton::Right);
+                }
+                (state, KeyCode::Key1) => {
+                    BKeyboard::on_pad_button(state, PadButton::Select);
+                }
+                (state, KeyCode::Key2) => {
+                    BKeyboard::on_pad_button(state, PadButton::Start);
+                }
                 (_, _) => {}
             }
+        }
+    }
+
+    pub fn on_pad_button(state: KeyState, button: PadButton) {
+        let mut pads = PADS.write();
+        match state {
+            KeyState::Down => {
+                pads[0].press_button(button);
+            }
+            KeyState::Up => {
+                pads[0].release_button(button);
+            }
+            _ => {}
         }
     }
 }
