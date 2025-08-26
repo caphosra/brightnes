@@ -1,5 +1,3 @@
-use core::ops::Index;
-
 use crate::nes::{pad::PADS, ram::NES_RAM, rom::NES_ROM};
 
 pub struct NESBus;
@@ -30,7 +28,8 @@ impl NESBus {
         } else {
             // ROM
             let rom = NES_ROM.get().unwrap();
-            rom.prg_rom[addr as usize - 0x8000]
+            let prog_addr = (addr as usize - 0x8000) % 0x4000;
+            rom.prg_rom[prog_addr]
         }
     }
 

@@ -4,14 +4,14 @@
 
 extern crate alloc;
 
-use core::arch::asm;
 use core::panic::PanicInfo;
 
-use x86_64::instructions::interrupts;
+use x86_64::instructions::{hlt, interrupts};
 
 use crate::font::FontManager;
 use crate::int::Interrupt;
 use crate::logger::Logger;
+use crate::nes::cpu::NES_CPU;
 use crate::nes::rom::NESROM;
 
 #[no_mangle]
@@ -32,21 +32,24 @@ pub extern "C" fn kernel_main() -> ! {
     }
     FontManager::init_glyph_index_table();
 
-    Interrupt::init();
-
-    log!("Hello World from the kernel.");
-
-    interrupts::enable();
-
-    log!("Interrupts are enabled.");
-    log!("It's time to enjoy BRIGHTNES!");
+    log!("[SYS] Hello World from the kernel.");
 
     NESROM::load();
+    {
+        let mut cpu = NES_CPU.write();
+        cpu.reg_pc = 0xC000;
+    }
+
+    log!("[SYS] Initialized the NES CPU.");
+
+    Interrupt::init();
+    interrupts::enable();
+
+    log!("[SYS] Interrupts are enabled.");
+    log!("[SYS] It's time to enjoy BRIGHTNES!");
 
     loop {
-        unsafe {
-            asm!("hlt");
-        }
+        hlt();
     }
 }
 

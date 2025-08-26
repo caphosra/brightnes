@@ -10,6 +10,7 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/kernel.ld \
 	./kernel/src/int/keyboard.rs \
 	./kernel/src/int/mod.rs \
+	./kernel/src/nes/bus.rs \
 	./kernel/src/nes/cpu.rs \
 	./kernel/src/nes/instr.rs \
 	./kernel/src/nes/mod.rs \

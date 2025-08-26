@@ -1,10 +1,8 @@
 use spin::{Lazy, RwLock};
 
-use crate::int::Interrupt;
 use crate::log;
 use crate::nes::bus::NESBus;
 use crate::nes::instr::{AddrMode, InstrType, Instruction};
-use crate::nes::rom::NES_ROM;
 
 pub struct NESCPU {
     pub reg_a: u8,
@@ -29,9 +27,9 @@ pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
         reg_a: 0,
         reg_x: 0,
         reg_y: 0,
-        reg_pc: 0,
-        reg_sp: 0,
-        reg_p: 0,
+        reg_pc: 0xFFFC,
+        reg_sp: 0xFD,
+        reg_p: 1 << INT_FLAG,
         stall_cycles: 0,
     })
 });
@@ -70,9 +68,7 @@ impl NESCPU {
     }
 
     pub fn execute(&mut self) {
-        let rom = NES_ROM.get().unwrap();
-        let (_, code) = rom.prg_rom.split_at(self.reg_pc as usize);
-        let inst = Instruction::fetch(code);
+        let inst = Instruction::fetch(self.reg_pc);
 
         let cycles = match inst.instr_type {
             InstrType::ADC => {
@@ -362,19 +358,36 @@ impl NESCPU {
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
-            InstrType::JMP => {
-                let (addr, _) = inst.addr_mode.resolve(self);
-                self.reg_pc = addr as u16;
-                inst.cycles
-            }
-            InstrType::JSR => {
-                let (addr, _) = inst.addr_mode.resolve(self);
-                let return_addr = self.reg_pc + 2;
-                self.push_stack((return_addr >> 8) as u8);
-                self.push_stack((return_addr & 0x00FF) as u8);
-                self.reg_pc = addr as u16;
-                inst.cycles
-            }
+            InstrType::JMP => match inst.addr_mode {
+                AddrMode::Absolute(addr) => {
+                    self.reg_pc = addr;
+                    inst.cycles
+                }
+                AddrMode::Indirect(addr) => {
+                    let lo = NESBus::read(addr);
+                    let hi = NESBus::read(addr.wrapping_add(1));
+                    self.reg_pc = u16::from_le_bytes([lo, hi]);
+                    inst.cycles
+                }
+                _ => {
+                    log!("[CPU] Illegal JMP at PC={:#06x}", self.reg_pc);
+                    0
+                }
+            },
+            InstrType::JSR => match inst.addr_mode {
+                AddrMode::Absolute(addr) => {
+                    let return_addr = self.reg_pc + 2;
+                    self.push_stack((return_addr >> 8) as u8);
+                    self.push_stack((return_addr & 0x00FF) as u8);
+
+                    self.reg_pc = addr;
+                    inst.cycles
+                }
+                _ => {
+                    log!("[CPU] Illegal JSR at PC={:#06x}", self.reg_pc);
+                    0
+                }
+            },
             InstrType::LDA => {
                 let (mem, additional_cycle) = inst.addr_mode.resolve(self);
                 self.reg_a = mem;
