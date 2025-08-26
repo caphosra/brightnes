@@ -122,7 +122,6 @@ impl NESCPU {
                     }
                 };
 
-                // ASL does not have additional cycle on page crossing
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
@@ -374,6 +373,161 @@ impl NESCPU {
                 self.push_stack((return_addr >> 8) as u8);
                 self.push_stack((return_addr & 0x00FF) as u8);
                 self.reg_pc = addr as u16;
+                inst.cycles
+            }
+            InstrType::LDA => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                self.reg_a = mem;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::LDX => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                self.reg_x = mem;
+
+                self.set_flag(ZERO_FLAG, self.reg_x == 0);
+                self.set_flag(NEG_FLAG, self.reg_x & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::LDY => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                self.reg_y = mem;
+
+                self.set_flag(ZERO_FLAG, self.reg_y == 0);
+                self.set_flag(NEG_FLAG, self.reg_y & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::LSR => {
+                let (val, _) = match inst.addr_mode {
+                    AddrMode::Implied => (self.reg_a, 0),
+                    _ => inst.addr_mode.resolve(self),
+                };
+                let result = val >> 1;
+
+                self.set_flag(CARRY_FLAG, val & 0x01 != 0);
+                self.set_flag(ZERO_FLAG, result == 0);
+                self.set_flag(NEG_FLAG, result & 0x80 != 0);
+
+                match inst.addr_mode {
+                    AddrMode::Implied => {
+                        self.reg_a = result;
+                    }
+                    _ => {
+                        inst.addr_mode.write(self, result);
+                    }
+                };
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::NOP => {
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::ORA => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                self.reg_a |= mem;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::PHA => {
+                self.push_stack(self.reg_a);
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::PHP => {
+                self.push_stack(self.reg_p | 0b110000);
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::PLA => {
+                self.reg_a = self.pop_stack();
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::PLP => {
+                self.reg_p = (self.pop_stack() & !(1 << BRK_FLAG)) | (self.reg_p & (1 << BRK_FLAG));
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::ROL => {
+                let (val, _) = match inst.addr_mode {
+                    AddrMode::Implied => (self.reg_a, 0),
+                    _ => inst.addr_mode.resolve(self),
+                };
+                let carry = self.get_flag(CARRY_FLAG);
+                let result = (val << 1) | carry;
+
+                self.set_flag(CARRY_FLAG, val & 0x80 != 0);
+                self.set_flag(ZERO_FLAG, result == 0);
+                self.set_flag(NEG_FLAG, result & 0x80 != 0);
+
+                match inst.addr_mode {
+                    AddrMode::Implied => {
+                        self.reg_a = result;
+                    }
+                    _ => {
+                        inst.addr_mode.write(self, result);
+                    }
+                };
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::ROR => {
+                let (val, _) = match inst.addr_mode {
+                    AddrMode::Implied => (self.reg_a, 0),
+                    _ => inst.addr_mode.resolve(self),
+                };
+                let carry = self.get_flag(CARRY_FLAG) << 7;
+                let result = (val >> 1) | carry;
+
+                self.set_flag(CARRY_FLAG, val & 0x01 != 0);
+                self.set_flag(ZERO_FLAG, result == 0);
+                self.set_flag(NEG_FLAG, result & 0x80 != 0);
+
+                match inst.addr_mode {
+                    AddrMode::Implied => {
+                        self.reg_a = result;
+                    }
+                    _ => {
+                        inst.addr_mode.write(self, result);
+                    }
+                };
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::RTI => {
+                self.reg_p = (self.pop_stack() & !(1 << BRK_FLAG)) | (self.reg_p & (1 << BRK_FLAG));
+
+                let lo = self.pop_stack();
+                let hi = self.pop_stack();
+
+                self.reg_pc = u16::from_le_bytes([lo, hi]);
+                inst.cycles
+            }
+            InstrType::RTS => {
+                let lo = self.pop_stack();
+                let hi = self.pop_stack();
+
+                self.reg_pc = u16::from_le_bytes([lo, hi]) + 1;
                 inst.cycles
             }
             _ => {
