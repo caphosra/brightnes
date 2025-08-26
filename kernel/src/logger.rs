@@ -23,7 +23,7 @@ impl Logger {
             if line.len() == 0 {
                 self.buffer.push(line.to_string());
             } else {
-                let width = FrameBuffer::get().width / FONT_WIDTH as usize;
+                let width = FrameBuffer::get().text_width();
                 for chunk in line.as_bytes().chunks(width) {
                     self.buffer.push(String::from_utf8_lossy(chunk).to_string());
                 }
@@ -34,18 +34,46 @@ impl Logger {
     fn render_internal(&mut self, rendered: usize, added: usize) {
         let buffer = FrameBuffer::get();
         let font_color = buffer.make_color(0xFF, 0xFF, 0xFF);
+        let background_color = buffer.make_color(0x20, 0x20, 0x20);
 
-        let height = buffer.height / FONT_HEIGHT as usize;
-        if added >= height {
+        let height = buffer.text_height();
+        if added > height {
             // Need to scroll the screen.
             for idx in 0..height {
                 let text = self.buffer[idx + added - height].as_bytes();
-                buffer.draw_text(0, idx * FONT_HEIGHT as usize, text, font_color);
+                buffer.draw_text(
+                    0,
+                    idx * FONT_HEIGHT as usize,
+                    text,
+                    font_color,
+                    background_color,
+                );
+
+                if idx + rendered >= height {
+                    let current_text_len = text.len();
+                    let prev_text_len = self.buffer[idx + rendered - height].len();
+                    if prev_text_len > current_text_len {
+                        // Erase the previous text.
+                        buffer.draw_rect(
+                            current_text_len * FONT_WIDTH as usize,
+                            idx * FONT_HEIGHT as usize,
+                            (prev_text_len - current_text_len) * FONT_WIDTH as usize,
+                            FONT_HEIGHT as usize,
+                            background_color,
+                        );
+                    }
+                }
             }
         } else {
             for idx in rendered..added {
                 let text = self.buffer[idx].as_bytes();
-                buffer.draw_text(0, idx * FONT_HEIGHT as usize, text, font_color);
+                buffer.draw_text(
+                    0,
+                    idx * FONT_HEIGHT as usize,
+                    text,
+                    font_color,
+                    background_color,
+                );
             }
         }
     }

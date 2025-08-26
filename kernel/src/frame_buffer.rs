@@ -1,4 +1,4 @@
-use crate::font::FontManager;
+use crate::font::{FontManager, FONT_HEIGHT, FONT_WIDTH};
 
 pub type PixelColor = u32;
 
@@ -14,7 +14,9 @@ pub struct FrameBuffer {
 
 #[repr(C)]
 pub enum PixelColorMode {
+    #[allow(dead_code)]
     Rgb = 0,
+    #[allow(dead_code)]
     Bgr = 1,
 }
 
@@ -39,9 +41,34 @@ impl FrameBuffer {
     }
 
     #[inline(always)]
+    pub fn text_width(&self) -> usize {
+        self.width / FONT_WIDTH as usize
+    }
+
+    #[inline(always)]
+    pub fn text_height(&self) -> usize {
+        self.height / FONT_HEIGHT as usize
+    }
+
+    #[inline(always)]
     pub fn set_pixel(&mut self, x: usize, y: usize, color: PixelColor) {
         unsafe {
             self.buffer.add(y * self.width + x).write(color);
+        }
+    }
+
+    pub fn draw_rect(
+        &mut self,
+        offset_x: usize,
+        offset_y: usize,
+        width: usize,
+        height: usize,
+        color: PixelColor,
+    ) {
+        for y in offset_y..(offset_y + height) {
+            for x in offset_x..(offset_x + width) {
+                self.set_pixel(x, y, color);
+            }
         }
     }
 
@@ -51,28 +78,31 @@ impl FrameBuffer {
         offset_y: usize,
         glyph: &'static [u8],
         color: PixelColor,
+        background: PixelColor,
     ) {
         for y in 0..0x10 {
             for x in 0..8 {
-                if (glyph[y] & (1 << (7 - x))) != 0 {
-                    self.set_pixel(offset_x + x, offset_y + y, color);
-                }
-            }
-        }
-    }
-
-    pub fn clear_char(&mut self, offset_x: usize, offset_y: usize, color: PixelColor) {
-        for y in 0..0x10 {
-            for x in 0..8 {
+                let color = if (glyph[y] & (1 << (7 - x))) != 0 {
+                    color
+                } else {
+                    background
+                };
                 self.set_pixel(offset_x + x, offset_y + y, color);
             }
         }
     }
 
-    pub fn draw_text(&mut self, offset_x: usize, offset_y: usize, text: &[u8], color: PixelColor) {
+    pub fn draw_text(
+        &mut self,
+        offset_x: usize,
+        offset_y: usize,
+        text: &[u8],
+        color: PixelColor,
+        background: PixelColor,
+    ) {
         for (i, &c) in text.iter().enumerate() {
             let glyph = FontManager::get_glyph_by_char(c);
-            self.draw_glyph(offset_x + i * 8, offset_y, glyph, color);
+            self.draw_glyph(offset_x + i * 8, offset_y, glyph, color, background);
         }
     }
 }

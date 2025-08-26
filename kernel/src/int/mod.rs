@@ -1,4 +1,3 @@
-use pc_keyboard::Keyboard;
 use pic8259::ChainedPics;
 use spin::{Lazy, Mutex};
 use x86_64::instructions::hlt;
