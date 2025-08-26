@@ -2,8 +2,8 @@ use spin::Lazy;
 use x86_64::instructions::hlt;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::frame_buffer::FrameBuffer;
 use crate::int::pic::PIC;
+use crate::log;
 
 pub struct Interrupt;
 
@@ -56,15 +56,13 @@ extern "x86-interrupt" fn page_fault_handler(
 extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
     // Do nothing.
 
-    PIC::eoi(0x0);
+    log!("Tick!");
+    PIC::eoi(INT_TIMER);
 }
 
 extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
-    let frame_buffer = FrameBuffer::get();
-
-    let white = frame_buffer.make_color(0xFF, 0xFF, 0xFF);
-    frame_buffer.draw_text(0, 48, b"Keyboard", white);
-    PIC::eoi(0x1);
+    log!("Detected a keydown event");
+    PIC::eoi(INT_KEYBOARD);
 }
 
 mod pic;

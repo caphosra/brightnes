@@ -16,9 +16,15 @@ pub struct PSFHeader {
 
 const FONT_ADDR: u64 = 0x1_000_000;
 
+const PSF_HEADER_MAGIC: [u8; 4] = [0x72, 0xb5, 0x4a, 0x86];
+pub const FONT_HEIGHT: u32 = 0x10;
+pub const FONT_WIDTH: u32 = 0x8;
+
 pub struct FontManager;
 
-static GLYPH_INDEX_TBL: Lazy<RwLock<[usize; 0x100]>> = Lazy::new(|| RwLock::new([0; 0x100]));
+const GLYPH_IDX_TBL_SIZE: usize = 0x100;
+static GLYPH_IDX_TBL: Lazy<RwLock<[usize; GLYPH_IDX_TBL_SIZE]>> =
+    Lazy::new(|| RwLock::new([0; GLYPH_IDX_TBL_SIZE]));
 
 impl FontManager {
     pub fn get_psf_header() -> &'static mut PSFHeader {
@@ -26,13 +32,13 @@ impl FontManager {
     }
 
     pub fn validate_psf_header(header: &PSFHeader) -> bool {
-        header.magic == [0x72, 0xb5, 0x4a, 0x86]
+        header.magic == PSF_HEADER_MAGIC
             && header.version == 0
             && header.header_size == 0x20
             && header.flags == 1
-            && header.bytes_per_glyph == 0x10
-            && header.height == 0x10
-            && header.width == 0x8
+            && header.bytes_per_glyph == FONT_WIDTH * FONT_HEIGHT / 8
+            && header.height == FONT_HEIGHT
+            && header.width == FONT_WIDTH
     }
 
     pub fn init_glyph_index_table() {
@@ -49,13 +55,13 @@ impl FontManager {
         while glyph < header.num_glyph {
             let first = unsafe { *glyph_tbl.add(current) };
             let next = unsafe { *glyph_tbl.add(current + 1) };
-            if first == 0xff {
+            if first == 0xFF {
                 // The glyph is not used.
                 glyph += 1;
                 current += 1;
                 continue;
             }
-            if next != 0xff {
+            if next != 0xFF {
                 // The glyph is for multi-byte characters.
                 // We will skip it.
                 current += 2;
@@ -63,7 +69,7 @@ impl FontManager {
                 // The consumer loop can be never stopped, so add a limit.
                 let mut loop_count = 0;
                 let max_len = 0x10;
-                while unsafe { *glyph_tbl.add(current) } != 0xff && loop_count < max_len {
+                while unsafe { *glyph_tbl.add(current) } != 0xFF && loop_count < max_len {
                     current += 1;
                     loop_count += 1;
                 }
@@ -77,7 +83,7 @@ impl FontManager {
             }
 
             // The glyph is a single-byte character.
-            GLYPH_INDEX_TBL.write()[first as usize] = glyph as usize;
+            GLYPH_IDX_TBL.write()[first as usize] = glyph as usize;
             glyph += 1;
             current += 2;
         }
@@ -96,7 +102,7 @@ impl FontManager {
     }
 
     pub fn get_glyph_by_char(c: u8) -> &'static [u8] {
-        let index = GLYPH_INDEX_TBL.read()[c as usize];
+        let index = GLYPH_IDX_TBL.read()[c as usize];
         if index == 0 {
             panic!("The glyph for character '{}' is not found.", c as char);
         }

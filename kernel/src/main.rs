@@ -39,18 +39,12 @@ pub extern "C" fn kernel_main() -> ! {
 
     Interrupt::init();
 
-    let white = frame_buffer.make_color(0xff, 0xff, 0xff);
-
-    let text = b"Hello World from the kernel.";
-    frame_buffer.draw_text(0, 0, text, white);
+    log!("Hello World from the kernel.");
 
     interrupts::enable();
 
-    let text = b"Interrupts are enabled.";
-    frame_buffer.draw_text(0, 16, text, white);
-
-    let text = b"It's time to enjoy BRIGHTNES!";
-    frame_buffer.draw_text(0, 32, text, white);
+    log!("Interrupts are enabled.");
+    log!("It's time to enjoy BRIGHTNES!");
 
     loop {
         unsafe {
@@ -67,4 +61,5 @@ fn panic(_info: &PanicInfo) -> ! {
 mod font;
 mod frame_buffer;
 mod int;
+mod logger;
 mod mem;
