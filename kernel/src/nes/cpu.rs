@@ -1,5 +1,6 @@
 use spin::{Lazy, RwLock};
 
+use crate::int::Interrupt;
 use crate::log;
 use crate::nes::bus::NESBus;
 use crate::nes::instr::{AddrMode, InstrType, Instruction};
@@ -39,8 +40,7 @@ impl NESCPU {
     pub fn clock(&mut self) {
         if self.stall_cycles > 0 {
             self.stall_cycles -= 1;
-        }
-        if self.stall_cycles == 0 {
+        } else {
             self.execute();
         }
     }
@@ -82,7 +82,7 @@ impl NESCPU {
 
                 // Calculate overflow
                 let ans = mem as i16 + sum as i16 + self.get_flag(CARRY_FLAG) as i16;
-                self.set_flag(OVERFLOW_FLAG, ans > 0xFF || ans < 0);
+                self.set_flag(OVERFLOW_FLAG, ans > 0xFF || ans < -0x80);
 
                 self.set_flag(CARRY_FLAG, carry1 || carry2);
                 self.set_flag(ZERO_FLAG, sum == 0);
@@ -530,10 +530,116 @@ impl NESCPU {
                 self.reg_pc = u16::from_le_bytes([lo, hi]) + 1;
                 inst.cycles
             }
-            _ => {
+            InstrType::SBC => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
+                let (diff, borrow2) = diff.overflowing_sub(1 - self.get_flag(CARRY_FLAG));
+
+                // Calculate overflow
+                let ans = self.reg_a as i16 - mem as i16 - (1 - self.get_flag(CARRY_FLAG)) as i16;
+                self.set_flag(OVERFLOW_FLAG, ans > 0x7F || ans < -0x80);
+
+                self.set_flag(CARRY_FLAG, !(borrow1 || borrow2));
+                self.set_flag(ZERO_FLAG, diff == 0);
+                self.set_flag(NEG_FLAG, diff & 0x80 != 0);
+
+                self.reg_a = diff;
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::SEC => {
+                self.set_flag(CARRY_FLAG, true);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::SED => {
+                self.set_flag(DECIMAL_FLAG, true);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::SEI => {
+                self.set_flag(INT_FLAG, true);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::STA => {
+                inst.addr_mode.write(self, self.reg_a);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::STX => {
+                inst.addr_mode.write(self, self.reg_x);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::STY => {
+                inst.addr_mode.write(self, self.reg_y);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::TAX => {
+                self.reg_x = self.reg_a;
+
+                self.set_flag(ZERO_FLAG, self.reg_x == 0);
+                self.set_flag(NEG_FLAG, self.reg_x & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::TAY => {
+                self.reg_y = self.reg_a;
+
+                self.set_flag(ZERO_FLAG, self.reg_y == 0);
+                self.set_flag(NEG_FLAG, self.reg_y & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::TSX => {
+                self.reg_x = self.reg_sp;
+
+                self.set_flag(ZERO_FLAG, self.reg_x == 0);
+                self.set_flag(NEG_FLAG, self.reg_x & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::TXA => {
+                self.reg_a = self.reg_x;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::TXS => {
+                self.reg_sp = self.reg_x;
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::TYA => {
+                self.reg_a = self.reg_y;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::Illegal => {
                 log!("[CPU] Unimplemented instruction at PC={:#06x}", self.reg_pc);
                 0
             }
         };
+
+        self.stall_cycles += cycles - 1;
     }
 }
