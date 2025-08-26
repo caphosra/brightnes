@@ -1,12 +1,12 @@
 use spin::{Lazy, RwLock};
 
 pub struct NESCPU {
-    reg_a: u8,
-    reg_x: u8,
-    reg_y: u8,
-    reg_pc: u16,
-    reg_sp: u16,
-    reg_p: u16,
+    pub reg_a: u8,
+    pub reg_x: u8,
+    pub reg_y: u8,
+    pub reg_pc: u16,
+    pub reg_sp: u16,
+    pub reg_p: u16,
 }
 
 pub const CARRY_FLG: usize = 0;

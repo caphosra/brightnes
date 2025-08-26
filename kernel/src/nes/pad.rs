@@ -1,3 +1,5 @@
+use spin::{Lazy, RwLock};
+
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum PadButton {
@@ -30,12 +32,22 @@ impl PadButton {
 const PAD_BUTTON_LEN: usize = 8;
 
 pub struct Pad {
-    pressed: [bool; PAD_BUTTON_LEN],
-    selected: PadButton,
-    strobe_enabled: bool,
+    pub pressed: [bool; PAD_BUTTON_LEN],
+    pub selected: PadButton,
+    pub strobe_enabled: bool,
 }
 
+pub static PADS: Lazy<RwLock<[Pad; 2]>> = Lazy::new(|| RwLock::new([Pad::new(), Pad::new()]));
+
 impl Pad {
+    fn new() -> Self {
+        Pad {
+            pressed: [false; PAD_BUTTON_LEN],
+            selected: PadButton::A,
+            strobe_enabled: false,
+        }
+    }
+
     pub fn press_button(&mut self, button: PadButton) {
         self.pressed[button as usize] = true;
     }

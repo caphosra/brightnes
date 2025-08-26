@@ -16,9 +16,11 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/nes/rom.rs \
 	./kernel/src/font.rs \
 	./kernel/src/frame_buffer.rs \
+	./kernel/src/info.rs \
 	./kernel/src/logger.rs \
 	./kernel/src/main.rs \
-	./kernel/src/mem.rs
+	./kernel/src/mem.rs \
+	./kernel/src/proc.rs
 BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 	./bootloader/src/elf.rs \
 	./bootloader/src/frame_buffer.rs \

@@ -10,9 +10,10 @@ use core::panic::PanicInfo;
 use x86_64::instructions::interrupts;
 
 use crate::font::FontManager;
-use crate::frame_buffer::FrameBuffer;
 use crate::int::Interrupt;
+use crate::logger::Logger;
 use crate::nes::rom::NESROM;
+use crate::proc::Process;
 
 #[no_mangle]
 #[inline(never)]
@@ -22,13 +23,7 @@ pub extern "C" fn kernel_main() -> ! {
     }
 
     // Initialize the frame buffer.
-    let frame_buffer = FrameBuffer::get();
-    let grey = frame_buffer.make_color(0x20, 0x20, 0x20);
-    for y in 0..frame_buffer.height {
-        for x in 0..frame_buffer.width {
-            frame_buffer.set_pixel(x, y, grey);
-        }
-    }
+    Logger::render_all();
 
     // Load the font data.
     // This task is required to render texts on the screen.
@@ -49,6 +44,8 @@ pub extern "C" fn kernel_main() -> ! {
 
     NESROM::load();
 
+    Process::switch_proc(proc::ProcessMode::Info);
+
     loop {
         unsafe {
             asm!("hlt");
@@ -63,7 +60,9 @@ fn panic(_info: &PanicInfo) -> ! {
 
 mod font;
 mod frame_buffer;
+mod info;
 mod int;
 mod logger;
 mod mem;
 mod nes;
+mod proc;

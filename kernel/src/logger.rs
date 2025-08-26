@@ -5,6 +5,7 @@ use x86_64::instructions::interrupts;
 
 use crate::font::{FONT_HEIGHT, FONT_WIDTH};
 use crate::frame_buffer::FrameBuffer;
+use crate::proc::{Process, ProcessMode};
 
 pub struct Logger {
     buffer: Vec<String>,
@@ -87,12 +88,30 @@ impl Logger {
 
             let rendered = logger.buffer.len();
             logger.log_internal(text);
-            let added = logger.buffer.len();
-            logger.render_internal(rendered, added);
+
+            if Process::mode() == ProcessMode::Log {
+                let added = logger.buffer.len();
+                logger.render_internal(rendered, added);
+            }
         }
 
         if int_enabled {
             interrupts::enable();
         }
+    }
+
+    pub fn render_all() {
+        let buffer = FrameBuffer::get();
+
+        // Clear the frame buffer.
+        let background_color = buffer.make_color(0x20, 0x20, 0x20);
+        let width = buffer.width;
+        let height = buffer.height;
+        buffer.draw_rect(0, 0, width, height, background_color);
+
+        // Re-render the log.
+        let mut logger = LOGGER.write();
+        let buffer_len = logger.buffer.len();
+        logger.render_internal(0, buffer_len);
     }
 }
