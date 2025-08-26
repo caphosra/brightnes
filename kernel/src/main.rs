@@ -12,6 +12,7 @@ use x86_64::instructions::interrupts;
 use crate::font::FontManager;
 use crate::frame_buffer::FrameBuffer;
 use crate::int::Interrupt;
+use crate::nes::rom::NESROM;
 
 #[no_mangle]
 #[inline(never)]
@@ -46,6 +47,8 @@ pub extern "C" fn kernel_main() -> ! {
     log!("Interrupts are enabled.");
     log!("It's time to enjoy BRIGHTNES!");
 
+    NESROM::load();
+
     loop {
         unsafe {
             asm!("hlt");
@@ -63,3 +66,4 @@ mod frame_buffer;
 mod int;
 mod logger;
 mod mem;
+mod nes;

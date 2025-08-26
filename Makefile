@@ -9,7 +9,11 @@ QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
 KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/kernel.ld \
 	./kernel/src/int/mod.rs \
-	./kernel/src/io/fs_driver.rs \
+	./kernel/src/nes/cpu.rs \
+	./kernel/src/nes/mod.rs \
+	./kernel/src/nes/pad.rs \
+	./kernel/src/nes/ram.rs \
+	./kernel/src/nes/rom.rs \
 	./kernel/src/font.rs \
 	./kernel/src/frame_buffer.rs \
 	./kernel/src/logger.rs \
