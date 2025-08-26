@@ -15,7 +15,7 @@ use crate::elf::{extract_elf_program, load_elf_header, resolve_global_offset_tab
 use crate::frame_buffer::FrameBuffer;
 use crate::fs::FileHelper;
 
-const FONT_DATA_ADDR: u64 = 0x1_000_000;
+const FONT_DATA_ADDR: u64 = 0x2_000_000;
 const NES_FILE_ADDR: u64 = 0x3_000_000;
 const FILE_INFO_SIZE: usize = 0x1000;
 const STALL_TIME: usize = 1_000;

@@ -14,7 +14,7 @@ pub struct PSFHeader {
     width: u32,
 }
 
-const FONT_ADDR: u64 = 0x1_000_000;
+const FONT_ADDR: u64 = 0x2_000_000;
 
 const PSF_HEADER_MAGIC: [u8; 4] = [0x72, 0xb5, 0x4a, 0x86];
 pub const FONT_HEIGHT: u32 = 0x10;
