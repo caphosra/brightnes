@@ -1,13 +1,8 @@
 use spin::{Lazy, RwLock};
 
-use crate::{
-    log,
-    nes::{
-        instr::{AddrMode, InstrType, Instruction},
-        ram::{NESRAM, NES_RAM},
-        rom::NES_ROM,
-    },
-};
+use crate::log;
+use crate::nes::instr::{AddrMode, InstrType, Instruction};
+use crate::nes::rom::NES_ROM;
 
 pub struct NESCPU {
     pub reg_a: u8,
@@ -66,9 +61,9 @@ impl NESCPU {
         let (_, code) = rom.prg_rom.split_at(self.reg_pc as usize);
         let inst = Instruction::fetch(code);
 
-        match inst.instr_type {
+        let cycles = match inst.instr_type {
             InstrType::ADC => {
-                let mem = inst.addr_mode.resolve(self);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
                 let (sum, carry1) = mem.overflowing_add(self.reg_a);
                 let (sum, carry2) = sum.overflowing_add(self.get_flag(CARRY_FLAG));
 
@@ -81,17 +76,19 @@ impl NESCPU {
                 self.set_flag(NEG_FLAG, sum & 0x80 != 0);
 
                 self.reg_a = sum;
+                inst.cycles + additional_cycle
             }
             InstrType::AND => {
-                let mem = inst.addr_mode.resolve(self);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
                 self.reg_a &= mem;
 
                 self.set_flag(ZERO_FLAG, self.reg_a == 0);
                 self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+                inst.cycles + additional_cycle
             }
             InstrType::ASL => {
-                let val = match inst.addr_mode {
-                    AddrMode::Implied => self.reg_a,
+                let (val, _) = match inst.addr_mode {
+                    AddrMode::Implied => (self.reg_a, 0),
                     _ => inst.addr_mode.resolve(self),
                 };
                 let result = val << 1;
@@ -107,11 +104,15 @@ impl NESCPU {
                     _ => {
                         inst.addr_mode.write(self, result);
                     }
-                }
+                };
+
+                // ASL does not have additional cycle on page crossing
+                inst.cycles
             }
             _ => {
                 log!("[CPU] Unimplemented instruction at PC={:#06x}", self.reg_pc);
+                0
             }
-        }
+        };
     }
 }
