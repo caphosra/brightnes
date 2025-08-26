@@ -7,7 +7,10 @@ use core::ops::Add;
 
 use alloc::str;
 
-use crate::log;
+use crate::{
+    log,
+    nes::{bus::NESBus, cpu::NESCPU},
+};
 
 pub enum InstrType {
     // Transfer Instructions
@@ -103,7 +106,7 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    pub fn load(code: &'static [u8]) -> Self {
+    pub fn fetch(code: &'static [u8]) -> Self {
         if code.len() == 0 {
             log!("[INSTR] No instruction to load");
             Instruction {
@@ -721,6 +724,115 @@ impl Instruction {
                     addr_mode: AddrMode::Implied,
                 },
             }
+        }
+    }
+}
+
+impl AddrMode {
+    pub fn size(&self) -> u8 {
+        match self {
+            AddrMode::Implied => 1,
+            AddrMode::Immediate(_) => 2,
+            AddrMode::ZeroPage(_) => 2,
+            AddrMode::ZeroPageX(_) => 2,
+            AddrMode::ZeroPageY(_) => 2,
+            AddrMode::Absolute(_) => 3,
+            AddrMode::AbsoluteX(_) => 3,
+            AddrMode::AbsoluteY(_) => 3,
+            AddrMode::Indirect(_) => 3,
+            AddrMode::IndirectX(_) => 2,
+            AddrMode::IndirectY(_) => 2,
+            AddrMode::Relative(_) => 2,
+        }
+    }
+
+    pub fn resolve(&self, cpu: &NESCPU) -> u8 {
+        match self {
+            AddrMode::Implied => 0,
+            AddrMode::Immediate(val) => *val,
+            AddrMode::ZeroPage(addr) => NESBus::read(*addr as u16),
+            AddrMode::ZeroPageX(addr) => {
+                let addr = addr.wrapping_add(cpu.reg_x);
+                NESBus::read(addr as u16)
+            }
+            AddrMode::ZeroPageY(addr) => {
+                let addr = addr.wrapping_add(cpu.reg_y);
+                NESBus::read(addr as u16)
+            }
+            AddrMode::Absolute(addr) => NESBus::read(*addr),
+            AddrMode::AbsoluteX(addr) => {
+                let addr = addr.wrapping_add(cpu.reg_x as u16);
+                NESBus::read(addr)
+            }
+            AddrMode::AbsoluteY(addr) => {
+                let addr = addr.wrapping_add(cpu.reg_y as u16);
+                NESBus::read(addr)
+            }
+            AddrMode::Indirect(addr) => {
+                let lo = NESBus::read(*addr);
+                let hi = NESBus::read(addr.wrapping_add(1));
+                u16::from_le_bytes([lo, hi]) as u8
+            }
+            AddrMode::IndirectX(addr) => {
+                let ptr = addr.wrapping_add(cpu.reg_x);
+                let lo = NESBus::read(ptr as u16);
+                let hi = NESBus::read(ptr.wrapping_add(1) as u16);
+                let addr = u16::from_le_bytes([lo, hi]);
+                NESBus::read(addr)
+            }
+            AddrMode::IndirectY(addr) => {
+                let lo = NESBus::read(*addr as u16);
+                let hi = NESBus::read(addr.wrapping_add(1) as u16);
+                let addr = u16::from_le_bytes([lo, hi]).wrapping_add(cpu.reg_y as u16);
+                NESBus::read(addr)
+            }
+            AddrMode::Relative(offset) => {
+                cpu.reg_pc.wrapping_add(*offset as u16).wrapping_add(2) as u8
+            }
+        }
+    }
+
+    pub fn write(&self, cpu: &NESCPU, value: u8) {
+        match self {
+            AddrMode::Implied => {}
+            AddrMode::Immediate(_) => {}
+            AddrMode::ZeroPage(addr) => {
+                NESBus::write(*addr as u16, value);
+            }
+            AddrMode::ZeroPageX(addr) => {
+                let addr = addr.wrapping_add(cpu.reg_x);
+                NESBus::write(addr as u16, value);
+            }
+            AddrMode::ZeroPageY(addr) => {
+                let addr = addr.wrapping_add(cpu.reg_y);
+                NESBus::write(addr as u16, value);
+            }
+            AddrMode::Absolute(addr) => {
+                NESBus::write(*addr, value);
+            }
+            AddrMode::AbsoluteX(addr) => {
+                let addr = addr.wrapping_add(cpu.reg_x as u16);
+                NESBus::write(addr, value);
+            }
+            AddrMode::AbsoluteY(addr) => {
+                let addr = addr.wrapping_add(cpu.reg_y as u16);
+                NESBus::write(addr, value);
+            }
+            AddrMode::Indirect(_) => {}
+            AddrMode::IndirectX(addr) => {
+                let ptr = addr.wrapping_add(cpu.reg_x);
+                let lo = NESBus::read(ptr as u16);
+                let hi = NESBus::read(ptr.wrapping_add(1) as u16);
+                let addr = u16::from_le_bytes([lo, hi]);
+                NESBus::write(addr, value);
+            }
+            AddrMode::IndirectY(addr) => {
+                let lo = NESBus::read(*addr as u16);
+                let hi = NESBus::read(addr.wrapping_add(1) as u16);
+                let addr = u16::from_le_bytes([lo, hi]).wrapping_add(cpu.reg_y as u16);
+                NESBus::write(addr, value);
+            }
+            AddrMode::Relative(_) => {}
         }
     }
 }

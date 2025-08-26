@@ -82,4 +82,11 @@ impl Pad {
         }
         out
     }
+
+    pub fn write(&mut self, strobe: bool) {
+        self.strobe_enabled = strobe;
+        if strobe {
+            self.selected = PadButton::A;
+        }
+    }
 }

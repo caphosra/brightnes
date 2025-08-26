@@ -25,8 +25,8 @@ const PRG_ROM_UNIT: usize = 0x4000;
 const CHR_ROM_UNIT: usize = 0x2000;
 
 pub struct NESROM {
-    prg_rom: &'static [u8],
-    chr_rom: &'static [u8],
+    pub prg_rom: &'static [u8],
+    pub chr_rom: &'static [u8],
 }
 
 pub static NES_ROM: Lazy<Once<NESROM>> = Lazy::new(|| Once::new());
