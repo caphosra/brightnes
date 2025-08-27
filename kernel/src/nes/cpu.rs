@@ -12,6 +12,7 @@ pub struct NESCPU {
     pub reg_sp: u8,
     pub reg_p: u8,
     pub stall_cycles: u8,
+    pub cycles: u64,
 }
 
 pub const CARRY_FLAG: usize = 0;
@@ -31,6 +32,7 @@ pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
         reg_sp: 0xFD,
         reg_p: 1 << INT_FLAG,
         stall_cycles: 0,
+        cycles: 0,
     })
 });
 
@@ -41,10 +43,11 @@ impl NESCPU {
         } else {
             self.execute();
         }
+        self.cycles += 1;
     }
 
     pub fn get_flag(&self, flag: usize) -> u8 {
-        (self.reg_p & (1 << flag)) as u8
+        ((self.reg_p & (1 << flag)) >> flag) as u8
     }
 
     pub fn set_flag(&mut self, flag: usize, enabled: bool) {
@@ -122,9 +125,9 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::BCC => {
-                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                let (addr, additional_cycle) = inst.addr_mode.resolve_addr(self).unwrap();
                 if self.get_flag(CARRY_FLAG) == 0 {
-                    self.reg_pc = addr as u16;
+                    self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
                 } else {
                     self.reg_pc += inst.addr_mode.size();
@@ -132,9 +135,9 @@ impl NESCPU {
                 }
             }
             InstrType::BCS => {
-                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                let (addr, additional_cycle) = inst.addr_mode.resolve_addr(self).unwrap();
                 if self.get_flag(CARRY_FLAG) != 0 {
-                    self.reg_pc = addr as u16;
+                    self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
                 } else {
                     self.reg_pc += inst.addr_mode.size();
@@ -142,9 +145,9 @@ impl NESCPU {
                 }
             }
             InstrType::BEQ => {
-                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                let (addr, additional_cycle) = inst.addr_mode.resolve_addr(self).unwrap();
                 if self.get_flag(ZERO_FLAG) != 0 {
-                    self.reg_pc = addr as u16;
+                    self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
                 } else {
                     self.reg_pc += inst.addr_mode.size();
@@ -162,9 +165,9 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::BMI => {
-                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                let (addr, additional_cycle) = inst.addr_mode.resolve_addr(self).unwrap();
                 if self.get_flag(NEG_FLAG) != 0 {
-                    self.reg_pc = addr as u16;
+                    self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
                 } else {
                     self.reg_pc += inst.addr_mode.size();
@@ -172,9 +175,9 @@ impl NESCPU {
                 }
             }
             InstrType::BNE => {
-                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                let (addr, additional_cycle) = inst.addr_mode.resolve_addr(self).unwrap();
                 if self.get_flag(ZERO_FLAG) == 0 {
-                    self.reg_pc = addr as u16;
+                    self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
                 } else {
                     self.reg_pc += inst.addr_mode.size();
@@ -182,9 +185,9 @@ impl NESCPU {
                 }
             }
             InstrType::BPL => {
-                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                let (addr, additional_cycle) = inst.addr_mode.resolve_addr(self).unwrap();
                 if self.get_flag(NEG_FLAG) == 0 {
-                    self.reg_pc = addr as u16;
+                    self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
                 } else {
                     self.reg_pc += inst.addr_mode.size();
@@ -211,9 +214,9 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::BVC => {
-                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                let (addr, additional_cycle) = inst.addr_mode.resolve_addr(self).unwrap();
                 if self.get_flag(OVERFLOW_FLAG) == 0 {
-                    self.reg_pc = addr as u16;
+                    self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
                 } else {
                     self.reg_pc += inst.addr_mode.size();
@@ -221,9 +224,9 @@ impl NESCPU {
                 }
             }
             InstrType::BVS => {
-                let (addr, additional_cycle) = inst.addr_mode.resolve(self);
+                let (addr, additional_cycle) = inst.addr_mode.resolve_addr(self).unwrap();
                 if self.get_flag(OVERFLOW_FLAG) != 0 {
-                    self.reg_pc = addr as u16;
+                    self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
                 } else {
                     self.reg_pc += inst.addr_mode.size();

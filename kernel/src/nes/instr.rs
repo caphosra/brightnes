@@ -1098,6 +1098,29 @@ impl AddrMode {
         }
     }
 
+    pub fn resolve_addr(&self, cpu: &NESCPU) -> Option<(u16, u8)> {
+        match self {
+            AddrMode::Implied => None,
+            AddrMode::Immediate(_) => None,
+            AddrMode::ZeroPage(_) => None,
+            AddrMode::ZeroPageX(_) => None,
+            AddrMode::ZeroPageY(_) => None,
+            AddrMode::Absolute(addr) => Some((*addr, 0)),
+            AddrMode::AbsoluteX(_) => None,
+            AddrMode::AbsoluteY(_) => None,
+            AddrMode::Indirect(addr) => {
+                let lo = NESBus::read(*addr);
+                let hi = NESBus::read(addr.wrapping_add(1));
+                Some((u16::from_le_bytes([lo, hi]), 0))
+            }
+            AddrMode::IndirectX(_) => None,
+            AddrMode::IndirectY(_) => None,
+            AddrMode::Relative(offset) => {
+                Some((cpu.reg_pc.wrapping_add(*offset as u16).wrapping_add(2), 0))
+            }
+        }
+    }
+
     pub fn write(&self, cpu: &NESCPU, value: u8) {
         match self {
             AddrMode::Implied => {}

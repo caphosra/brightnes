@@ -4,7 +4,10 @@ use crate::{
     font::FONT_HEIGHT,
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
-        cpu::{NESCPU, NES_CPU},
+        cpu::{
+            BRK_FLAG, CARRY_FLAG, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, NESCPU, NES_CPU, OVERFLOW_FLAG,
+            ZERO_FLAG,
+        },
         pad::{Pad, PadButton, PADS},
     },
 };
@@ -111,35 +114,61 @@ impl InfoProc {
         buffer.draw_text(
             offset_x,
             offset_y,
-            format!("REG A: {:#04x}", cpu.reg_a).as_bytes(),
+            format!("REG A: {:#04X}", cpu.reg_a).as_bytes(),
             color,
             background,
         );
         buffer.draw_text(
             offset_x,
             offset_y + FONT_HEIGHT as usize,
-            format!("REG X: {:#04x}", cpu.reg_x).as_bytes(),
+            format!("REG X: {:#04X}", cpu.reg_x).as_bytes(),
             color,
             background,
         );
         buffer.draw_text(
             offset_x,
             offset_y + FONT_HEIGHT as usize * 2,
-            format!("REG Y: {:#04x}", cpu.reg_y).as_bytes(),
+            format!("REG Y: {:#04X}", cpu.reg_y).as_bytes(),
             color,
             background,
         );
         buffer.draw_text(
             offset_x,
             offset_y + FONT_HEIGHT as usize * 3,
-            format!("REG PC: {:#06x}", cpu.reg_pc).as_bytes(),
+            format!("REG PC: {:#06X}", cpu.reg_pc).as_bytes(),
             color,
             background,
         );
         buffer.draw_text(
             offset_x,
             offset_y + FONT_HEIGHT as usize * 4,
-            format!("REG SP: {:#04x}", cpu.reg_sp).as_bytes(),
+            format!("REG SP: {:#04X}", cpu.reg_sp).as_bytes(),
+            color,
+            background,
+        );
+        buffer.draw_text(
+            offset_x,
+            offset_y + FONT_HEIGHT as usize * 5,
+            format!(
+                "REG P: {:#04X} (C: {:1}, Z: {:1}, I: {:1}, D: {:1}, B: {:1}{:1}, V: {:1}, N: {:1})",
+                cpu.reg_p,
+                cpu.get_flag(CARRY_FLAG),
+                cpu.get_flag(ZERO_FLAG),
+                cpu.get_flag(INT_FLAG),
+                cpu.get_flag(DECIMAL_FLAG),
+                cpu.get_flag(BRK_FLAG),
+                cpu.get_flag(BRK_FLAG + 1),
+                cpu.get_flag(OVERFLOW_FLAG),
+                cpu.get_flag(NEG_FLAG),
+            )
+            .as_bytes(),
+            color,
+            background,
+        );
+        buffer.draw_text(
+            offset_x,
+            offset_y + FONT_HEIGHT as usize * 6,
+            format!("CYCLES: {:#018X}", cpu.cycles).as_bytes(),
             color,
             background,
         );
