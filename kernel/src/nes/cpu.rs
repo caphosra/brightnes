@@ -19,6 +19,7 @@ pub const ZERO_FLAG: usize = 1;
 pub const INT_FLAG: usize = 2;
 pub const DECIMAL_FLAG: usize = 3;
 pub const BRK_FLAG: usize = 4;
+pub const ONE_FLAG: usize = 5;
 pub const OVERFLOW_FLAG: usize = 6;
 pub const NEG_FLAG: usize = 7;
 
@@ -55,6 +56,15 @@ impl NESCPU {
             }
         };
         if !is_stalling {
+            log!(
+                "[CPU] Exec {:04X} (A: {:02X}, X: {:02X}, Y: {:02X}, P: {:02X}, SP: {:02X})",
+                self.reg_pc,
+                self.reg_a,
+                self.reg_x,
+                self.reg_y,
+                self.reg_p,
+                self.reg_sp
+            );
             self.execute();
         }
         self.cycles += 1;
@@ -492,7 +502,9 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::PLP => {
-                self.reg_p = (self.pop_stack() & !(1 << BRK_FLAG)) | (self.reg_p & (1 << BRK_FLAG));
+                self.reg_p = (self.pop_stack() & !(1 << BRK_FLAG))
+                    | (self.reg_p & (1 << BRK_FLAG))
+                    | (1 << ONE_FLAG);
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }

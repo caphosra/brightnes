@@ -79,6 +79,14 @@ impl Logger {
         });
     }
 
+    pub fn reset_scroll() {
+        interrupts::without_interrupts(|| {
+            let mut logger = LOGGER.write();
+            let scroll = logger.buffer.len() - logger.scroll;
+            logger.scroll_internal(scroll as i32);
+        });
+    }
+
     fn render_internal(&mut self, before: usize, after: usize) {
         // If nothing changed, do nothing.
         if before == after {
@@ -143,12 +151,9 @@ impl Logger {
         // Clear the frame buffer.
         buffer.clear(Logger::bg_color(buffer));
 
-        // Reset the scroll.
-        let mut logger = LOGGER.write();
-        logger.scroll = logger.buffer.len();
-
         // Re-render the log.
-        let buffer_len = logger.buffer.len();
-        logger.render_internal(0, buffer_len);
+        let mut logger = LOGGER.write();
+        let scroll = logger.scroll;
+        logger.render_internal(0, scroll);
     }
 }
