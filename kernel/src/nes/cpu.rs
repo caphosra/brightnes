@@ -11,7 +11,6 @@ pub struct NESCPU {
     pub reg_pc: u16,
     pub reg_sp: u8,
     pub reg_p: u8,
-    pub stall_cycles: u8,
     pub cycles: u64,
 }
 
@@ -30,17 +29,32 @@ pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
         reg_y: 0,
         reg_pc: 0xFFFC,
         reg_sp: 0xFD,
-        reg_p: 1 << INT_FLAG,
-        stall_cycles: 0,
+        reg_p: 0x24,
         cycles: 0,
     })
 });
 
+// Since stalling cycles can be modified during DMA transfer, we need to split this from the CPU struct.
+static CPU_STALL: Lazy<RwLock<u32>> = Lazy::new(|| RwLock::new(0));
+
 impl NESCPU {
+    pub fn stall(cycles: u32) {
+        let mut stall_cycles = CPU_STALL.write();
+        *stall_cycles += cycles;
+    }
+
     pub fn clock(&mut self) {
-        if self.stall_cycles > 0 {
-            self.stall_cycles -= 1;
-        } else {
+        let is_stalling = {
+            // Acquire a read-write lock of CPU_STALL.
+            let mut stall_cycles = CPU_STALL.write();
+            if *stall_cycles > 0 {
+                *stall_cycles -= 1;
+                true
+            } else {
+                false
+            }
+        };
+        if !is_stalling {
             self.execute();
         }
         self.cycles += 1;
@@ -656,6 +670,6 @@ impl NESCPU {
             }
         };
 
-        self.stall_cycles += cycles - 1;
+        NESCPU::stall((cycles - 1) as u32);
     }
 }
