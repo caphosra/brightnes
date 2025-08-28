@@ -72,6 +72,10 @@ impl FrameBuffer {
         }
     }
 
+    pub fn clear(&mut self, color: PixelColor) {
+        self.draw_rect(0, 0, self.width, self.height, color);
+    }
+
     pub fn draw_glyph(
         &mut self,
         offset_x: usize,

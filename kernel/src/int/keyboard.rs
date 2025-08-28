@@ -2,6 +2,7 @@ use pc_keyboard::{layouts::Us104Key, HandleControl, KeyCode, KeyState, Keyboard,
 use spin::{Lazy, RwLock};
 
 use crate::{
+    logger::Logger,
     nes::pad::{PadButton, PADS},
     proc::Process,
 };
@@ -47,6 +48,12 @@ impl BKeyboard {
                 }
                 (state, KeyCode::Key2) => {
                     BKeyboard::on_pad_button(state, PadButton::Start);
+                }
+                (KeyState::Down, KeyCode::ArrowUp) => {
+                    Logger::scroll(-1);
+                }
+                (KeyState::Down, KeyCode::ArrowDown) => {
+                    Logger::scroll(1);
                 }
                 (_, _) => {}
             }
