@@ -2,7 +2,7 @@ use core::ptr::slice_from_raw_parts;
 
 use spin::{Lazy, Once};
 
-use crate::log;
+use crate::{log, nes::NES_CONFIG};
 
 #[repr(C)]
 pub struct NESHeader {
@@ -55,6 +55,10 @@ impl NESROM {
                 unsafe { slice_from_raw_parts(chr_rom_start, chr_rom_size).as_ref() }.unwrap();
 
             log!("[ROM] Loaded CHR ROM ({:#x} bytes)", chr_rom_size);
+
+            // Set the NES configuration.
+            let mut config = NES_CONFIG.write();
+            config.mirroring = (nes_header.flag6 & 1).into();
 
             NESROM { prg_rom, chr_rom }
         });

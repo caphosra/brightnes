@@ -1,6 +1,6 @@
 use spin::{Lazy, RwLock};
 
-use crate::{info::InfoProc, logger::Logger};
+use crate::{info::InfoProc, logger::Logger, nes::ppu::NES_FRAME_BUFFER};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ProcessMode {
@@ -32,7 +32,10 @@ impl Process {
             ProcessMode::Log => {
                 Logger::render_all();
             }
-            ProcessMode::Game => {}
+            ProcessMode::Game => {
+                let buffer = NES_FRAME_BUFFER.read();
+                buffer.render_all();
+            }
             ProcessMode::Info => {
                 InfoProc::render_all();
             }

@@ -12,6 +12,7 @@ use crate::font::FontManager;
 use crate::int::Interrupt;
 use crate::logger::Logger;
 use crate::nes::cpu::NES_CPU;
+use crate::nes::ppu::NES_FRAME_BUFFER;
 use crate::nes::rom::NESROM;
 
 #[no_mangle]
@@ -41,6 +42,11 @@ pub extern "C" fn kernel_main() -> ! {
     }
 
     log!("[SYS] Initialized the NES CPU.");
+
+    {
+        let mut buffer = NES_FRAME_BUFFER.write();
+        buffer.init();
+    }
 
     Interrupt::init();
     interrupts::enable();
