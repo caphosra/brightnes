@@ -12,6 +12,7 @@ pub struct NESCPU {
     pub reg_sp: u8,
     pub reg_p: u8,
     pub cycles: u64,
+    pub inst: u64,
 }
 
 pub const CARRY_FLAG: usize = 0;
@@ -32,11 +33,20 @@ pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
         reg_sp: 0xFD,
         reg_p: 0x24,
         cycles: 0,
+        inst: 0,
     })
 });
 
 // Since stalling cycles can be modified during DMA transfer, we need to split this from the CPU struct.
 static CPU_STALL: Lazy<RwLock<u32>> = Lazy::new(|| RwLock::new(0));
+
+static CPU_INT: Lazy<RwLock<Option<InterruptType>>> = Lazy::new(|| RwLock::new(None));
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum InterruptType {
+    NMI,
+    BRK,
+}
 
 impl NESCPU {
     pub fn stall(cycles: u32) {
@@ -44,7 +54,55 @@ impl NESCPU {
         *stall_cycles += cycles;
     }
 
+    pub fn interrupt(int_type: InterruptType) {
+        let mut dest = CPU_INT.write();
+        *dest = Some(int_type);
+    }
+
+    fn interrupt_internal(&mut self, int_type: InterruptType) {
+        if self.get_flag(INT_FLAG) != 0 && (int_type == InterruptType::BRK) {
+            // Nested interrupt is not allowed for BRK and IRQ.
+            return;
+        }
+
+        self.set_flag(INT_FLAG, true);
+
+        match int_type {
+            InterruptType::BRK => {
+                self.reg_pc += 1;
+                self.push_stack((self.reg_pc >> 8) as u8);
+                self.push_stack((self.reg_pc & 0x00FF) as u8);
+                self.push_stack(self.reg_p | 0b110000);
+
+                let lo = NESBus::read(0xFFFE);
+                let hi = NESBus::read(0xFFFF);
+                self.reg_pc = u16::from_le_bytes([lo, hi]);
+            }
+            InterruptType::NMI => {
+                self.set_flag(BRK_FLAG, false);
+
+                self.push_stack((self.reg_pc >> 8) as u8);
+                self.push_stack((self.reg_pc & 0x00FF) as u8);
+
+                self.push_stack((self.reg_p & 0b11001111) | 1 << 5);
+
+                let lo = NESBus::read(0xFFFA);
+                let hi = NESBus::read(0xFFFB);
+                self.reg_pc = u16::from_le_bytes([lo, hi]);
+            }
+        }
+    }
+
     pub fn clock(&mut self) {
+        {
+            let mut int = CPU_INT.write();
+            if let Some(int_type) = *int {
+                self.interrupt_internal(int_type);
+                *int = None;
+                return;
+            }
+        }
+
         let is_stalling = {
             // Acquire a read-write lock of CPU_STALL.
             let mut stall_cycles = CPU_STALL.write();
@@ -57,15 +115,19 @@ impl NESCPU {
         };
         if !is_stalling {
             log!(
-                "[CPU] Exec {:04X} (A: {:02X}, X: {:02X}, Y: {:02X}, P: {:02X}, SP: {:02X})",
+                "[CPU] {:06} Exec {:04X} (A: {:02X}, X: {:02X}, Y: {:02X}, P: {:02X}, SP: {:02X} MEM: {:02X}{:02X})",
+                self.inst,
                 self.reg_pc,
                 self.reg_a,
                 self.reg_x,
                 self.reg_y,
                 self.reg_p,
-                self.reg_sp
+                self.reg_sp,
+                NESBus::read(0x2),
+                NESBus::read(0x3),
             );
             self.execute();
+            self.inst += 1;
         }
         self.cycles += 1;
     }
@@ -104,8 +166,10 @@ impl NESCPU {
                 let (sum, carry2) = sum.overflowing_add(self.get_flag(CARRY_FLAG));
 
                 // Calculate overflow
-                let ans = mem as i16 + sum as i16 + self.get_flag(CARRY_FLAG) as i16;
-                self.set_flag(OVERFLOW_FLAG, ans > 0xFF || ans < -0x80);
+                let ans = (mem as i8) as i16
+                    + (self.reg_a as i8) as i16
+                    + self.get_flag(CARRY_FLAG) as i16;
+                self.set_flag(OVERFLOW_FLAG, ans > 0x7F || ans < -0x80);
 
                 self.set_flag(CARRY_FLAG, carry1 || carry2);
                 self.set_flag(ZERO_FLAG, sum == 0);
@@ -220,22 +284,9 @@ impl NESCPU {
             }
             InstrType::BRK => {
                 self.set_flag(BRK_FLAG, true);
+                NESCPU::interrupt(InterruptType::BRK);
 
-                if self.get_flag(INT_FLAG) == 0 {
-                    // Ensure that the interrupt flag is not set.
-                    self.set_flag(INT_FLAG, true);
-
-                    self.reg_pc += 1;
-                    self.push_stack((self.reg_pc >> 8) as u8);
-                    self.push_stack((self.reg_pc & 0x00FF) as u8);
-                    self.push_stack(self.reg_p | 0b110000);
-
-                    let lo = NESBus::read(0xFFFE);
-                    let hi = NESBus::read(0xFFFF);
-                    self.reg_pc = u16::from_le_bytes([lo, hi]);
-                }
-
-                inst.cycles
+                inst.cycles - 1
             }
             InstrType::BVC => {
                 let (addr, additional_cycle) = inst.addr_mode.resolve_addr(self).unwrap();
@@ -392,7 +443,10 @@ impl NESCPU {
                 }
                 AddrMode::Indirect(addr) => {
                     let lo = NESBus::read(addr);
-                    let hi = NESBus::read(addr.wrapping_add(1));
+
+                    // Since NES cannot reflect the carry in cycles, we should calculate it separately.
+                    let hi = NESBus::read((addr & 0xFF00) | (addr.wrapping_add(1) & 0x00FF));
+
                     self.reg_pc = u16::from_le_bytes([lo, hi]);
                     inst.cycles
                 }
@@ -557,7 +611,9 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::RTI => {
-                self.reg_p = (self.pop_stack() & !(1 << BRK_FLAG)) | (self.reg_p & (1 << BRK_FLAG));
+                self.reg_p = (self.pop_stack() & !(1 << BRK_FLAG))
+                    | (self.reg_p & (1 << BRK_FLAG))
+                    | 1 << ONE_FLAG;
 
                 let lo = self.pop_stack();
                 let hi = self.pop_stack();
@@ -578,7 +634,9 @@ impl NESCPU {
                 let (diff, borrow2) = diff.overflowing_sub(1 - self.get_flag(CARRY_FLAG));
 
                 // Calculate overflow
-                let ans = self.reg_a as i16 - mem as i16 - (1 - self.get_flag(CARRY_FLAG)) as i16;
+                let ans = (self.reg_a as i8) as i16
+                    - (mem as i8) as i16
+                    - (1 - self.get_flag(CARRY_FLAG)) as i16;
                 self.set_flag(OVERFLOW_FLAG, ans > 0x7F || ans < -0x80);
 
                 self.set_flag(CARRY_FLAG, !(borrow1 || borrow2));
@@ -678,7 +736,7 @@ impl NESCPU {
             }
             InstrType::Illegal => {
                 log!("[CPU] Unimplemented instruction at PC={:#06x}", self.reg_pc);
-                0
+                0xFF
             }
         };
 
