@@ -75,8 +75,15 @@ pub enum InstrType {
     // Other Instructions
     BIT,
     NOP,
+
+    // Illegal Instructions
+    ALR,
+    ANC,
+    ANE,
+    ARR,
+
     // Illegal
-    Illegal(u8),
+    Invalid(u8),
 }
 
 pub enum AddrMode {
@@ -136,6 +143,11 @@ impl Instruction {
             0x0A => Instruction {
                 instr_type: InstrType::ASL,
                 addr_mode: AddrMode::Implied,
+                cycles: 2,
+            },
+            0x0B => Instruction {
+                instr_type: InstrType::ANC,
+                addr_mode: AddrMode::Immediate(NESBus::read(pc + 1)),
                 cycles: 2,
             },
             0x0D => Instruction {
@@ -246,6 +258,11 @@ impl Instruction {
                 addr_mode: AddrMode::Implied,
                 cycles: 2,
             },
+            0x2B => Instruction {
+                instr_type: InstrType::ANC,
+                addr_mode: AddrMode::Immediate(NESBus::read(pc + 1)),
+                cycles: 2,
+            },
             0x2C => Instruction {
                 instr_type: InstrType::BIT,
                 addr_mode: AddrMode::Absolute(u16::from_le_bytes([
@@ -352,6 +369,11 @@ impl Instruction {
             0x4A => Instruction {
                 instr_type: InstrType::LSR,
                 addr_mode: AddrMode::Implied,
+                cycles: 2,
+            },
+            0x4B => Instruction {
+                instr_type: InstrType::ALR,
+                addr_mode: AddrMode::Immediate(NESBus::read(pc + 1)),
                 cycles: 2,
             },
             0x4C => Instruction {
@@ -462,6 +484,11 @@ impl Instruction {
                 addr_mode: AddrMode::Implied,
                 cycles: 2,
             },
+            0x6B => Instruction {
+                instr_type: InstrType::ARR,
+                addr_mode: AddrMode::Immediate(NESBus::read(pc + 1)),
+                cycles: 2,
+            },
             0x6C => Instruction {
                 instr_type: InstrType::JMP,
                 addr_mode: AddrMode::Indirect(u16::from_le_bytes([
@@ -563,6 +590,11 @@ impl Instruction {
             0x8A => Instruction {
                 instr_type: InstrType::TXA,
                 addr_mode: AddrMode::Implied,
+                cycles: 2,
+            },
+            0x8B => Instruction {
+                instr_type: InstrType::ANE,
+                addr_mode: AddrMode::Immediate(NESBus::read(pc + 1)),
                 cycles: 2,
             },
             0x8C => Instruction {
@@ -1003,7 +1035,7 @@ impl Instruction {
                 cycles: 6,
             },
             opcode => Instruction {
-                instr_type: InstrType::Illegal(opcode),
+                instr_type: InstrType::Invalid(opcode),
                 addr_mode: AddrMode::Implied,
                 cycles: 0,
             },

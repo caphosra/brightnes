@@ -722,7 +722,56 @@ impl NESCPU {
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
-            InstrType::Illegal(opcode) => {
+            InstrType::ALR => {
+                let (mem, _) = inst.addr_mode.resolve(self);
+
+                let carry = (self.reg_a & mem) & 1;
+                self.reg_a = (self.reg_a & mem) >> 1;
+
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(CARRY_FLAG, carry != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::ANC => {
+                let (mem, _) = inst.addr_mode.resolve(self);
+
+                let carry = self.reg_a & 0x80;
+                self.reg_a = self.reg_a & mem;
+
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(CARRY_FLAG, carry != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::ANE => {
+                log!("[CPU] ANE is highly unstable.");
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::ARR => {
+                let (mem, _) = inst.addr_mode.resolve(self);
+
+                let ans = (self.reg_a & mem) as i16 + mem as i16;
+                self.set_flag(OVERFLOW_FLAG, ans > 0x7F || ans < -0x80);
+
+                let carry = (self.reg_a & mem) & 1;
+                self.reg_a = ((self.reg_a & mem) >> 1) & (carry << 7);
+
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                // I'm not sure
+                self.set_flag(CARRY_FLAG, carry != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::Invalid(opcode) => {
                 log!(
                     "[CPU] Unimplemented instruction {:02X} at PC={:#06X}",
                     opcode,
