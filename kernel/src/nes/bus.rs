@@ -1,6 +1,11 @@
 use crate::{
     log,
-    nes::{pad::PADS, ppu::NES_PPU, ram::NES_RAM, rom::NES_ROM},
+    nes::{
+        pad::PADS,
+        ppu::{NES_PPU, OAM_DMA_ADDR},
+        ram::NES_RAM,
+        rom::NES_ROM,
+    },
 };
 
 pub struct NESBus;
@@ -13,6 +18,10 @@ impl NESBus {
             ram.ram[addr as usize & 0x7FF]
         } else if addr < 0x4000 {
             // PPU
+            let mut ppu = NES_PPU.write();
+            ppu.read_reg(addr)
+        } else if addr == OAM_DMA_ADDR {
+            // OAM DMA
             let mut ppu = NES_PPU.write();
             ppu.read_reg(addr)
         } else if addr < 0x4016 {
@@ -46,6 +55,10 @@ impl NESBus {
             ram.ram[addr as usize & 0x7FF] = data;
         } else if addr < 0x4000 {
             // PPU
+            let mut ppu = NES_PPU.write();
+            ppu.write_reg(addr, data);
+        } else if addr == OAM_DMA_ADDR {
+            // OAM DMA
             let mut ppu = NES_PPU.write();
             ppu.write_reg(addr, data);
         } else if addr < 0x4016 {

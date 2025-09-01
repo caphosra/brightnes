@@ -328,7 +328,7 @@ const PPU_OAM_DATA_ADDR: u16 = 0x2004;
 const PPU_SCROLL_ADDR: u16 = 0x2005;
 const PPU_ADDR: u16 = 0x2006;
 const PPU_DATA_ADDR: u16 = 0x2007;
-const OAM_DMA_ADDR: u16 = 0x4014;
+pub const OAM_DMA_ADDR: u16 = 0x4014;
 
 const PALETTE_BASE_ADDR: u16 = 0x3f00;
 
@@ -497,6 +497,8 @@ impl NESPPU {
     }
 
     pub fn read_reg(&mut self, addr: u16) -> u8 {
+        // Mirroring every 8 bytes.
+        let addr = 0x2000 + ((addr - 0x2000) & 0x7);
         if addr == PPU_STATUS_ADDR {
             // PPU_STATUS
             self.reg_status
@@ -510,6 +512,14 @@ impl NESPPU {
     }
 
     pub fn write_reg(&mut self, addr: u16, val: u8) {
+        if addr == OAM_DMA_ADDR {
+            // OAM_DMA
+            self.oam.direct_mem_access(val);
+            return;
+        }
+
+        // Mirroring every 8 bytes.
+        let addr = 0x2000 + ((addr - 0x2000) & 0x7);
         if addr == PPU_CTRL_ADDR {
             // PPU_CTRL
             self.reg_ctrl = val;
@@ -546,9 +556,6 @@ impl NESPPU {
             self.write_mem(addr, val);
 
             self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
-        } else if addr == OAM_DMA_ADDR {
-            // OAM_DMA
-            self.oam.direct_mem_access(val);
         } else {
             log!("[PPU] Invalid register writing: {:#06X}", addr);
         }
