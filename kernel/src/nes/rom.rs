@@ -2,7 +2,10 @@ use core::ptr::slice_from_raw_parts;
 
 use spin::{Lazy, Once};
 
-use crate::{log, nes::NES_CONFIG};
+use crate::{
+    log,
+    nes::{ppu::NES_PPU, NES_CONFIG},
+};
 
 #[repr(C)]
 pub struct NESHeader {
@@ -62,5 +65,13 @@ impl NESROM {
 
             NESROM { prg_rom, chr_rom }
         });
+    }
+
+    pub fn copy_chr_to_ppu() {
+        let rom = NES_ROM.get().unwrap();
+        let mut ppu = NES_PPU.write();
+        for (i, &byte) in rom.chr_rom.iter().enumerate() {
+            ppu.chr_mem[i] = byte;
+        }
     }
 }

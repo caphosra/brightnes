@@ -11,9 +11,11 @@ use x86_64::instructions::{hlt, interrupts};
 use crate::font::FontManager;
 use crate::int::Interrupt;
 use crate::logger::Logger;
+use crate::nes::bus::NESBus;
 use crate::nes::cpu::NES_CPU;
-use crate::nes::ppu::NES_FRAME_BUFFER;
+use crate::nes::ppu::{NES_FRAME_BUFFER, NES_PPU};
 use crate::nes::rom::NESROM;
+use crate::proc::{Process, ProcessMode};
 
 #[no_mangle]
 #[inline(never)]
@@ -36,9 +38,12 @@ pub extern "C" fn kernel_main() -> ! {
     log!("[SYS] Hello World from the kernel.");
 
     NESROM::load();
+    NESROM::copy_chr_to_ppu();
     {
         let mut cpu = NES_CPU.write();
-        cpu.reg_pc = 0xC000;
+        let lo = NESBus::read(0xFFFC);
+        let hi = NESBus::read(0xFFFD);
+        cpu.reg_pc = u16::from_le_bytes([lo, hi]);
     }
 
     log!("[SYS] Initialized the NES CPU.");

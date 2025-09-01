@@ -311,6 +311,8 @@ pub struct NESPPU {
     pub x: u16,
     pub y: u16,
 
+    pub chr_mem: [u8; 0x2000],
+
     pub name_table: [NameTable; 4],
     pub attribute_table: [AttributeTable; 4],
     pub bg_palette_table: PaletteTable,
@@ -416,8 +418,7 @@ impl NESPPU {
     pub fn read_mem(&self, addr: u16) -> u8 {
         if addr < 0x2000 {
             // CHR ROM
-            let rom = NES_ROM.get().unwrap();
-            rom.chr_rom[addr as usize]
+            self.chr_mem[addr as usize]
         } else if addr < 0x3000 {
             let idx = (addr - 0x2000) / 0x400;
             let offset = (addr - 0x2000) % 0x400;
@@ -458,7 +459,7 @@ impl NESPPU {
     pub fn write_mem(&mut self, addr: u16, val: u8) {
         if addr < 0x2000 {
             // CHR ROM
-            log!("[PPU] Attempt to write to CHR ROM: {:#06X}", addr);
+            self.chr_mem[addr as usize] = val;
         } else if addr < 0x3000 {
             let idx = (addr - 0x2000) / 0x400;
             let offset = (addr - 0x2000) % 0x400;
@@ -559,8 +560,8 @@ impl NESPPU {
 
         let lo = self.read_mem(id as u16 * PATTERN_SIZE + y as u16);
         let hi = self.read_mem(id as u16 * PATTERN_SIZE + PATTERN_SIZE / 2 + y as u16);
-        let lo_bit = (lo & (1 << x)) >> x;
-        let hi_bit = (hi & (1 << x)) >> x;
+        let lo_bit = (lo & (1 << (7 - x))) >> (7 - x);
+        let hi_bit = (hi & (1 << (7 - x))) >> (7 - x);
         (hi_bit << 1) | lo_bit
     }
 
@@ -658,6 +659,8 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
 
         x: 0,
         y: 0,
+
+        chr_mem: [0; 0x2000],
 
         name_table: [
             NameTable::new(),
