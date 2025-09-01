@@ -1,7 +1,5 @@
 use spin::{Lazy, RwLock};
 
-use crate::{info::InfoProc, logger::Logger, nes::ppu::NES_FRAME_BUFFER};
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ProcessMode {
     Log,
@@ -21,33 +19,31 @@ impl ProcessMode {
 
 pub struct Process;
 
-static CURRENT_PROC_MODE: Lazy<RwLock<ProcessMode>> = Lazy::new(|| RwLock::new(ProcessMode::Log));
+static CURRENT_PROC_MODE: Lazy<RwLock<(ProcessMode, bool)>> =
+    Lazy::new(|| RwLock::new((ProcessMode::Log, false)));
 
 impl Process {
     pub fn switch_proc(mode: ProcessMode) {
         let mut proc_mode = CURRENT_PROC_MODE.write();
-        *proc_mode = mode;
-
-        match mode {
-            ProcessMode::Log => {
-                Logger::render_all();
-            }
-            ProcessMode::Game => {
-                let buffer = NES_FRAME_BUFFER.read();
-                buffer.render_all();
-            }
-            ProcessMode::Info => {
-                InfoProc::render_all();
-            }
-        };
+        *proc_mode = (mode, true);
     }
 
     pub fn shift_proc() {
-        let mode = CURRENT_PROC_MODE.read().shift();
-        Process::switch_proc(mode);
+        let (mode, _) = *CURRENT_PROC_MODE.read();
+        Process::switch_proc(mode.shift());
     }
 
     pub fn mode() -> ProcessMode {
+        let (mode, _) = *CURRENT_PROC_MODE.read();
+        mode
+    }
+
+    pub fn status() -> (ProcessMode, bool) {
         *CURRENT_PROC_MODE.read()
+    }
+
+    pub fn mark_as_switched() {
+        let mut proc_mode = CURRENT_PROC_MODE.write();
+        *proc_mode = (proc_mode.0, false);
     }
 }

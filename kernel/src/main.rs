@@ -9,6 +9,7 @@ use core::panic::PanicInfo;
 use x86_64::instructions::{hlt, interrupts};
 
 use crate::font::FontManager;
+use crate::info::InfoProc;
 use crate::int::Interrupt;
 use crate::logger::Logger;
 use crate::nes::bus::NESBus;
@@ -60,7 +61,32 @@ pub extern "C" fn kernel_main() -> ! {
     log!("[SYS] It's time to enjoy BRIGHTNES!");
 
     loop {
-        hlt();
+        match Process::status() {
+            (ProcessMode::Log, true) => {
+                Logger::render_all();
+                Process::mark_as_switched();
+            }
+            (ProcessMode::Game, true) => {
+                let buffer = NES_FRAME_BUFFER.read();
+                buffer.render_all();
+                Process::mark_as_switched();
+            }
+            (ProcessMode::Info, true) => {
+                InfoProc::render_all();
+                Process::mark_as_switched();
+            }
+            (ProcessMode::Game, _) => {
+                for _ in 0..10 {
+                    NES_CPU.write().clock();
+                    for _ in 0..3 {
+                        NES_PPU.write().clock();
+                    }
+                }
+            }
+            _ => {
+                hlt();
+            }
+        }
     }
 }
 
