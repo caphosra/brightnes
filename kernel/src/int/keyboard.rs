@@ -55,6 +55,9 @@ impl BKeyboard {
                 (KeyState::Down, KeyCode::ArrowDown) => {
                     Logger::scroll(1);
                 }
+                (KeyState::Down, KeyCode::ArrowLeft) => {
+                    Logger::scroll(-0xFFFFFFF);
+                }
                 (KeyState::Down, KeyCode::ArrowRight) => {
                     Logger::reset_scroll();
                 }
