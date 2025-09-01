@@ -114,18 +114,6 @@ impl NESCPU {
             }
         };
         if !is_stalling {
-            log!(
-                "[CPU] {:06} Exec {:04X} (A: {:02X}, X: {:02X}, Y: {:02X}, P: {:02X}, SP: {:02X} MEM: {:02X}{:02X})",
-                self.inst,
-                self.reg_pc,
-                self.reg_a,
-                self.reg_x,
-                self.reg_y,
-                self.reg_p,
-                self.reg_sp,
-                NESBus::read(0x2),
-                NESBus::read(0x3),
-            );
             self.execute();
             self.inst += 1;
         }
@@ -734,8 +722,12 @@ impl NESCPU {
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
-            InstrType::Illegal => {
-                log!("[CPU] Unimplemented instruction at PC={:#06x}", self.reg_pc);
+            InstrType::Illegal(opcode) => {
+                log!(
+                    "[CPU] Unimplemented instruction {:02X} at PC={:#06X}",
+                    opcode,
+                    self.reg_pc
+                );
                 0xFF
             }
         };

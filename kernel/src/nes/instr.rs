@@ -76,7 +76,7 @@ pub enum InstrType {
     BIT,
     NOP,
     // Illegal
-    Illegal,
+    Illegal(u8),
 }
 
 pub enum AddrMode {
@@ -1002,8 +1002,8 @@ impl Instruction {
                 ])),
                 cycles: 6,
             },
-            _ => Instruction {
-                instr_type: InstrType::Illegal,
+            opcode => Instruction {
+                instr_type: InstrType::Illegal(opcode),
                 addr_mode: AddrMode::Implied,
                 cycles: 0,
             },
