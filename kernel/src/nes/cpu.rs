@@ -771,6 +771,70 @@ impl NESCPU {
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
+            InstrType::DCP => {
+                let (mem, _) = inst.addr_mode.resolve(self);
+                let mem = mem.wrapping_add_signed(-1);
+                inst.addr_mode.write(self, mem);
+
+                let (res, borrow) = self.reg_a.overflowing_sub(mem);
+
+                self.set_flag(CARRY_FLAG, !borrow);
+                self.set_flag(ZERO_FLAG, res == 0);
+                self.set_flag(NEG_FLAG, res & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::ISC => {
+                let (mem, _) = inst.addr_mode.resolve(self);
+                let mem = mem.wrapping_add(1);
+                inst.addr_mode.write(self, mem);
+
+                let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
+                let (diff, borrow2) = diff.overflowing_sub(1 - self.get_flag(CARRY_FLAG));
+
+                let ans = (self.reg_a as i8) as i16
+                    - (mem as i8) as i16
+                    - (1 - self.get_flag(CARRY_FLAG)) as i16;
+                self.set_flag(OVERFLOW_FLAG, ans > 0x7F || ans < -0x80);
+
+                self.set_flag(CARRY_FLAG, !(borrow1 || borrow2));
+                self.set_flag(ZERO_FLAG, diff == 0);
+                self.set_flag(NEG_FLAG, diff & 0x80 != 0);
+
+                self.reg_a = diff;
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::LAS => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                self.reg_a = mem & self.reg_sp;
+                self.reg_x = self.reg_a;
+                self.reg_sp = self.reg_a;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::LAX => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                self.reg_a = mem;
+                self.reg_x = self.reg_a;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
+            InstrType::LXA => {
+                log!("[CPU] LXA is highly unstable.");
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
             InstrType::Invalid(opcode) => {
                 log!(
                     "[CPU] Unimplemented instruction {:02X} at PC={:#06X}",
