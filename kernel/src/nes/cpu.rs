@@ -835,6 +835,23 @@ impl NESCPU {
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
+            InstrType::RLA => {
+                let (val, _) = inst.addr_mode.resolve(self);
+                let carry = self.get_flag(CARRY_FLAG);
+                let result = (val << 1) | carry;
+
+                inst.addr_mode.write(self, result);
+
+                self.set_flag(CARRY_FLAG, val & 0x80 != 0);
+
+                self.reg_a = self.reg_a & result;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
             InstrType::Invalid(opcode) => {
                 log!(
                     "[CPU] Unimplemented instruction {:02X} at PC={:#06X}",

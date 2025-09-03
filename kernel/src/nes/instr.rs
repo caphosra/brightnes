@@ -86,6 +86,7 @@ pub enum InstrType {
     LAS,
     LAX,
     LXA,
+    RLA,
 
     // Illegal
     Invalid(u8),
@@ -234,9 +235,11 @@ impl Instruction {
             0x1E => instr!(ASL, AbsoluteX, 6),
             0x20 => instr!(JSR, Absolute, 6),
             0x21 => instr!(AND, IndirectX, 6),
+            0x23 => instr!(RLA, IndirectX, 8),
             0x24 => instr!(BIT, ZeroPage, 3),
             0x25 => instr!(AND, ZeroPage, 3),
             0x26 => instr!(ROL, ZeroPage, 5),
+            0x27 => instr!(RLA, ZeroPage, 5),
             0x28 => instr!(PLP, Implied, 4),
             0x29 => instr!(AND, Immediate, 2),
             0x2A => instr!(ROL, Implied, 2),
@@ -244,14 +247,19 @@ impl Instruction {
             0x2C => instr!(BIT, Absolute, 4),
             0x2D => instr!(AND, Absolute, 4),
             0x2E => instr!(ROL, Absolute, 6),
+            0x2F => instr!(RLA, Absolute, 6),
             0x30 => instr!(BMI, Relative, 2),
             0x31 => instr!(AND, IndirectY, 5),
+            0x33 => instr!(RLA, IndirectY, 8),
             0x35 => instr!(AND, ZeroPageX, 4),
             0x36 => instr!(ROL, ZeroPageX, 6),
+            0x37 => instr!(RLA, ZeroPageX, 6),
             0x38 => instr!(SEC, Implied, 2),
             0x39 => instr!(AND, AbsoluteY, 4),
+            0x3B => instr!(RLA, AbsoluteY, 7),
             0x3D => instr!(AND, AbsoluteX, 4),
             0x3E => instr!(ROL, AbsoluteX, 6),
+            0x3F => instr!(RLA, AbsoluteX, 7),
             0x40 => instr!(RTI, Implied, 6),
             0x41 => instr!(EOR, IndirectX, 6),
             0x45 => instr!(EOR, ZeroPage, 3),
@@ -485,6 +493,13 @@ impl AddrMode {
                 cpu.reg_pc.wrapping_add(*offset as u16).wrapping_add(2) as u8,
                 0,
             ),
+        }
+    }
+
+    pub fn resolve_implied(&self, cpu: &NESCPU, implied: u8) -> (u8, u8) {
+        match self {
+            AddrMode::Implied => (implied, 0),
+            _ => self.resolve(cpu),
         }
     }
 
