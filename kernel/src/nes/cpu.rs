@@ -910,6 +910,62 @@ impl NESCPU {
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
+            InstrType::SLO => {
+                let (val, _) = inst.addr_mode.resolve(self);
+                let result = val << 1;
+
+                inst.addr_mode.write(self, result);
+
+                self.set_flag(CARRY_FLAG, val & 0x80 != 0);
+
+                self.reg_a = self.reg_a | result;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::SRE => {
+                let (val, _) = inst.addr_mode.resolve(self);
+                let result = val >> 1;
+
+                inst.addr_mode.write(self, result);
+
+                self.set_flag(CARRY_FLAG, val & 0x01 != 0);
+
+                self.reg_a = self.reg_a ^ result;
+
+                self.set_flag(ZERO_FLAG, self.reg_a == 0);
+                self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::TAS => {
+                log!("[CPU] TAS is unstable.");
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::USBC => {
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self);
+                let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
+                let (diff, borrow2) = diff.overflowing_sub(1 - self.get_flag(CARRY_FLAG));
+
+                // Calculate overflow
+                let ans = (self.reg_a as i8) as i16
+                    - (mem as i8) as i16
+                    - (1 - self.get_flag(CARRY_FLAG)) as i16;
+                self.set_flag(OVERFLOW_FLAG, ans > 0x7F || ans < -0x80);
+
+                self.set_flag(CARRY_FLAG, !(borrow1 || borrow2));
+                self.set_flag(ZERO_FLAG, diff == 0);
+                self.set_flag(NEG_FLAG, diff & 0x80 != 0);
+
+                self.reg_a = diff;
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles + additional_cycle
+            }
             InstrType::Invalid(opcode) => {
                 log!(
                     "[CPU] Unimplemented instruction {:02X} at PC={:#06X}",
