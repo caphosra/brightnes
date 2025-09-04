@@ -511,8 +511,10 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::NOP => {
+                let (_, additional_cycle) = inst.addr_mode.resolve(self);
+
                 self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                inst.cycles + additional_cycle
             }
             InstrType::ORA => {
                 let (mem, additional_cycle) = inst.addr_mode.resolve(self);
@@ -966,13 +968,9 @@ impl NESCPU {
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles + additional_cycle
             }
-            InstrType::Invalid(opcode) => {
-                log!(
-                    "[CPU] Unimplemented instruction {:02X} at PC={:#06X}",
-                    opcode,
-                    self.reg_pc
-                );
-                0xFF
+            InstrType::JAM => {
+                log!("[CPU] JAM encountered at PC={:#06X}", self.reg_pc);
+                0x1
             }
         };
 
