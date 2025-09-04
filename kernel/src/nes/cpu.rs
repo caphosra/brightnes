@@ -852,6 +852,64 @@ impl NESCPU {
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
+            InstrType::RRA => {
+                let (val, _) = inst.addr_mode.resolve(self);
+                let carry = self.get_flag(CARRY_FLAG);
+                let result = (val >> 1) | (carry << 7);
+
+                inst.addr_mode.write(self, result);
+
+                let carry = val & 0x1;
+                let (sum, carry1) = result.overflowing_add(self.reg_a);
+                let (sum, carry2) = sum.overflowing_add(carry);
+
+                // Calculate overflow
+                let ans = (result as i8) as i16 + (self.reg_a as i8) as i16 + carry as i16;
+                self.set_flag(OVERFLOW_FLAG, ans > 0x7F || ans < -0x80);
+                self.set_flag(CARRY_FLAG, carry1 || carry2);
+                self.set_flag(ZERO_FLAG, sum == 0);
+                self.set_flag(NEG_FLAG, sum & 0x80 != 0);
+
+                self.reg_a = sum;
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::SAX => {
+                let val = self.reg_a & self.reg_x;
+                inst.addr_mode.write(self, val);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::SBX => {
+                let val = self.reg_a & self.reg_x;
+                let (mem, _) = inst.addr_mode.resolve(self);
+                let (res, borrow) = val.overflowing_sub(mem);
+
+                self.reg_x = res;
+
+                self.set_flag(CARRY_FLAG, !borrow);
+                self.set_flag(ZERO_FLAG, res == 0);
+                self.set_flag(NEG_FLAG, res & 0x80 != 0);
+
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::SHA => {
+                log!("[CPU] SHA is unstable.");
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::SHX => {
+                log!("[CPU] SHX is unstable.");
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
+            InstrType::SHY => {
+                log!("[CPU] SHY is unstable.");
+                self.reg_pc += inst.addr_mode.size();
+                inst.cycles
+            }
             InstrType::Invalid(opcode) => {
                 log!(
                     "[CPU] Unimplemented instruction {:02X} at PC={:#06X}",
