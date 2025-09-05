@@ -1,10 +1,10 @@
 use crate::{
     log,
     nes::{
+        cartridge::CARTRIDGE,
         pad::PADS,
         ppu::{NES_PPU, OAM_DMA_ADDR},
         ram::NES_RAM,
-        rom::NES_ROM,
     },
 };
 
@@ -36,15 +36,10 @@ impl NESBus {
             // Pad 2
             let mut pad = PADS.write();
             pad[1].read() as u8
-        } else if addr < 0x8000 {
-            // Reserved
-            log!("[BUS] Attempt to read from reserved area: {:#06X}", addr);
-            0
         } else {
-            // ROM
-            let rom = NES_ROM.get().unwrap();
-            let prog_addr = (addr as usize - 0x8000) % 0x4000;
-            rom.prg_rom[prog_addr]
+            // Cartridge
+            let mut cartridge = CARTRIDGE.write();
+            cartridge.read_cpu_mem(addr)
         }
     }
 
@@ -72,12 +67,10 @@ impl NESBus {
             // Pad 2
             let mut pad = PADS.write();
             pad[1].write(data & 1 == 1);
-        } else if addr < 0x8000 {
-            // Reserved
-            log!("[BUS] Attempt to write to reserved area: {:#06X}", addr);
         } else {
-            // ROM
-            log!("[BUS] Attempt to write to ROM: {:#06X}", addr);
+            // Cartridge
+            let mut cartridge = CARTRIDGE.write();
+            cartridge.write_cpu_mem(addr, data);
         }
     }
 }

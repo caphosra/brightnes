@@ -24,8 +24,11 @@ static CURRENT_PROC_MODE: Lazy<RwLock<(ProcessMode, bool)>> =
 
 impl Process {
     pub fn switch_proc(mode: ProcessMode) {
-        let mut proc_mode = CURRENT_PROC_MODE.write();
-        *proc_mode = (mode, true);
+        let proc_mode = CURRENT_PROC_MODE.try_write();
+        match proc_mode {
+            Some(mut pm) => *pm = (mode, true),
+            None => {}
+        }
     }
 
     pub fn shift_proc() {

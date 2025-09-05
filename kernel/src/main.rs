@@ -13,9 +13,9 @@ use crate::info::InfoProc;
 use crate::int::Interrupt;
 use crate::logger::Logger;
 use crate::nes::bus::NESBus;
+use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::NES_CPU;
 use crate::nes::ppu::{NES_FRAME_BUFFER, NES_PPU};
-use crate::nes::rom::NESROM;
 use crate::proc::{Process, ProcessMode};
 
 #[no_mangle]
@@ -38,13 +38,19 @@ pub extern "C" fn kernel_main() -> ! {
 
     log!("[SYS] Hello World from the kernel.");
 
-    NESROM::load();
-    NESROM::copy_chr_to_ppu();
+    {
+        let mut cartridge = CARTRIDGE.write();
+        cartridge.load();
+    }
+    log!("[SYS] Loaded the cartridge.");
+
     {
         let mut cpu = NES_CPU.write();
         let lo = NESBus::read(0xFFFC);
         let hi = NESBus::read(0xFFFD);
         cpu.reg_pc = u16::from_le_bytes([lo, hi]);
+
+        log!("[SYS] Entry Point: {:#06X}", cpu.reg_pc);
     }
 
     log!("[SYS] Initialized the NES CPU.");

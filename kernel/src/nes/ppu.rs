@@ -6,9 +6,9 @@ use crate::{
     log,
     nes::{
         bus::NESBus,
+        cartridge::{self, CARTRIDGE},
         cpu::{InterruptType, NESCPU},
-        rom::NES_ROM,
-        Mirroring, NES_CONFIG,
+        Mirroring,
     },
     proc::{Process, ProcessMode},
 };
@@ -311,8 +311,6 @@ pub struct NESPPU {
     pub x: u16,
     pub y: u16,
 
-    pub chr_mem: [u8; 0x2000],
-
     pub name_table: [NameTable; 4],
     pub attribute_table: [AttributeTable; 4],
     pub bg_palette_table: PaletteTable,
@@ -343,6 +341,7 @@ impl NESPPU {
         self.reg_ctrl & 0x03
     }
 
+    #[inline(always)]
     pub fn ctrl_increment(&self) -> u16 {
         if self.reg_ctrl & 0x04 != 0 {
             32
@@ -351,6 +350,7 @@ impl NESPPU {
         }
     }
 
+    #[inline(always)]
     pub fn ctrl_sprite_pattern_table(&self) -> u16 {
         if self.reg_ctrl & 0x08 != 0 {
             0x1000
@@ -359,6 +359,7 @@ impl NESPPU {
         }
     }
 
+    #[inline(always)]
     pub fn ctrl_bg_pattern_table(&self) -> u16 {
         if self.reg_ctrl & 0x10 != 0 {
             0x1000
@@ -367,6 +368,7 @@ impl NESPPU {
         }
     }
 
+    #[inline(always)]
     pub fn ctrl_sprite_size(&self) -> u8 {
         if self.reg_ctrl & 0x20 != 0 {
             16
@@ -375,42 +377,52 @@ impl NESPPU {
         }
     }
 
+    #[inline(always)]
     pub fn ctrl_master_slave(&self) -> bool {
         self.reg_ctrl & 0x40 != 0
     }
 
+    #[inline(always)]
     pub fn ctrl_nmi_enable(&self) -> bool {
         self.reg_ctrl & 0x80 != 0
     }
 
+    #[inline(always)]
     pub fn mask_gley_scale(&self) -> bool {
         self.reg_mask & 0x01 != 0
     }
 
+    #[inline(always)]
     pub fn mask_bg_visible_left8(&self) -> bool {
         self.reg_mask & 0x02 != 0
     }
 
+    #[inline(always)]
     pub fn mask_sprite_visible_left8(&self) -> bool {
         self.reg_mask & 0x04 != 0
     }
 
+    #[inline(always)]
     pub fn mask_bg_visible(&self) -> bool {
         self.reg_mask & 0x08 != 0
     }
 
+    #[inline(always)]
     pub fn mask_sprite_visible(&self) -> bool {
         self.reg_mask & 0x10 != 0
     }
 
+    #[inline(always)]
     pub fn mask_emphasize_red(&self) -> bool {
         self.reg_mask & 0x20 != 0
     }
 
+    #[inline(always)]
     pub fn mask_emphasize_green(&self) -> bool {
         self.reg_mask & 0x40 != 0
     }
 
+    #[inline(always)]
     pub fn mask_emphasize_blue(&self) -> bool {
         self.reg_mask & 0x80 != 0
     }
@@ -418,16 +430,19 @@ impl NESPPU {
     pub fn read_mem(&self, addr: u16) -> u8 {
         if addr < 0x2000 {
             // CHR ROM
-            self.chr_mem[addr as usize]
+            let mut cartridge = CARTRIDGE.write();
+            cartridge.read_ppu_mem(addr)
         } else if addr < 0x3000 {
             let idx = (addr - 0x2000) / 0x400;
             let offset = (addr - 0x2000) % 0x400;
 
             // Consider mirroring
-            let config = NES_CONFIG.read();
-            let idx = match config.mirroring {
-                Mirroring::Horizontal => idx / 2,
-                Mirroring::Vertical => idx % 2,
+            let idx = {
+                let cartridge = CARTRIDGE.read();
+                match cartridge.mirroring() {
+                    Mirroring::Horizontal => idx / 2,
+                    Mirroring::Vertical => idx % 2,
+                }
             };
 
             if offset < NAME_TABLE_SIZE as u16 {
@@ -452,23 +467,26 @@ impl NESPPU {
             self.read_mem(addr - 0x20)
         } else {
             log!("[PPU] Invalid address reading: {:#06X}", addr);
-            0
+            self.read_mem(addr & 0x3FFF)
         }
     }
 
     pub fn write_mem(&mut self, addr: u16, val: u8) {
         if addr < 0x2000 {
             // CHR ROM
-            self.chr_mem[addr as usize] = val;
+            let mut cartridge = CARTRIDGE.write();
+            cartridge.write_ppu_mem(addr, val);
         } else if addr < 0x3000 {
             let idx = (addr - 0x2000) / 0x400;
             let offset = (addr - 0x2000) % 0x400;
 
             // Consider mirroring
-            let config = NES_CONFIG.read();
-            let idx = match config.mirroring {
-                Mirroring::Horizontal => idx / 2,
-                Mirroring::Vertical => idx % 2,
+            let idx = {
+                let cartridge = CARTRIDGE.read();
+                match cartridge.mirroring() {
+                    Mirroring::Horizontal => idx / 2,
+                    Mirroring::Vertical => idx % 2,
+                }
             };
 
             if offset < NAME_TABLE_SIZE as u16 {
@@ -493,6 +511,7 @@ impl NESPPU {
             self.write_mem(addr - 0x20, val);
         } else {
             log!("[PPU] Invalid address writing: {:#06X}", addr);
+            self.write_mem(addr & 0x3FFF, val);
         }
     }
 
@@ -666,8 +685,6 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
 
         x: 0,
         y: 0,
-
-        chr_mem: [0; 0x2000],
 
         name_table: [
             NameTable::new(),
