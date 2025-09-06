@@ -15,7 +15,7 @@ use crate::logger::Logger;
 use crate::nes::bus::NESBus;
 use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::NES_CPU;
-use crate::nes::ppu::{NES_FRAME_BUFFER, NES_PPU};
+use crate::nes::ppu::{GAME_FB, NES_PPU};
 use crate::proc::{Process, ProcessMode};
 
 #[no_mangle]
@@ -55,11 +55,6 @@ pub extern "C" fn kernel_main() -> ! {
 
     log!("[SYS] Initialized the NES CPU.");
 
-    {
-        let mut buffer = NES_FRAME_BUFFER.write();
-        buffer.init();
-    }
-
     Interrupt::init();
     interrupts::enable();
 
@@ -73,8 +68,8 @@ pub extern "C" fn kernel_main() -> ! {
                 Process::mark_as_switched();
             }
             (ProcessMode::Game, true) => {
-                let buffer = NES_FRAME_BUFFER.read();
-                buffer.render_all();
+                let mut buffer = GAME_FB.write();
+                buffer.flush_all();
                 Process::mark_as_switched();
             }
             (ProcessMode::Info, true) => {
@@ -82,12 +77,17 @@ pub extern "C" fn kernel_main() -> ! {
                 Process::mark_as_switched();
             }
             (ProcessMode::Game, _) => {
-                for _ in 0..10 {
-                    NES_CPU.write().clock();
-                    for _ in 0..3 {
-                        NES_PPU.write().clock();
+                let mut cpu = NES_CPU.write();
+                for _ in 0..0x10000 {
+                    cpu.clock();
+                    {
+                        let mut ppu = NES_PPU.write();
+                        for _ in 0..3 {
+                            ppu.clock();
+                        }
                     }
                 }
+                GAME_FB.write().flush(false);
             }
             _ => {
                 hlt();

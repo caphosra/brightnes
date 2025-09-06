@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
 
 use crate::{
-    frame_buffer::{PixelColor, RawFrameBuffer},
+    frame_buffer::{FrameBuffer, PixelColor},
     log,
     nes::{
         bus::NESBus,
@@ -16,80 +16,17 @@ use crate::{
 const NES_FRAME_WIDTH: usize = 256;
 const NES_FRAME_HEIGHT: usize = 240;
 
-pub struct NESFrameBuffer {
-    data: Vec<PixelColor>,
-    offset_x: usize,
-    offset_y: usize,
-    pixel_size: usize,
-}
+pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
+    let (width, height) = FrameBuffer::max_size();
 
-pub static NES_FRAME_BUFFER: Lazy<RwLock<NESFrameBuffer>> = Lazy::new(|| {
-    RwLock::new(NESFrameBuffer {
-        data: Vec::with_capacity(NES_FRAME_WIDTH * NES_FRAME_HEIGHT),
-        offset_x: 0,
-        offset_y: 0,
-        pixel_size: 0,
-    })
+    let pixel_size = (width / NES_FRAME_WIDTH).min(height / NES_FRAME_HEIGHT);
+    let offset_x = (width - pixel_size * NES_FRAME_WIDTH) / 2;
+    let offset_y = (height - pixel_size * NES_FRAME_HEIGHT) / 2;
+
+    RwLock::new(FrameBuffer::new(
+        offset_x, offset_y, width, height, pixel_size,
+    ))
 });
-
-impl NESFrameBuffer {
-    pub fn init(&mut self) {
-        let raw_buffer = RawFrameBuffer::get();
-
-        for _ in 0..NES_FRAME_WIDTH * NES_FRAME_HEIGHT {
-            self.data.push(raw_buffer.make_color(0xFF, 0xFF, 0xFF));
-        }
-
-        self.pixel_size =
-            (raw_buffer.width / NES_FRAME_WIDTH).min(raw_buffer.height / NES_FRAME_HEIGHT);
-
-        log!("[FB] Set pixel size: {}", self.pixel_size);
-
-        self.offset_x = (raw_buffer.width - self.pixel_size * NES_FRAME_WIDTH) / 2;
-        self.offset_y = (raw_buffer.height - self.pixel_size * NES_FRAME_HEIGHT) / 2;
-    }
-
-    pub fn bg_color(raw_buffer: &RawFrameBuffer) -> PixelColor {
-        raw_buffer.make_color(0x0, 0x0, 0x0)
-    }
-
-    pub fn render_all(&self) {
-        let raw_buffer = RawFrameBuffer::get();
-        let bg_color = NESFrameBuffer::bg_color(&raw_buffer);
-
-        raw_buffer.clear(bg_color);
-        for y in 0..NES_FRAME_HEIGHT {
-            for x in 0..NES_FRAME_WIDTH {
-                let pixel = self.data[y * NES_FRAME_WIDTH + x];
-                raw_buffer.draw_rect(
-                    self.offset_x + x * self.pixel_size,
-                    self.offset_y + y * self.pixel_size,
-                    self.pixel_size,
-                    self.pixel_size,
-                    pixel,
-                );
-            }
-        }
-    }
-
-    pub fn set_color(&mut self, x: usize, y: usize, color: PixelColor) {
-        assert!(x < NES_FRAME_WIDTH);
-        assert!(y < NES_FRAME_HEIGHT);
-
-        self.data[y * NES_FRAME_WIDTH + x] = color;
-
-        if Process::mode() == ProcessMode::Game {
-            let raw_buffer = RawFrameBuffer::get();
-            raw_buffer.draw_rect(
-                self.offset_x + x * self.pixel_size,
-                self.offset_y + y * self.pixel_size,
-                self.pixel_size,
-                self.pixel_size,
-                color,
-            );
-        }
-    }
-}
 
 const NAME_TABLE_SIZE: usize = 0x3C0;
 
@@ -132,73 +69,72 @@ impl NESColorConverter for PixelColor {
             nes_color
         };
 
-        let buffer = RawFrameBuffer::get();
         match nes_color {
-            0x00 => buffer.make_color(0x62, 0x62, 0x62),
-            0x01 => buffer.make_color(0x00, 0x1C, 0x95),
-            0x02 => buffer.make_color(0x19, 0x04, 0xAC),
-            0x03 => buffer.make_color(0x42, 0x00, 0x9D),
-            0x04 => buffer.make_color(0x61, 0x00, 0x6B),
-            0x05 => buffer.make_color(0x6E, 0x00, 0x25),
-            0x06 => buffer.make_color(0x65, 0x05, 0x00),
-            0x07 => buffer.make_color(0x49, 0x1E, 0x00),
-            0x08 => buffer.make_color(0x22, 0x37, 0x00),
-            0x09 => buffer.make_color(0x00, 0x49, 0x00),
-            0x0A => buffer.make_color(0x00, 0x4F, 0x00),
-            0x0B => buffer.make_color(0x00, 0x48, 0x16),
-            0x0C => buffer.make_color(0x00, 0x35, 0x5E),
-            0x0D => buffer.make_color(0x00, 0x00, 0x00),
-            0x0E => buffer.make_color(0x00, 0x00, 0x00),
-            0x0F => buffer.make_color(0x00, 0x00, 0x00),
-            0x10 => buffer.make_color(0xAB, 0xAB, 0xAB),
-            0x11 => buffer.make_color(0x0C, 0x4E, 0xDB),
-            0x12 => buffer.make_color(0x3D, 0x2E, 0xFF),
-            0x13 => buffer.make_color(0x71, 0x15, 0xF3),
-            0x14 => buffer.make_color(0x9B, 0x0B, 0xB9),
-            0x15 => buffer.make_color(0xB0, 0x12, 0x62),
-            0x16 => buffer.make_color(0xA9, 0x27, 0x04),
-            0x17 => buffer.make_color(0x89, 0x46, 0x00),
-            0x18 => buffer.make_color(0x57, 0x66, 0x00),
-            0x19 => buffer.make_color(0x23, 0x7F, 0x00),
-            0x1A => buffer.make_color(0x00, 0x89, 0x00),
-            0x1B => buffer.make_color(0x00, 0x83, 0x32),
-            0x1C => buffer.make_color(0x00, 0x6D, 0x90),
-            0x1D => buffer.make_color(0x00, 0x00, 0x00),
-            0x1E => buffer.make_color(0x00, 0x00, 0x00),
-            0x1F => buffer.make_color(0x00, 0x00, 0x00),
-            0x20 => buffer.make_color(0xFF, 0xFF, 0xFF),
-            0x21 => buffer.make_color(0x57, 0xA5, 0xFF),
-            0x22 => buffer.make_color(0x82, 0x87, 0xFF),
-            0x23 => buffer.make_color(0xB4, 0x6D, 0xFF),
-            0x24 => buffer.make_color(0xDF, 0x60, 0xFF),
-            0x25 => buffer.make_color(0xF8, 0x63, 0xC6),
-            0x26 => buffer.make_color(0xF8, 0x74, 0x6D),
-            0x27 => buffer.make_color(0xDE, 0x90, 0x20),
-            0x28 => buffer.make_color(0xB3, 0xAE, 0x00),
-            0x29 => buffer.make_color(0x81, 0xC8, 0x00),
-            0x2A => buffer.make_color(0x56, 0xD5, 0x22),
-            0x2B => buffer.make_color(0x3D, 0xD3, 0x6F),
-            0x2C => buffer.make_color(0x3E, 0xC1, 0xC8),
-            0x2D => buffer.make_color(0x4E, 0x4E, 0x4E),
-            0x2E => buffer.make_color(0x00, 0x00, 0x00),
-            0x2F => buffer.make_color(0x00, 0x00, 0x00),
-            0x30 => buffer.make_color(0xFF, 0xFF, 0xFF),
-            0x31 => buffer.make_color(0xBE, 0xE0, 0xFF),
-            0x32 => buffer.make_color(0xCD, 0xD4, 0xFF),
-            0x33 => buffer.make_color(0xE0, 0xCA, 0xFF),
-            0x34 => buffer.make_color(0xF1, 0xC4, 0xFF),
-            0x35 => buffer.make_color(0xFC, 0xC4, 0xEF),
-            0x36 => buffer.make_color(0xFD, 0xCA, 0xCE),
-            0x37 => buffer.make_color(0xF5, 0xD4, 0xAF),
-            0x38 => buffer.make_color(0xE6, 0xDF, 0x9C),
-            0x39 => buffer.make_color(0xD3, 0xE9, 0x9A),
-            0x3A => buffer.make_color(0xC2, 0xEF, 0xA8),
-            0x3B => buffer.make_color(0xB7, 0xEF, 0xC4),
-            0x3C => buffer.make_color(0xB6, 0xEA, 0xE5),
-            0x3D => buffer.make_color(0xB8, 0xB8, 0xB8),
-            0x3E => buffer.make_color(0x00, 0x00, 0x00),
-            0x3F => buffer.make_color(0x00, 0x00, 0x00),
-            _ => buffer.make_color(0x00, 0x00, 0x00),
+            0x00 => FrameBuffer::make_color(0x62, 0x62, 0x62),
+            0x01 => FrameBuffer::make_color(0x00, 0x1C, 0x95),
+            0x02 => FrameBuffer::make_color(0x19, 0x04, 0xAC),
+            0x03 => FrameBuffer::make_color(0x42, 0x00, 0x9D),
+            0x04 => FrameBuffer::make_color(0x61, 0x00, 0x6B),
+            0x05 => FrameBuffer::make_color(0x6E, 0x00, 0x25),
+            0x06 => FrameBuffer::make_color(0x65, 0x05, 0x00),
+            0x07 => FrameBuffer::make_color(0x49, 0x1E, 0x00),
+            0x08 => FrameBuffer::make_color(0x22, 0x37, 0x00),
+            0x09 => FrameBuffer::make_color(0x00, 0x49, 0x00),
+            0x0A => FrameBuffer::make_color(0x00, 0x4F, 0x00),
+            0x0B => FrameBuffer::make_color(0x00, 0x48, 0x16),
+            0x0C => FrameBuffer::make_color(0x00, 0x35, 0x5E),
+            0x0D => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x0E => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x0F => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x10 => FrameBuffer::make_color(0xAB, 0xAB, 0xAB),
+            0x11 => FrameBuffer::make_color(0x0C, 0x4E, 0xDB),
+            0x12 => FrameBuffer::make_color(0x3D, 0x2E, 0xFF),
+            0x13 => FrameBuffer::make_color(0x71, 0x15, 0xF3),
+            0x14 => FrameBuffer::make_color(0x9B, 0x0B, 0xB9),
+            0x15 => FrameBuffer::make_color(0xB0, 0x12, 0x62),
+            0x16 => FrameBuffer::make_color(0xA9, 0x27, 0x04),
+            0x17 => FrameBuffer::make_color(0x89, 0x46, 0x00),
+            0x18 => FrameBuffer::make_color(0x57, 0x66, 0x00),
+            0x19 => FrameBuffer::make_color(0x23, 0x7F, 0x00),
+            0x1A => FrameBuffer::make_color(0x00, 0x89, 0x00),
+            0x1B => FrameBuffer::make_color(0x00, 0x83, 0x32),
+            0x1C => FrameBuffer::make_color(0x00, 0x6D, 0x90),
+            0x1D => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x1E => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x1F => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x20 => FrameBuffer::make_color(0xFF, 0xFF, 0xFF),
+            0x21 => FrameBuffer::make_color(0x57, 0xA5, 0xFF),
+            0x22 => FrameBuffer::make_color(0x82, 0x87, 0xFF),
+            0x23 => FrameBuffer::make_color(0xB4, 0x6D, 0xFF),
+            0x24 => FrameBuffer::make_color(0xDF, 0x60, 0xFF),
+            0x25 => FrameBuffer::make_color(0xF8, 0x63, 0xC6),
+            0x26 => FrameBuffer::make_color(0xF8, 0x74, 0x6D),
+            0x27 => FrameBuffer::make_color(0xDE, 0x90, 0x20),
+            0x28 => FrameBuffer::make_color(0xB3, 0xAE, 0x00),
+            0x29 => FrameBuffer::make_color(0x81, 0xC8, 0x00),
+            0x2A => FrameBuffer::make_color(0x56, 0xD5, 0x22),
+            0x2B => FrameBuffer::make_color(0x3D, 0xD3, 0x6F),
+            0x2C => FrameBuffer::make_color(0x3E, 0xC1, 0xC8),
+            0x2D => FrameBuffer::make_color(0x4E, 0x4E, 0x4E),
+            0x2E => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x2F => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x30 => FrameBuffer::make_color(0xFF, 0xFF, 0xFF),
+            0x31 => FrameBuffer::make_color(0xBE, 0xE0, 0xFF),
+            0x32 => FrameBuffer::make_color(0xCD, 0xD4, 0xFF),
+            0x33 => FrameBuffer::make_color(0xE0, 0xCA, 0xFF),
+            0x34 => FrameBuffer::make_color(0xF1, 0xC4, 0xFF),
+            0x35 => FrameBuffer::make_color(0xFC, 0xC4, 0xEF),
+            0x36 => FrameBuffer::make_color(0xFD, 0xCA, 0xCE),
+            0x37 => FrameBuffer::make_color(0xF5, 0xD4, 0xAF),
+            0x38 => FrameBuffer::make_color(0xE6, 0xDF, 0x9C),
+            0x39 => FrameBuffer::make_color(0xD3, 0xE9, 0x9A),
+            0x3A => FrameBuffer::make_color(0xC2, 0xEF, 0xA8),
+            0x3B => FrameBuffer::make_color(0xB7, 0xEF, 0xC4),
+            0x3C => FrameBuffer::make_color(0xB6, 0xEA, 0xE5),
+            0x3D => FrameBuffer::make_color(0xB8, 0xB8, 0xB8),
+            0x3E => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x3F => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            _ => FrameBuffer::make_color(0x00, 0x00, 0x00),
         }
     }
 }
@@ -703,7 +639,7 @@ impl NESPPU {
         (attribute >> (internal_offset * 2)) & 0b11
     }
 
-    pub fn get_bg_color(&self, x: u8, y: u8) -> Option<PixelColor> {
+    pub fn get_bg_color(&self, x: u8, _y: u8) -> Option<PixelColor> {
         if !self.mask_bg_visible() || (x < 8 && !self.mask_bg_visible_left8()) {
             return None;
         }
@@ -740,17 +676,17 @@ impl NESPPU {
     }
 
     pub fn render(&mut self, x: u8, y: u8) {
-        let mut buffer = NES_FRAME_BUFFER.write();
+        let mut buffer = GAME_FB.write();
         match self.get_bg_color(x, y) {
             Some(color) => {
-                buffer.set_color(x as usize, y as usize, color);
+                buffer.set_chunk(x as usize, y as usize, color);
             }
             None => {
                 let color = PixelColor::from_nes_color(
                     self.read_mem(PALETTE_BASE_ADDR),
                     self.mask_grey_scale(),
                 );
-                buffer.set_color(x as usize, y as usize, color);
+                buffer.set_chunk(x as usize, y as usize, color);
             }
         }
     }
