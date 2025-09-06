@@ -592,6 +592,10 @@ impl NESPPU {
     }
 
     pub fn get_bg_color(&self, x: u8, y: u8) -> Option<PixelColor> {
+        if !self.mask_bg_visible() || (x < 8 && !self.mask_bg_visible_left8()) {
+            return None;
+        }
+
         let global_x = self.reg_scroll_x as u16 + x as u16;
         let global_y = self.reg_scroll_y as u16 + y as u16;
         let x = global_x / BG_TILE_SIZE;
@@ -650,11 +654,12 @@ impl NESPPU {
         }
 
         if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
-            // VBLANK
-            NESCPU::interrupt(InterruptType::NMI);
-
             // Set VBLANK flag
             self.reg_status |= 0x80;
+
+            if self.ctrl_nmi_enable() {
+                NESCPU::interrupt(InterruptType::NMI);
+            }
         }
 
         self.x += 1;
