@@ -33,6 +33,37 @@ impl FrameBuffer {
     }
 
     #[inline(always)]
+    pub fn make_color(&self, r: u8, g: u8, b: u8) -> PixelColor {
+        let mode = RawFrameBuffer::get().mode;
+        if cfg!(target_endian = "little") {
+            match mode {
+                PixelColorMode::Rgb => r as u32 | ((g as u32) << 8) | ((b as u32) << 16),
+                PixelColorMode::Bgr => b as u32 | ((g as u32) << 8) | ((r as u32) << 16),
+            }
+        } else {
+            match mode {
+                PixelColorMode::Rgb => ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8),
+                PixelColorMode::Bgr => ((b as u32) << 24) | ((g as u32) << 16) | ((r as u32) << 8),
+            }
+        }
+    }
+
+    pub fn max_size() -> (usize, usize) {
+        let raw_fb = RawFrameBuffer::get();
+        (raw_fb.width, raw_fb.height)
+    }
+
+    #[inline(always)]
+    pub fn text_width(&self) -> usize {
+        self.width / FONT_WIDTH as usize
+    }
+
+    #[inline(always)]
+    pub fn text_height(&self) -> usize {
+        self.height / FONT_HEIGHT as usize
+    }
+
+    #[inline(always)]
     pub fn set_pixel(&mut self, x: usize, y: usize, color: PixelColor) {
         assert!(x < self.width && y < self.height);
 
@@ -136,6 +167,7 @@ pub struct RawFrameBuffer {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub enum PixelColorMode {
     #[allow(dead_code)]
     Rgb = 0,
@@ -144,18 +176,6 @@ pub enum PixelColorMode {
 }
 
 impl RawFrameBuffer {
-    #[inline(always)]
-    pub fn get_raw_ptr() -> *mut PixelColor {
-        FRAME_BUFFER_ADDR as *mut PixelColor
-    }
-
-    #[inline(always)]
-    pub fn render_sequence(dest: usize, src: *const PixelColor, len: usize) {
-        unsafe {
-            copy_nonoverlapping(src, Self::get_raw_ptr().add(dest), len);
-        }
-    }
-
     pub fn get() -> &'static mut Self {
         unsafe { (FRAME_BUFFER_ADDR as *mut Self).as_mut().unwrap() }
     }
