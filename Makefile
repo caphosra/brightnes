@@ -1,4 +1,4 @@
-.PHONY: resources run run-dbg gdb
+.PHONY: build-kernel build-kernel-dbg resources build run run-dbg gdb
 
 OUT_DIR = ./dest
 NES_FILE = ./res/nes/$(GAME)
@@ -31,12 +31,27 @@ BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 	./bootloader/src/fs.rs \
 	./bootloader/src/main.rs
 
-$(OUT_DIR)/kernel: $(KERNEL_SOURCES)
+KERNEL_RELEASE = ./target/x86_64-unknown-none/release/brightnes-kernel
+KERNEL_DEBUG = ./target/x86_64-unknown-none/debug/brightnes-kernel
+
+$(KERNEL_RELEASE): $(KERNEL_SOURCES)
+	cargo build \
+		--package brightnes-kernel \
+		--target x86_64-unknown-none \
+		--release
+
+build-kernel: $(KERNEL_RELEASE)
+	mkdir -p $(OUT_DIR)
+	cp $(KERNEL_RELEASE) $(OUT_DIR)/kernel
+
+$(KERNEL_DEBUG): $(KERNEL_SOURCES)
 	cargo build \
 		--package brightnes-kernel \
 		--target x86_64-unknown-none
+
+build-kernel-dbg: $(KERNEL_DEBUG)
 	mkdir -p $(OUT_DIR)
-	cp ./target/x86_64-unknown-none/debug/brightnes-kernel $(OUT_DIR)/kernel
+	cp $(KERNEL_DEBUG) $(OUT_DIR)/kernel
 
 $(OUT_DIR)/efi/boot/bootx64.efi: $(BOOTLOADER_SOURCES)
 	cargo build \
@@ -51,13 +66,13 @@ resources: ./res/font/Tamsyn8x16r.psf.gz
 
 	cp $(NES_FILE) $(OUT_DIR)/game.nes
 
-build: $(OUT_DIR)/kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
+build: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 	@echo "Build complete."
 
-run: $(OUT_DIR)/kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
+run: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 	qemu-system-x86_64 $(QEMU_FLAGS)
 
-run-dbg: $(OUT_DIR)/kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
+run-dbg: build-kernel-dbg $(OUT_DIR)/efi/boot/bootx64.efi resources
 	qemu-system-x86_64 $(QEMU_FLAGS) \
 		-S -gdb tcp::31415
 
