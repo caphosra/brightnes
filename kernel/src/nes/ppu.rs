@@ -323,6 +323,11 @@ pub struct NESPPU {
     pub reg_data: u16,
     pub reg_data_is_lo: bool,
 
+    reg_v: u16,
+    reg_t: u16,
+    reg_x: u8,
+    reg_w: bool,
+
     pub x: u16,
     pub y: u16,
 
@@ -352,6 +357,12 @@ const PPU_CYCLE: u16 = 341;
 const PPU_VBLANK: u16 = 22;
 
 impl NESPPU {
+    const COARSE_X_MASK: u16 = 0b00000000_00011111;
+    const COARSE_Y_MASK: u16 = 0b00000011_11100000;
+    const FINE_Y_MASK: u16 = 0b01110000_00000000;
+    const NAME_TABLE_MASK: u16 = 0b00001100_00000000;
+
+    #[inline(always)]
     pub fn ctrl_name_table(&self) -> u8 {
         self.reg_ctrl & 0x03
     }
@@ -535,6 +546,8 @@ impl NESPPU {
         let addr = 0x2000 + ((addr - 0x2000) & 0x7);
         if addr == PPU_STATUS_ADDR {
             // PPU_STATUS
+            self.reg_w = false;
+
             self.reg_status
         } else if addr == PPU_DATA_ADDR {
             // PPU_DATA
@@ -557,9 +570,13 @@ impl NESPPU {
         if addr == PPU_CTRL_ADDR {
             // PPU_CTRL
             self.reg_ctrl = val;
+
+            self.reg_t = (self.reg_t & !Self::NAME_TABLE_MASK) | (((val as u16) & 0x03) << 10);
         } else if addr == PPU_MASK_ADDR {
             // PPU_MASK
             self.reg_mask = val;
+
+            self.reg_w = false;
         } else if addr == PPU_OAM_ADDR {
             // PPU_OAM_ADDR
             self.reg_oam_addr = val;
@@ -576,6 +593,19 @@ impl NESPPU {
                 self.reg_scroll_y = val;
                 self.reg_scroll_is_x = true;
             }
+
+            if self.reg_w {
+                // Second write configures Y
+                self.reg_t = (self.reg_t & (!Self::COARSE_Y_MASK) & (!Self::FINE_Y_MASK))
+                    | (((val as u16) >> 3) << 5)
+                    | (((val as u16) & 0b111) << 12);
+                self.reg_w = false;
+            } else {
+                // First write configures X
+                self.reg_t = (self.reg_t & !Self::COARSE_X_MASK) | ((val as u16) >> 3);
+                self.reg_x = val & 0b111;
+                self.reg_w = true;
+            }
         } else if addr == PPU_ADDR {
             // PPU_ADDR
             if self.reg_data_is_lo {
@@ -584,6 +614,17 @@ impl NESPPU {
             } else {
                 self.reg_data = ((val as u16) << 8) | (self.reg_data & 0x00FF);
                 self.reg_data_is_lo = true;
+            }
+
+            if self.reg_w {
+                // Second write
+                self.reg_t = (self.reg_t & 0xFF00) | val as u16;
+                self.reg_v = self.reg_t;
+                self.reg_w = false;
+            } else {
+                // First write
+                self.reg_t = (self.reg_t & 0x00FF) | (((val as u16) & 0b111111) << 8);
+                self.reg_w = true;
             }
         } else if addr == PPU_DATA_ADDR {
             let addr = self.reg_data;
@@ -604,6 +645,47 @@ impl NESPPU {
         let lo_bit = (lo & (1 << (7 - x))) >> (7 - x);
         let hi_bit = (hi & (1 << (7 - x))) >> (7 - x);
         (hi_bit << 1) | lo_bit
+    }
+
+    #[inline(always)]
+    fn tile_addr(&self) -> u16 {
+        0x2000 | (self.reg_v & 0x0FFF)
+    }
+
+    #[inline(always)]
+    fn attribute_addr(&self) -> u16 {
+        0x23C0 | (self.reg_v & 0x0C00) | ((self.reg_v >> 4) & 0x38) | ((self.reg_v >> 2) & 0x07)
+    }
+
+    fn coarse_x_inc(&mut self) {
+        if (self.reg_v & Self::COARSE_X_MASK) == 31 {
+            self.reg_v &= !Self::COARSE_X_MASK;
+
+            // Switch name table horizontally
+            self.reg_v ^= 0b00000100_00000000;
+        } else {
+            self.reg_v += 1;
+        }
+    }
+
+    fn y_inc(&mut self) {
+        if (self.reg_v & Self::FINE_Y_MASK) != Self::FINE_Y_MASK {
+            self.reg_v += 0x1000;
+        } else {
+            self.reg_v &= !Self::FINE_Y_MASK;
+
+            let mut y = (self.reg_v & Self::COARSE_Y_MASK) >> 5;
+            if y == 29 {
+                y = 0;
+                // Switch name table vertically
+                self.reg_v ^= 0b00001000_00000000;
+            } else if y == 31 {
+                y = 0;
+            } else {
+                y += 1;
+            }
+            self.reg_v = (self.reg_v & !Self::COARSE_Y_MASK) | (y << 5);
+        }
     }
 
     pub fn get_bg_color(&self, x: u8, y: u8) -> Option<PixelColor> {
@@ -708,6 +790,11 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
         reg_status: 0,
         reg_data: 0,
         reg_data_is_lo: false,
+
+        reg_v: 0,
+        reg_t: 0,
+        reg_w: false,
+        reg_x: 0,
 
         x: 0,
         y: 0,
