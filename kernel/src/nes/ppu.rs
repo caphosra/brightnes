@@ -117,21 +117,23 @@ impl AttributeTable {
     }
 }
 
-pub struct PaletteTable {
-    pub colors: [u8; 32],
+trait NESColorConverter {
+    fn from_nes_color(nes_color: u8, grey_scale: bool) -> Self;
 }
 
-impl PaletteTable {
-    pub fn get_encoded_color(&self, palette_idx: usize, color_idx: usize) -> u8 {
-        assert!(palette_idx < 8);
-        assert!(color_idx < 4);
+impl NESColorConverter for PixelColor {
+    fn from_nes_color(nes_color: u8, grey_scale: bool) -> Self {
+        assert!(nes_color < 0x40);
 
-        self.colors[palette_idx * 4 + color_idx] & 0x3F
-    }
+        // Converts to grey scale if needed
+        let nes_color = if grey_scale {
+            nes_color & 0x30
+        } else {
+            nes_color
+        };
 
-    pub fn decode_color(encoded: u8) -> PixelColor {
         let buffer = FrameBuffer::get();
-        match encoded {
+        match nes_color {
             0x00 => buffer.make_color(0x62, 0x62, 0x62),
             0x01 => buffer.make_color(0x00, 0x1C, 0x95),
             0x02 => buffer.make_color(0x19, 0x04, 0xAC),
@@ -199,13 +201,26 @@ impl PaletteTable {
             _ => buffer.make_color(0x00, 0x00, 0x00),
         }
     }
+}
 
-    pub fn get_color(&self, palette_idx: usize, color_idx: usize) -> PixelColor {
+pub struct PaletteTable {
+    pub colors: [u8; 32],
+}
+
+impl PaletteTable {
+    pub fn get_encoded_color(&self, palette_idx: usize, color_idx: usize) -> u8 {
+        assert!(palette_idx < 8);
+        assert!(color_idx < 4);
+
+        self.colors[palette_idx * 4 + color_idx] & 0x3F
+    }
+
+    pub fn get_color(&self, palette_idx: usize, color_idx: usize, grey_scale: bool) -> PixelColor {
         assert!(palette_idx < 8);
         assert!(color_idx < 4);
 
         let encoded = self.get_encoded_color(palette_idx, color_idx);
-        PaletteTable::decode_color(encoded)
+        PixelColor::from_nes_color(encoded, grey_scale)
     }
 }
 
@@ -388,7 +403,7 @@ impl NESPPU {
     }
 
     #[inline(always)]
-    pub fn mask_gley_scale(&self) -> bool {
+    pub fn mask_grey_scale(&self) -> bool {
         self.reg_mask & 0x01 != 0
     }
 
@@ -631,7 +646,10 @@ impl NESPPU {
         if color_idx == 0 {
             None
         } else {
-            Some(self.bg_palette_table.get_color(palette_idx, color_idx))
+            Some(
+                self.bg_palette_table
+                    .get_color(palette_idx, color_idx, self.mask_grey_scale()),
+            )
         }
     }
 
@@ -642,7 +660,10 @@ impl NESPPU {
                 buffer.set_color(x as usize, y as usize, color);
             }
             None => {
-                let color = PaletteTable::decode_color(self.read_mem(PALETTE_BASE_ADDR));
+                let color = PixelColor::from_nes_color(
+                    self.read_mem(PALETTE_BASE_ADDR),
+                    self.mask_grey_scale(),
+                );
                 buffer.set_color(x as usize, y as usize, color);
             }
         }
