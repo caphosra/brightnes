@@ -93,31 +93,36 @@ impl NESCPU {
         }
     }
 
-    pub fn clock(&mut self) {
+    pub fn clock(&mut self) -> u32 {
         {
             let mut int = CPU_INT.write();
             if let Some(int_type) = *int {
+                // The CPU is in an interrupt state.
                 self.interrupt_internal(int_type);
                 *int = None;
-                return;
+
+                // Assume that an interrupt does not consume time.
+                return 0;
             }
         }
 
-        let is_stalling = {
+        let stall_cycles = {
             // Acquire a read-write lock of CPU_STALL.
             let mut stall_cycles = CPU_STALL.write();
-            if *stall_cycles > 0 {
-                *stall_cycles -= 1;
-                true
-            } else {
-                false
-            }
+            let cycles = *stall_cycles;
+            *stall_cycles = 0;
+            cycles
         };
-        if !is_stalling {
-            self.execute();
+        if stall_cycles > 0 {
+            // The CPU is stalling for external reasons.
+            stall_cycles
+        } else {
+            // The CPU is not stalling so execute the next instruction.
+            let cycles = self.execute();
             self.inst += 1;
+            self.cycles += cycles as u64;
+            cycles
         }
-        self.cycles += 1;
     }
 
     pub fn get_flag(&self, flag: usize) -> u8 {
@@ -144,7 +149,7 @@ impl NESCPU {
         NESBus::read(addr)
     }
 
-    pub fn execute(&mut self) {
+    pub fn execute(&mut self) -> u32 {
         let inst = Instruction::fetch(self.reg_pc);
 
         let cycles = match inst.instr_type {
@@ -974,6 +979,6 @@ impl NESCPU {
             }
         };
 
-        NESCPU::stall((cycles - 1) as u32);
+        cycles as u32
     }
 }

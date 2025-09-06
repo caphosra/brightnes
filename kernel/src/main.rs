@@ -77,15 +77,19 @@ pub extern "C" fn kernel_main() -> ! {
                 Process::mark_as_switched();
             }
             (ProcessMode::Game, _) => {
+                const FRAME_CYCLES: usize = 29780;
+
                 let mut cpu = NES_CPU.write();
-                for _ in 0..0x10000 {
-                    cpu.clock();
+                let mut cycles = 0;
+                while cycles < FRAME_CYCLES {
+                    let required = cpu.clock() as usize;
                     {
                         let mut ppu = NES_PPU.write();
-                        for _ in 0..3 {
+                        for _ in 0..(required * 3) {
                             ppu.clock();
                         }
                     }
+                    cycles += required;
                 }
                 GAME_FB.write().flush(false);
             }
