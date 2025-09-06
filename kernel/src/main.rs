@@ -46,8 +46,9 @@ pub extern "C" fn kernel_main() -> ! {
 
     {
         let mut cpu = NES_CPU.write();
-        let lo = NESBus::read(0xFFFC);
-        let hi = NESBus::read(0xFFFD);
+        let mut cartridge = CARTRIDGE.write();
+        let lo = NESBus::read(0xFFFC, &mut cartridge);
+        let hi = NESBus::read(0xFFFD, &mut cartridge);
         cpu.reg_pc = u16::from_le_bytes([lo, hi]);
 
         log!("[SYS] Entry Point: {:#06X}", cpu.reg_pc);
@@ -77,13 +78,14 @@ pub extern "C" fn kernel_main() -> ! {
                 Process::mark_as_switched();
             }
             (ProcessMode::Game, _) => {
+                let mut cartridge = CARTRIDGE.write();
                 let mut cpu = NES_CPU.write();
                 for _ in 0..0x10000 {
-                    cpu.clock();
+                    cpu.clock(&mut cartridge);
                     {
                         let mut ppu = NES_PPU.write();
                         for _ in 0..3 {
-                            ppu.clock();
+                            ppu.clock(&mut cartridge);
                         }
                     }
                 }
