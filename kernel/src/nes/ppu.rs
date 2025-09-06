@@ -698,50 +698,44 @@ impl NESPPU {
         self.reg_v = (self.reg_v & 0b00000100_00011111) | (self.reg_t & 0b01111011_11100000);
     }
 
+    fn get_palette_idx(&self, tile_id: u16, attribute: u8) -> u8 {
+        let internal_offset = (((tile_id >> 6) & 1) << 1) | ((tile_id >> 1) & 1);
+        (attribute >> (internal_offset * 2)) & 0b11
+    }
+
     pub fn get_bg_color(&self, x: u8, y: u8) -> Option<PixelColor> {
         if !self.mask_bg_visible() || (x < 8 && !self.mask_bg_visible_left8()) {
             return None;
         }
 
-        let global_x = self.reg_scroll_x as u16 + x as u16;
-        let global_y = self.reg_scroll_y as u16 + y as u16;
-        let x = global_x / BG_TILE_SIZE;
-        let y = global_y / BG_TILE_SIZE;
+        let tile_addr = self.tile_addr();
+        let attribute_addr = self.attribute_addr();
 
-        let horizontal_tiles = NES_FRAME_WIDTH as u16 / BG_TILE_SIZE;
-        let vertical_tiles = NES_FRAME_HEIGHT as u16 / BG_TILE_SIZE;
+        let attribute = self.read_mem(attribute_addr);
+        let palette_idx = self.get_palette_idx(tile_addr, attribute);
 
-        let x_page = x / horizontal_tiles;
-        let y_page = y / vertical_tiles;
-        let table_idx = (y_page * 2 + x_page) as usize;
+        let relative_y = (self.reg_v & Self::FINE_Y_MASK) >> 12;
 
-        let x_offset = x % horizontal_tiles;
-        let y_offset = y % vertical_tiles;
-        let pattern = self.name_table[table_idx].pattern_ids
-            [(y_offset * horizontal_tiles + x_offset) as usize];
+        let pattern_idx = self.read_mem(tile_addr);
+        let bg_pattern_base_addr = self.ctrl_bg_pattern_table();
 
-        let x_offset = x_offset / 2;
-        let y_offset = y_offset / 2;
-        let attribute = self.attribute_table[table_idx].attributes
-            [(y_offset / 2 * (vertical_tiles / 4) + x_offset / 2) as usize];
+        let lo =
+            self.read_mem(bg_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y);
+        let hi = self.read_mem(
+            bg_pattern_base_addr
+                + pattern_idx as u16 * PATTERN_SIZE
+                + PATTERN_SIZE / 2
+                + relative_y,
+        );
+        let lo_bit = (lo & (1 << (7 - self.relative_x))) >> (7 - self.relative_x);
+        let hi_bit = (hi & (1 << (7 - self.relative_x))) >> (7 - self.relative_x);
+        let color_idx = (hi_bit << 1) | lo_bit;
 
-        let internal_offset = y_offset % 2 * 2 + x_offset % 2;
-        let palette_idx =
-            ((attribute & (0b11 << (internal_offset * 2))) >> (internal_offset * 2)) as usize;
-
-        let color_idx = self.read_pattern(
-            pattern,
-            (global_x % BG_TILE_SIZE) as u8,
-            (global_y % BG_TILE_SIZE) as u8,
-        ) as usize;
-
+        let color = self.read_mem(PALETTE_BASE_ADDR + (palette_idx as u16 * 4) + color_idx as u16);
         if color_idx == 0 {
             None
         } else {
-            Some(
-                self.bg_palette_table
-                    .get_color(palette_idx, color_idx, self.mask_grey_scale()),
-            )
+            Some(PixelColor::from_nes_color(color, self.mask_grey_scale()))
         }
     }
 
