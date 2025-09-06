@@ -1,12 +1,135 @@
+use core::ptr::copy_nonoverlapping;
+
+use alloc::vec;
+use alloc::vec::Vec;
+
 use crate::font::{FontManager, FONT_HEIGHT, FONT_WIDTH};
 
 pub type PixelColor = u32;
 
 const FRAME_BUFFER_ADDR: u64 = 0x2_800_000;
 
-#[repr(C)]
+const COLOR_BLACK: PixelColor = 0x0;
+
 pub struct FrameBuffer {
-    buffer: *mut u32,
+    offset_x: usize,
+    offset_y: usize,
+    pub width: usize,
+    pub height: usize,
+    buffer: Vec<PixelColor>,
+    dirty: Vec<bool>,
+}
+
+impl FrameBuffer {
+    pub fn new(offset_x: usize, offset_y: usize, width: usize, height: usize) -> Self {
+        FrameBuffer {
+            offset_x,
+            offset_y,
+            width,
+            height,
+            buffer: vec![COLOR_BLACK; width * height],
+            dirty: vec![true; height],
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_pixel(&mut self, x: usize, y: usize, color: PixelColor) {
+        assert!(x < self.width && y < self.height);
+
+        let idx = y * self.width + x;
+        if self.buffer[idx] != color {
+            // Mark as dirty only if the color is changed
+            self.buffer[idx] = color;
+            self.dirty[y] = true;
+        }
+    }
+
+    pub fn draw_rect(
+        &mut self,
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+        color: PixelColor,
+    ) {
+        for y_idx in y..(y + height) {
+            for x_idx in x..(x + width) {
+                self.set_pixel(x_idx, y_idx, color);
+            }
+        }
+    }
+
+    pub fn draw_glyph(
+        &mut self,
+        x: usize,
+        y: usize,
+        glyph: &'static [u8],
+        color: PixelColor,
+        background: PixelColor,
+    ) {
+        for y_idx in 0..0x10 {
+            for x_idx in 0..8 {
+                let color = if (glyph[y_idx] & (1 << (7 - x_idx))) != 0 {
+                    color
+                } else {
+                    background
+                };
+                self.set_pixel(x + x_idx, y + y_idx, color);
+            }
+        }
+    }
+
+    pub fn draw_text(
+        &mut self,
+        x: usize,
+        y: usize,
+        text: &[u8],
+        color: PixelColor,
+        background: PixelColor,
+    ) {
+        for (i, &c) in text.iter().enumerate() {
+            let glyph = FontManager::get_glyph_by_char(c);
+            self.draw_glyph(x + i * 8, y, glyph, color, background);
+        }
+    }
+
+    pub fn flush(&mut self, force: bool) {
+        let raw_fb = RawFrameBuffer::get();
+        let managed_fb = self.buffer.as_ptr();
+        let mut idx = 0;
+        for is_dirty in &mut self.dirty {
+            if *is_dirty || force {
+                let dst = (self.offset_y + idx) * raw_fb.width + self.offset_x;
+
+                unsafe {
+                    copy_nonoverlapping(
+                        managed_fb.add(idx * self.width),
+                        raw_fb.buffer.add(dst),
+                        self.width,
+                    );
+                }
+            }
+            *is_dirty = false;
+            idx += 1;
+        }
+    }
+
+    pub fn flush_all(&mut self) {
+        // Fill the entire raw frame buffer with black
+        let raw_fb = RawFrameBuffer::get();
+        unsafe {
+            raw_fb
+                .buffer
+                .write_bytes(0x00, raw_fb.width * raw_fb.height);
+        }
+
+        self.flush(true);
+    }
+}
+
+#[repr(C)]
+pub struct RawFrameBuffer {
+    pub buffer: *mut PixelColor,
     pub width: usize,
     pub height: usize,
     pub mode: PixelColorMode,
@@ -20,7 +143,19 @@ pub enum PixelColorMode {
     Bgr = 1,
 }
 
-impl FrameBuffer {
+impl RawFrameBuffer {
+    #[inline(always)]
+    pub fn get_raw_ptr() -> *mut PixelColor {
+        FRAME_BUFFER_ADDR as *mut PixelColor
+    }
+
+    #[inline(always)]
+    pub fn render_sequence(dest: usize, src: *const PixelColor, len: usize) {
+        unsafe {
+            copy_nonoverlapping(src, Self::get_raw_ptr().add(dest), len);
+        }
+    }
+
     pub fn get() -> &'static mut Self {
         unsafe { (FRAME_BUFFER_ADDR as *mut Self).as_mut().unwrap() }
     }

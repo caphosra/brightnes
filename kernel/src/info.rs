@@ -2,7 +2,7 @@ use alloc::format;
 
 use crate::{
     font::FONT_HEIGHT,
-    frame_buffer::{FrameBuffer, PixelColor},
+    frame_buffer::{RawFrameBuffer, PixelColor},
     nes::{
         cpu::{
             BRK_FLAG, CARRY_FLAG, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, NESCPU, NES_CPU, OVERFLOW_FLAG,
@@ -22,31 +22,31 @@ const BUTTON_SIZE: usize = 10;
 
 impl InfoProc {
     #[inline(always)]
-    pub fn color_background(buffer: &FrameBuffer) -> PixelColor {
+    pub fn color_background(buffer: &RawFrameBuffer) -> PixelColor {
         buffer.make_color(0x20, 0x20, 0x20)
     }
 
     #[inline(always)]
-    pub fn color_text(buffer: &FrameBuffer) -> PixelColor {
+    pub fn color_text(buffer: &RawFrameBuffer) -> PixelColor {
         buffer.make_color(0xFF, 0xFF, 0xFF)
     }
 
     #[inline(always)]
-    pub fn color_pad_base(buffer: &FrameBuffer) -> PixelColor {
+    pub fn color_pad_base(buffer: &RawFrameBuffer) -> PixelColor {
         buffer.make_color(0xF0, 0xF0, 0xF0)
     }
 
     #[inline(always)]
-    pub fn color_pressed(buffer: &FrameBuffer) -> PixelColor {
+    pub fn color_pressed(buffer: &RawFrameBuffer) -> PixelColor {
         buffer.make_color(0xC2, 0x73, 0x19)
     }
 
     #[inline(always)]
-    pub fn color_released(buffer: &FrameBuffer) -> PixelColor {
+    pub fn color_released(buffer: &RawFrameBuffer) -> PixelColor {
         buffer.make_color(0x10, 0x10, 0x10)
     }
 
-    pub fn render_pad_base(buffer: &mut FrameBuffer, player: usize) {
+    pub fn render_pad_base(buffer: &mut RawFrameBuffer, player: usize) {
         let offset_x = if player == 0 {
             PADDING
         } else {
@@ -57,7 +57,7 @@ impl InfoProc {
         buffer.draw_rect(offset_x, offset_y, PAD_WIDTH, PAD_HEIGHT, color);
     }
 
-    pub fn render_button(buffer: &mut FrameBuffer, player: usize, pad: &Pad, button: PadButton) {
+    pub fn render_button(buffer: &mut RawFrameBuffer, player: usize, pad: &Pad, button: PadButton) {
         let offset_x = if player == 0 {
             PADDING
         } else {
@@ -93,7 +93,7 @@ impl InfoProc {
         buffer.draw_rect(offset_x + x, offset_y + y, BUTTON_SIZE, BUTTON_SIZE, color);
     }
 
-    pub fn render_pad(buffer: &mut FrameBuffer, player: usize, pad: &Pad) {
+    pub fn render_pad(buffer: &mut RawFrameBuffer, player: usize, pad: &Pad) {
         InfoProc::render_pad_base(buffer, player);
         InfoProc::render_button(buffer, player, pad, PadButton::A);
         InfoProc::render_button(buffer, player, pad, PadButton::B);
@@ -105,7 +105,7 @@ impl InfoProc {
         InfoProc::render_button(buffer, player, pad, PadButton::Right);
     }
 
-    pub fn render_cpu(buffer: &mut FrameBuffer, cpu: &NESCPU) {
+    pub fn render_cpu(buffer: &mut RawFrameBuffer, cpu: &NESCPU) {
         let offset_x = PADDING;
         let offset_y = PAD_HEIGHT + PADDING * 2;
         let color = InfoProc::color_text(buffer);
@@ -175,7 +175,7 @@ impl InfoProc {
     }
 
     pub fn render_all() {
-        let buffer = FrameBuffer::get();
+        let buffer = RawFrameBuffer::get();
 
         // Clear the frame buffer.
         let background_color = InfoProc::color_background(buffer);

@@ -1,7 +1,7 @@
 use spin::{Lazy, RwLock};
 
 use crate::{
-    frame_buffer::FrameBuffer,
+    frame_buffer::RawFrameBuffer,
     info::InfoProc,
     proc::{Process, ProcessMode},
 };
@@ -60,7 +60,7 @@ impl Pad {
         self.pressed[button as usize] = true;
 
         if Process::mode() == ProcessMode::Info {
-            let buffer = FrameBuffer::get();
+            let buffer = RawFrameBuffer::get();
             InfoProc::render_button(buffer, self.player, self, button);
         }
     }
@@ -69,7 +69,7 @@ impl Pad {
         self.pressed[button as usize] = false;
 
         if Process::mode() == ProcessMode::Info {
-            let buffer = FrameBuffer::get();
+            let buffer = RawFrameBuffer::get();
             InfoProc::render_button(buffer, self.player, self, button);
         }
     }

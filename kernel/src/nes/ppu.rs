@@ -2,11 +2,11 @@ use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
 
 use crate::{
-    frame_buffer::{FrameBuffer, PixelColor},
+    frame_buffer::{PixelColor, RawFrameBuffer},
     log,
     nes::{
         bus::NESBus,
-        cartridge::{self, CARTRIDGE},
+        cartridge::CARTRIDGE,
         cpu::{InterruptType, NESCPU},
         Mirroring,
     },
@@ -34,7 +34,7 @@ pub static NES_FRAME_BUFFER: Lazy<RwLock<NESFrameBuffer>> = Lazy::new(|| {
 
 impl NESFrameBuffer {
     pub fn init(&mut self) {
-        let raw_buffer = FrameBuffer::get();
+        let raw_buffer = RawFrameBuffer::get();
 
         for _ in 0..NES_FRAME_WIDTH * NES_FRAME_HEIGHT {
             self.data.push(raw_buffer.make_color(0xFF, 0xFF, 0xFF));
@@ -49,12 +49,12 @@ impl NESFrameBuffer {
         self.offset_y = (raw_buffer.height - self.pixel_size * NES_FRAME_HEIGHT) / 2;
     }
 
-    pub fn bg_color(raw_buffer: &FrameBuffer) -> PixelColor {
+    pub fn bg_color(raw_buffer: &RawFrameBuffer) -> PixelColor {
         raw_buffer.make_color(0x0, 0x0, 0x0)
     }
 
     pub fn render_all(&self) {
-        let raw_buffer = FrameBuffer::get();
+        let raw_buffer = RawFrameBuffer::get();
         let bg_color = NESFrameBuffer::bg_color(&raw_buffer);
 
         raw_buffer.clear(bg_color);
@@ -79,7 +79,7 @@ impl NESFrameBuffer {
         self.data[y * NES_FRAME_WIDTH + x] = color;
 
         if Process::mode() == ProcessMode::Game {
-            let raw_buffer = FrameBuffer::get();
+            let raw_buffer = RawFrameBuffer::get();
             raw_buffer.draw_rect(
                 self.offset_x + x * self.pixel_size,
                 self.offset_y + y * self.pixel_size,
@@ -132,7 +132,7 @@ impl NESColorConverter for PixelColor {
             nes_color
         };
 
-        let buffer = FrameBuffer::get();
+        let buffer = RawFrameBuffer::get();
         match nes_color {
             0x00 => buffer.make_color(0x62, 0x62, 0x62),
             0x01 => buffer.make_color(0x00, 0x1C, 0x95),

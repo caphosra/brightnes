@@ -4,7 +4,7 @@ use spin::{Lazy, RwLock};
 use x86_64::instructions::interrupts;
 
 use crate::font::{FONT_HEIGHT, FONT_WIDTH};
-use crate::frame_buffer::{FrameBuffer, PixelColor};
+use crate::frame_buffer::{RawFrameBuffer, PixelColor};
 use crate::proc::{Process, ProcessMode};
 
 pub struct Logger {
@@ -30,7 +30,7 @@ impl Logger {
             if line.len() == 0 {
                 self.add_buffer(line.to_string());
             } else {
-                let width = FrameBuffer::get().text_width();
+                let width = RawFrameBuffer::get().text_width();
                 for chunk in line.as_bytes().chunks(width) {
                     if self.buffer.len() == self.scroll {
                         self.scroll += 1;
@@ -50,7 +50,7 @@ impl Logger {
 
     fn scroll_internal(&mut self, lines: i32) {
         // Cannot scroll if the screen is not fully filled.
-        let buffer = FrameBuffer::get();
+        let buffer = RawFrameBuffer::get();
         if self.scroll < buffer.text_height() {
             return;
         }
@@ -93,7 +93,7 @@ impl Logger {
             return;
         }
 
-        let buffer = FrameBuffer::get();
+        let buffer = RawFrameBuffer::get();
         let font_color = buffer.make_color(0xFF, 0xFF, 0xFF);
         let bg_color = Logger::bg_color(buffer);
         let height = buffer.text_height();
@@ -141,12 +141,12 @@ impl Logger {
         });
     }
 
-    fn bg_color(buffer: &FrameBuffer) -> PixelColor {
+    fn bg_color(buffer: &RawFrameBuffer) -> PixelColor {
         buffer.make_color(0x20, 0x20, 0x20)
     }
 
     pub fn render_all() {
-        let buffer = FrameBuffer::get();
+        let buffer = RawFrameBuffer::get();
 
         // Clear the frame buffer.
         buffer.clear(Logger::bg_color(buffer));
