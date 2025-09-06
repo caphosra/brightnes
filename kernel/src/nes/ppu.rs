@@ -328,6 +328,8 @@ pub struct NESPPU {
     reg_x: u8,
     reg_w: bool,
 
+    relative_x: u16,
+
     pub x: u16,
     pub y: u16,
 
@@ -688,6 +690,14 @@ impl NESPPU {
         }
     }
 
+    fn update_horizontal_v(&mut self) {
+        self.reg_v = (self.reg_v & 0b01111011_11100000) | (self.reg_t & 0b00000100_00011111);
+    }
+
+    fn update_vertical_v(&mut self) {
+        self.reg_v = (self.reg_v & 0b00000100_00011111) | (self.reg_t & 0b01111011_11100000);
+    }
+
     pub fn get_bg_color(&self, x: u8, y: u8) -> Option<PixelColor> {
         if !self.mask_bg_visible() || (x < 8 && !self.mask_bg_visible_left8()) {
             return None;
@@ -752,8 +762,29 @@ impl NESPPU {
     }
 
     pub fn clock(&mut self) {
+        if self.x == 0 {
+            self.relative_x = self.reg_x as u16;
+        }
+
         if self.x < NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
             self.render(self.x as u8, self.y as u8);
+
+            self.relative_x += 1;
+            if self.relative_x == 8 {
+                self.relative_x = 0;
+                self.coarse_x_inc();
+            }
+        }
+
+        if self.x == NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
+            self.y_inc();
+        }
+
+        if self.x == NES_FRAME_WIDTH as u16 + 1 && self.y < NES_FRAME_HEIGHT as u16 {
+            self.update_horizontal_v();
+        }
+        if 280 <= self.x && self.x <= 304 && self.y == NES_FRAME_HEIGHT as u16 + PPU_VBLANK - 1 {
+            self.update_vertical_v();
         }
 
         if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
@@ -795,6 +826,8 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
         reg_t: 0,
         reg_w: false,
         reg_x: 0,
+
+        relative_x: 0,
 
         x: 0,
         y: 0,
