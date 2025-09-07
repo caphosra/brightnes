@@ -141,23 +141,6 @@ pub struct PaletteTable {
     pub colors: [u8; 32],
 }
 
-impl PaletteTable {
-    pub fn get_encoded_color(&self, palette_idx: usize, color_idx: usize) -> u8 {
-        assert!(palette_idx < 8);
-        assert!(color_idx < 4);
-
-        self.colors[palette_idx * 4 + color_idx] & 0x3F
-    }
-
-    pub fn get_color(&self, palette_idx: usize, color_idx: usize, grey_scale: bool) -> PixelColor {
-        assert!(palette_idx < 8);
-        assert!(color_idx < 4);
-
-        let encoded = self.get_encoded_color(palette_idx, color_idx);
-        PixelColor::from_nes_color(encoded, grey_scale)
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct Sprite {
     pub y: u8,
@@ -203,17 +186,6 @@ impl OAM {
     pub fn new() -> Self {
         OAM {
             sprites: [Sprite::new(); 64],
-        }
-    }
-
-    pub fn read(&self, addr: u8) -> u8 {
-        let index = (addr / 4) as usize;
-        match addr % 4 {
-            0 => self.sprites[index].y,
-            1 => self.sprites[index].pattern_index,
-            2 => self.sprites[index].attributes,
-            3 => self.sprites[index].x,
-            _ => 0,
         }
     }
 
@@ -284,9 +256,8 @@ const PPU_ADDR: u16 = 0x2006;
 const PPU_DATA_ADDR: u16 = 0x2007;
 pub const OAM_DMA_ADDR: u16 = 0x4014;
 
-const PALETTE_BASE_ADDR: u16 = 0x3f00;
+const PALETTE_BASE_ADDR: u16 = 0x3F00;
 
-const BG_TILE_SIZE: u16 = 8;
 const PATTERN_SIZE: u16 = 16;
 
 const PPU_CYCLE: u16 = 341;
@@ -297,11 +268,6 @@ impl NESPPU {
     const COARSE_Y_MASK: u16 = 0b00000011_11100000;
     const FINE_Y_MASK: u16 = 0b01110000_00000000;
     const NAME_TABLE_MASK: u16 = 0b00001100_00000000;
-
-    #[inline(always)]
-    pub fn ctrl_name_table(&self) -> u8 {
-        self.reg_ctrl & 0x03
-    }
 
     #[inline(always)]
     pub fn ctrl_increment(&self) -> u16 {
@@ -568,20 +534,6 @@ impl NESPPU {
         }
     }
 
-    pub fn read_pattern(&self, id: u8, x: u8, y: u8, cartridge: &mut Cartridge) -> u8 {
-        assert!(x < 8);
-        assert!(y < 8);
-
-        let lo = self.read_mem(id as u16 * PATTERN_SIZE + y as u16, cartridge);
-        let hi = self.read_mem(
-            id as u16 * PATTERN_SIZE + PATTERN_SIZE / 2 + y as u16,
-            cartridge,
-        );
-        let lo_bit = (lo & (1 << (7 - x))) >> (7 - x);
-        let hi_bit = (hi & (1 << (7 - x))) >> (7 - x);
-        (hi_bit << 1) | lo_bit
-    }
-
     #[inline(always)]
     fn tile_addr(&self) -> u16 {
         0x2000 | (self.reg_v & 0x0FFF)
@@ -636,11 +588,7 @@ impl NESPPU {
         (attribute >> (internal_offset * 2)) & 0b11
     }
 
-    pub fn get_bg_color(&self, x: u8, _y: u8, cartridge: &mut Cartridge) -> Option<PixelColor> {
-        if !self.mask_bg_visible() || (x < 8 && !self.mask_bg_visible_left8()) {
-            return None;
-        }
-
+    pub fn get_bg_color(&self, cartridge: &mut Cartridge) -> Option<PixelColor> {
         let tile_addr = self.tile_addr();
         let attribute_addr = self.attribute_addr();
 
@@ -678,20 +626,165 @@ impl NESPPU {
         }
     }
 
+    pub fn get_sprite_color(
+        &self,
+        x: u8,
+        y: u8,
+        priority: usize,
+        bg: bool,
+        cartridge: &mut Cartridge,
+    ) -> Option<PixelColor> {
+        let sprite = &self.oam.sprites[priority];
+        if sprite.background() ^ bg {
+            // The sprite does not match the background priority.
+            return None;
+        }
+
+        let top = (sprite.y as u16) as i16 - 1;
+        let bottom = top + self.ctrl_sprite_size() as i16;
+        let left = sprite.x as i16;
+        let right = left + 8;
+
+        let x = (x as u16) as i16;
+        let y = (y as u16) as i16;
+
+        if !(top <= y && y < bottom && left <= x && x < right) {
+            // The sprite is not visible at the current pixel.
+            return None;
+        }
+
+        let relative_x = (x - left) as u8;
+        let relative_y = (y - top) as u8;
+
+        let relative_x = if sprite.flip_horizontal() {
+            7 - relative_x
+        } else {
+            relative_x
+        };
+        let relative_y = if sprite.flip_vertical() {
+            self.ctrl_sprite_size() - 1 - relative_y
+        } else {
+            relative_y
+        };
+
+        let sprite_pattern_base_addr = self.ctrl_sprite_pattern_table();
+        let pattern_idx = sprite.pattern_index;
+
+        let lo = self.read_mem(
+            sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
+            cartridge,
+        );
+        let hi = self.read_mem(
+            sprite_pattern_base_addr
+                + pattern_idx as u16 * PATTERN_SIZE
+                + PATTERN_SIZE / 2
+                + relative_y as u16,
+            cartridge,
+        );
+        let lo_bit = (lo & (1 << (7 - relative_x))) >> (7 - relative_x);
+        let hi_bit = (hi & (1 << (7 - relative_x))) >> (7 - relative_x);
+        let color_idx = (hi_bit << 1) | lo_bit;
+
+        let color = self.read_mem(
+            PALETTE_BASE_ADDR + 0x10 + (sprite.palette_idx() as u16 * 4) + color_idx as u16,
+            cartridge,
+        );
+        if color_idx == 0 {
+            None
+        } else {
+            Some(PixelColor::from_nes_color(color, self.mask_grey_scale()))
+        }
+    }
+
     pub fn render(&mut self, x: u8, y: u8, cartridge: &mut Cartridge) {
         let mut buffer = GAME_FB.write();
-        match self.get_bg_color(x, y, cartridge) {
-            Some(color) => {
-                buffer.set_chunk(x as usize, y as usize, color);
+
+        let mut zero_color_bg = None;
+        let mut bg_color = None;
+
+        // Emulate sprite 0 hit detection.
+        self.reg_status &= !0x40;
+        let zero_color_fg = self.get_sprite_color(x, y, 0, false, cartridge);
+        if let Some(_) = zero_color_fg {
+            bg_color = Some(self.get_bg_color(cartridge));
+            if let Some(Some(_)) = bg_color {
+                // Sprite 0 hit is occurred.
+                self.reg_status |= 0x40;
             }
-            None => {
-                let color = PixelColor::from_nes_color(
-                    self.read_mem(PALETTE_BASE_ADDR, cartridge),
-                    self.mask_grey_scale(),
-                );
-                buffer.set_chunk(x as usize, y as usize, color);
+        } else {
+            // Consider the background priority sprite.
+            zero_color_bg = Some(self.get_sprite_color(x, y, 0, true, cartridge));
+            if let Some(Some(_)) = zero_color_bg {
+                bg_color = Some(self.get_bg_color(cartridge));
+                if let Some(Some(_)) = bg_color {
+                    // Sprite 0 hit is occurred.
+                    self.reg_status |= 0x40;
+                }
             }
         }
+
+        // Render sprite in front of the background.
+        if self.mask_sprite_visible() && (x >= 8 || self.mask_sprite_visible_left8()) {
+            if let Some(color) = zero_color_fg {
+                buffer.set_chunk(x as usize, y as usize, color);
+                return;
+            }
+            for idx in 1..64 {
+                if let Some(color) = self.get_sprite_color(x, y, idx, false, cartridge) {
+                    buffer.set_chunk(x as usize, y as usize, color);
+                    return;
+                }
+            }
+        }
+
+        // Render the background.
+        if self.mask_bg_visible() && (x >= 8 || self.mask_bg_visible_left8()) {
+            match bg_color {
+                Some(Some(color)) => {
+                    buffer.set_chunk(x as usize, y as usize, color);
+                    return;
+                }
+                Some(None) => {}
+                None => {
+                    // Not rendered yet.
+                    if let Some(color) = self.get_bg_color(cartridge) {
+                        buffer.set_chunk(x as usize, y as usize, color);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Render sprite back of the background.
+        if self.mask_sprite_visible() && (x >= 8 || self.mask_sprite_visible_left8()) {
+            match zero_color_bg {
+                Some(Some(color)) => {
+                    buffer.set_chunk(x as usize, y as usize, color);
+                    return;
+                }
+                Some(None) => {}
+                None => {
+                    // Not rendered yet.
+                    if let Some(color) = self.get_sprite_color(x, y, 0, true, cartridge) {
+                        buffer.set_chunk(x as usize, y as usize, color);
+                        return;
+                    }
+                }
+            }
+            for idx in 1..64 {
+                if let Some(color) = self.get_sprite_color(x, y, idx, true, cartridge) {
+                    buffer.set_chunk(x as usize, y as usize, color);
+                    return;
+                }
+            }
+        }
+
+        // Fill the screen with the background color.
+        let color = PixelColor::from_nes_color(
+            self.read_mem(PALETTE_BASE_ADDR, cartridge),
+            self.mask_grey_scale(),
+        );
+        buffer.set_chunk(x as usize, y as usize, color);
     }
 
     pub fn clock(&mut self, cartridge: &mut Cartridge) {
