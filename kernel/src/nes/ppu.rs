@@ -222,9 +222,6 @@ pub struct NESPPU {
     pub reg_ctrl: u8,
     pub reg_mask: u8,
     pub reg_oam_addr: u8,
-    pub reg_scroll_x: u8,
-    pub reg_scroll_y: u8,
-    pub reg_scroll_is_x: bool,
     pub reg_status: u8,
     pub reg_data: u16,
     pub reg_data_is_lo: bool,
@@ -508,14 +505,6 @@ impl NESPPU {
             self.reg_oam_addr = self.reg_oam_addr.wrapping_add(1);
         } else if addr == PPU_SCROLL_ADDR {
             // PPU_SCROLL
-            if self.reg_scroll_is_x {
-                self.reg_scroll_x = val;
-                self.reg_scroll_is_x = false;
-            } else {
-                self.reg_scroll_y = val;
-                self.reg_scroll_is_x = true;
-            }
-
             if self.reg_w {
                 // Second write configures Y
                 self.reg_t = (self.reg_t & (!Self::COARSE_Y_MASK) & (!Self::FINE_Y_MASK))
@@ -862,9 +851,6 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
         reg_ctrl: 0,
         reg_mask: 0,
         reg_oam_addr: 0,
-        reg_scroll_x: 0,
-        reg_scroll_y: 0,
-        reg_scroll_is_x: true,
         reg_status: 0,
         reg_data: 0,
         reg_data_is_lo: false,
