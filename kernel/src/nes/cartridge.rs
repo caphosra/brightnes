@@ -1,5 +1,7 @@
+use core::alloc::Layout;
 use core::ptr::slice_from_raw_parts_mut;
 
+use alloc::alloc::alloc;
 use spin::{Lazy, RwLock};
 
 use crate::log;
@@ -53,6 +55,7 @@ pub struct Cartridge {
     chr_rom_size: usize,
     pub prg_rom: &'static mut [u8],
     pub chr_rom: &'static mut [u8],
+    bank: usize,
 }
 
 pub static CARTRIDGE: Lazy<RwLock<Cartridge>> = Lazy::new(|| {
@@ -65,24 +68,38 @@ pub static CARTRIDGE: Lazy<RwLock<Cartridge>> = Lazy::new(|| {
         chr_rom_size,
         prg_rom: &mut [],
         chr_rom: &mut [],
+        bank: 0,
     })
 });
 
 impl Cartridge {
     pub fn load(&mut self) {
+        log!("[CTG] Mapper: {}", self.mapper());
+
         // Load the program ROM.
         let prg_rom_start = unsafe { (NES_FILE_ADDR as *mut u8).add(size_of::<NESHeader>()) };
         self.prg_rom =
             unsafe { slice_from_raw_parts_mut(prg_rom_start, self.prg_rom_size).as_mut() }.unwrap();
 
-        log!("[ROM] Loaded PRG ROM ({:#x} bytes)", self.prg_rom_size);
+        log!("[CTG] Loaded PRG ROM ({:#x} bytes)", self.prg_rom_size);
 
         // Load the character ROM.
         let chr_rom_start = unsafe { prg_rom_start.add(self.prg_rom_size) };
         self.chr_rom =
             unsafe { slice_from_raw_parts_mut(chr_rom_start, self.chr_rom_size).as_mut() }.unwrap();
 
-        log!("[ROM] Loaded CHR ROM ({:#x} bytes)", self.chr_rom_size);
+        log!("[CTG] Loaded CHR ROM ({:#x} bytes)", self.chr_rom_size);
+
+        if self.chr_rom_size == 0 {
+            // Prepare CHR RAM if there are no CHR ROM.
+
+            let chr_rom_start = unsafe { alloc(Layout::from_size_align(CHR_ROM_UNIT, 1).unwrap()) };
+            self.chr_rom =
+                unsafe { slice_from_raw_parts_mut(chr_rom_start, CHR_ROM_UNIT).as_mut() }.unwrap();
+
+            self.chr_rom_size = CHR_ROM_UNIT;
+            log!("[CTG] Prepared CHR RAM ({:#x} bytes)", self.chr_rom_size);
+        }
     }
 
     #[inline(always)]
@@ -106,6 +123,22 @@ impl Cartridge {
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
                 self.prg_rom[addr]
             }
+            2 => {
+                // 0x8000-0xBFFF: Switchable bank
+                // 0xC000-0xFFFF: Fixed to the last bank
+                if addr < 0x8000 {
+                    log!("[BUS] Attempt to read unused area: {:#06X}", addr);
+                    return 0;
+                }
+                if addr < 0xC000 {
+                    let addr = (addr as usize - 0x8000) + self.bank * PRG_ROM_UNIT;
+                    self.prg_rom[addr]
+                } else {
+                    let bank_len = self.prg_rom_size / PRG_ROM_UNIT;
+                    let addr = (addr as usize - 0xC000) + (bank_len - 1) * PRG_ROM_UNIT;
+                    self.prg_rom[addr]
+                }
+            }
             _ => {
                 panic!("Unsupported mapper: {}", self.mapper());
             }
@@ -123,6 +156,14 @@ impl Cartridge {
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
                 self.prg_rom[addr] = data;
             }
+            2 => {
+                if addr < 0x8000 {
+                    log!("[BUS] Attempt to write to unused area: {:#06X}", addr);
+                    return;
+                }
+                self.bank = (data & 0b1111) as usize;
+                log!("[CTG] Switched to bank {}", self.bank);
+            }
             _ => {
                 panic!("Unsupported mapper: {}", self.mapper());
             }
@@ -136,6 +177,10 @@ impl Cartridge {
                 let addr = addr as usize % self.chr_rom_size;
                 self.chr_rom[addr]
             }
+            2 => {
+                let addr = addr as usize % self.chr_rom_size;
+                self.chr_rom[addr]
+            }
             _ => {
                 panic!("Unsupported mapper: {}", self.mapper());
             }
@@ -146,6 +191,10 @@ impl Cartridge {
         let mapper = self.mapper();
         match mapper {
             0 => {
+                let addr = addr as usize % self.chr_rom_size;
+                self.chr_rom[addr] = data;
+            }
+            2 => {
                 let addr = addr as usize % self.chr_rom_size;
                 self.chr_rom[addr] = data;
             }
