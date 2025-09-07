@@ -82,18 +82,22 @@ pub extern "C" fn kernel_main() -> ! {
 
                 let mut cartridge = CARTRIDGE.write();
                 let mut cpu = NES_CPU.write();
+                let mut frame_buffer = GAME_FB.write();
+
                 let mut cycles = 0;
                 while cycles < FRAME_CYCLES {
                     let required = cpu.clock(&mut cartridge) as usize;
                     {
                         let mut ppu = NES_PPU.write();
-                        for _ in 0..(required * 3) {
-                            ppu.clock(&mut cartridge);
-                        }
+                        ppu.render_bg(required * 3, &mut frame_buffer, &mut cartridge);
                     }
                     cycles += required;
                 }
-                GAME_FB.write().flush(false);
+                {
+                    let mut ppu = NES_PPU.write();
+                    ppu.complete_rendering(&mut frame_buffer, &mut cartridge);
+                }
+                frame_buffer.flush(false);
             }
             _ => {
                 hlt();

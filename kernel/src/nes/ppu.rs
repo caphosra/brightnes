@@ -1,7 +1,9 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
 
 use crate::{
-    frame_buffer::{FrameBuffer, PixelColor},
+    frame_buffer::{FrameBuffer, PixelColor, UNDEF_COLOR},
     log,
     nes::{
         bus::CPUBus,
@@ -244,6 +246,8 @@ pub struct NESPPU {
     pub bg_palette_table: PaletteTable,
     pub sprite_palette_table: PaletteTable,
     pub oam: OAM,
+
+    bg_transparent: Vec<bool>,
 }
 
 const PPU_CTRL_ADDR: u16 = 0x2000;
@@ -459,6 +463,9 @@ impl NESPPU {
             // PPU_DATA
             let data = self.reg_data_buffer;
             self.reg_data_buffer = self.read_mem(self.reg_data, cartridge);
+
+            self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
+
             data
         } else {
             log!("[PPU] Invalid register reading: {:#06X}", addr);
@@ -590,7 +597,7 @@ impl NESPPU {
         (attribute >> (internal_offset * 2)) & 0b11
     }
 
-    pub fn get_bg_color(&self, cartridge: &mut Cartridge) -> Option<PixelColor> {
+    fn get_bg_color(&self, cartridge: &mut Cartridge) -> Option<PixelColor> {
         let tile_addr = self.tile_addr();
         let attribute_addr = self.attribute_addr();
 
@@ -618,6 +625,7 @@ impl NESPPU {
         let color_idx = (hi_bit << 1) | lo_bit;
 
         if color_idx == 0 {
+            // The color is transparent.
             None
         } else {
             let color = self.read_mem(
@@ -628,210 +636,300 @@ impl NESPPU {
         }
     }
 
-    pub fn get_sprite_color(
-        &self,
-        priority: usize,
-        bg: bool,
+    fn is_bg_transparent(&self, x: u16, y: u16) -> bool {
+        self.bg_transparent[(y as usize) * NES_FRAME_WIDTH + (x as usize)]
+    }
+
+    fn set_bg_transparent(&mut self, x: u16, y: u16, transparent: bool) {
+        self.bg_transparent[(y as usize) * NES_FRAME_WIDTH + (x as usize)] = transparent;
+    }
+
+    /// Render the background.
+    pub fn render_bg(
+        &mut self,
+        cycles: usize,
+        frame_buffer: &mut FrameBuffer,
         cartridge: &mut Cartridge,
-    ) -> Option<PixelColor> {
-        let sprite = &self.oam.sprites[priority];
-        if sprite.background() ^ bg {
-            // The sprite does not match the background priority.
-            return None;
+    ) {
+        let start_x = self.x;
+        let start_y = self.y;
+        for cycle_num in 0..cycles {
+            if self.x == 0 {
+                self.relative_x = self.reg_x as u16;
+            }
+
+            if self.x < NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
+                if self.mask_bg_visible() && (self.x >= 8 || self.mask_bg_visible_left8()) {
+                    // Get the color of the background.
+                    let color = self.get_bg_color(cartridge);
+
+                    if let Some(color) = color {
+                        // The background color is not transparent.
+                        self.set_bg_transparent(self.x, self.y, false);
+
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
+                    } else {
+                        // The background color is transparent.
+                        self.set_bg_transparent(self.x, self.y, true);
+
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, UNDEF_COLOR);
+                    }
+                }
+
+                self.relative_x += 1;
+                if self.relative_x == 8 {
+                    self.relative_x = 0;
+                    self.coarse_x_inc();
+                }
+            }
+
+            if self.x == NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
+                self.y_inc();
+            }
+
+            if self.x == NES_FRAME_WIDTH as u16 + 1 && self.y < NES_FRAME_HEIGHT as u16 {
+                self.update_horizontal_v();
+            }
+            if 280 <= self.x && self.x <= 304 && self.y == NES_FRAME_HEIGHT as u16 + PPU_VBLANK - 1
+            {
+                self.update_vertical_v();
+            }
+
+            if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
+                // Set VBLANK flag
+                self.reg_status |= 0x80;
+
+                if self.ctrl_nmi_enable() {
+                    NESCPU::interrupt(InterruptType::NMI);
+                }
+            }
+
+            self.x += 1;
+            if self.x >= PPU_CYCLE {
+                self.x = 0;
+                self.y += 1;
+            }
+            if self.y >= NES_FRAME_HEIGHT as u16 + PPU_VBLANK {
+                self.y = 0;
+
+                // Clear VBLANK flag
+                self.reg_status &= !0x80;
+
+                // Clear sprite 0 hit flag
+                self.reg_status &= !0x40;
+
+                // This function assumes that it does not cross one frame.
+                // So, if it reaches here, just restart it.
+                self.render_bg(cycles - cycle_num - 1, frame_buffer, cartridge);
+                return;
+            }
         }
 
-        let top = sprite.y as u16 + 1;
-        let bottom = top + self.ctrl_sprite_size() as u16;
-        let left = sprite.x as u16;
-        let right = left + 8;
-
-        if !(top <= self.y && self.y < bottom && left <= self.x && self.x < right) {
-            // The sprite is not visible at the current pixel.
-            return None;
+        let zero_hit = self.sprite_zero_hit(start_x, start_y, self.x, self.y, cartridge);
+        if zero_hit {
+            // Set sprite 0 hit flag
+            self.reg_status |= 0x40;
         }
+    }
 
-        let relative_x = (self.x - left) as u8;
-        let relative_y = (self.y - top) as u8;
-
-        let relative_x = if sprite.flip_horizontal() {
-            7 - relative_x
-        } else {
-            relative_x
-        };
-        let relative_y = if sprite.flip_vertical() {
-            self.ctrl_sprite_size() - 1 - relative_y
-        } else {
-            relative_y
-        };
+    fn sprite_zero_hit(
+        &self,
+        start_x: u16,
+        start_y: u16,
+        end_x: u16,
+        end_y: u16,
+        cartridge: &mut Cartridge,
+    ) -> bool {
+        let sprite = &self.oam.sprites[0];
 
         let sprite_pattern_base_addr = self.ctrl_sprite_pattern_table();
         let pattern_idx = sprite.pattern_index;
 
-        let lo = self.read_mem(
-            sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
-            cartridge,
-        );
-        let hi = self.read_mem(
-            sprite_pattern_base_addr
-                + pattern_idx as u16 * PATTERN_SIZE
-                + PATTERN_SIZE / 2
-                + relative_y as u16,
-            cartridge,
-        );
-        let lo_bit = (lo & (1 << (7 - relative_x))) >> (7 - relative_x);
-        let hi_bit = (hi & (1 << (7 - relative_x))) >> (7 - relative_x);
-        let color_idx = (hi_bit << 1) | lo_bit;
+        let top = sprite.y as u16 + 1;
+        let left = sprite.x as u16;
+        for y in top..top + self.ctrl_sprite_size() as u16 {
+            if y >= NES_FRAME_HEIGHT as u16 {
+                // Detect overflow.
+                break;
+            }
 
-        if color_idx == 0 {
-            None
-        } else {
-            let color = self.read_mem(
-                PALETTE_BASE_ADDR + 0x10 + (sprite.palette_idx() as u16 * 4) + color_idx as u16,
+            // Calculate the relative Y position.
+            let relative_y = if sprite.flip_vertical() {
+                self.ctrl_sprite_size() as u16 - 1 + top - y
+            } else {
+                y - top
+            };
+
+            // Read pattern data.
+            let lo = self.read_mem(
+                sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
                 cartridge,
             );
-            Some(PixelColor::from_nes_color(color, self.mask_grey_scale()))
+            let hi = self.read_mem(
+                sprite_pattern_base_addr
+                    + pattern_idx as u16 * PATTERN_SIZE
+                    + PATTERN_SIZE / 2
+                    + relative_y as u16,
+                cartridge,
+            );
+
+            for x in left..left + 8 {
+                if x >= NES_FRAME_WIDTH as u16 {
+                    // Detect overflow.
+                    break;
+                }
+
+                if self.is_bg_transparent(x, y) {
+                    // Sprite 0 hit is not occurred if the background is transparent.
+                    continue;
+                }
+
+                if x < 8 && !self.mask_bg_visible_left8() {
+                    // Left 8 pixels of the screen are not visible.
+                    continue;
+                }
+
+                // Calculate the relative X position.
+                let relative_x = if sprite.flip_horizontal() {
+                    7 + left - x
+                } else {
+                    x - left
+                };
+
+                // Read pattern data.
+                let lo_bit = (lo & (1 << (7 - relative_x))) >> (7 - relative_x);
+                let hi_bit = (hi & (1 << (7 - relative_x))) >> (7 - relative_x);
+
+                let color_idx = (hi_bit << 1) | lo_bit;
+                if color_idx != 0 {
+                    // Sprite 0 hit is occurred.
+                    let start = start_y as u32 * PPU_CYCLE as u32 + start_x as u32;
+                    let current_pos = y as u32 * PPU_CYCLE as u32 + x as u32;
+                    let end = end_y as u32 * PPU_CYCLE as u32 + end_x as u32;
+                    if start <= current_pos && current_pos < end {
+                        // Sprite 0 hit is occurred in the given range.
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /// Render a sprite.
+    fn render_sprite(
+        &self,
+        priority: usize,
+        frame_buffer: &mut FrameBuffer,
+        cartridge: &mut Cartridge,
+    ) {
+        let sprite = &self.oam.sprites[priority];
+
+        let sprite_pattern_base_addr = self.ctrl_sprite_pattern_table();
+        let pattern_idx = sprite.pattern_index;
+
+        let top = sprite.y as u16 + 1;
+        let left = sprite.x as u16;
+        for y in top..top + self.ctrl_sprite_size() as u16 {
+            if y >= NES_FRAME_HEIGHT as u16 {
+                // Detect overflow.
+                break;
+            }
+
+            // Calculate the relative Y position.
+            let relative_y = if sprite.flip_vertical() {
+                self.ctrl_sprite_size() as u16 - 1 + top - y
+            } else {
+                y - top
+            };
+
+            // Read pattern data.
+            let lo = self.read_mem(
+                sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
+                cartridge,
+            );
+            let hi = self.read_mem(
+                sprite_pattern_base_addr
+                    + pattern_idx as u16 * PATTERN_SIZE
+                    + PATTERN_SIZE / 2
+                    + relative_y as u16,
+                cartridge,
+            );
+
+            for x in left..left + 8 {
+                if x >= NES_FRAME_WIDTH as u16 {
+                    // Detect overflow.
+                    break;
+                }
+
+                if sprite.background() && !self.is_bg_transparent(x, y) {
+                    // The background has priority.
+                    continue;
+                }
+
+                if x < 8 && !self.mask_bg_visible_left8() {
+                    // Left 8 pixels of the screen are not visible.
+                    continue;
+                }
+
+                // Calculate the relative X position.
+                let relative_x = if sprite.flip_horizontal() {
+                    7 + left - x
+                } else {
+                    x - left
+                };
+
+                // Read pattern data.
+                let lo_bit = (lo & (1 << (7 - relative_x))) >> (7 - relative_x);
+                let hi_bit = (hi & (1 << (7 - relative_x))) >> (7 - relative_x);
+
+                let color_idx = (hi_bit << 1) | lo_bit;
+                if color_idx != 0 {
+                    let color = self.read_mem(
+                        PALETTE_BASE_ADDR
+                            + 0x10
+                            + (sprite.palette_idx() as u16 * 4)
+                            + color_idx as u16,
+                        cartridge,
+                    );
+                    let color = PixelColor::from_nes_color(color, self.mask_grey_scale());
+
+                    // Render the pixel.
+                    frame_buffer.set_chunk(x as usize, y as usize, color);
+                }
+            }
         }
     }
 
-    pub fn render(&mut self, x: u8, y: u8, cartridge: &mut Cartridge) {
-        let mut buffer = GAME_FB.write();
-
-        let mut zero_color_bg = None;
-        let mut bg_color = None;
-
-        // Emulate sprite 0 hit detection.
-        let zero_color_fg = self.get_sprite_color(0, false, cartridge);
-        if let Some(_) = zero_color_fg {
-            bg_color = Some(self.get_bg_color(cartridge));
-            if let Some(Some(_)) = bg_color {
-                // Sprite 0 hit is occurred.
-                self.reg_status |= 0x40;
-            }
-        } else {
-            // Consider the background priority sprite.
-            zero_color_bg = Some(self.get_sprite_color(0, true, cartridge));
-            if let Some(Some(_)) = zero_color_bg {
-                bg_color = Some(self.get_bg_color(cartridge));
-                if let Some(Some(_)) = bg_color {
-                    // Sprite 0 hit is occurred.
-                    self.reg_status |= 0x40;
-                }
-            }
-        }
-
-        // Render sprite in front of the background.
-        if self.mask_sprite_visible() && (x >= 8 || self.mask_sprite_visible_left8()) {
-            if let Some(color) = zero_color_fg {
-                buffer.set_chunk(x as usize, y as usize, color);
-                return;
-            }
-            for idx in 1..64 {
-                if let Some(color) = self.get_sprite_color(idx, false, cartridge) {
-                    buffer.set_chunk(x as usize, y as usize, color);
-                    return;
-                }
-            }
-        }
-
-        // Render the background.
-        if self.mask_bg_visible() && (x >= 8 || self.mask_bg_visible_left8()) {
-            match bg_color {
-                Some(Some(color)) => {
-                    buffer.set_chunk(x as usize, y as usize, color);
-                    return;
-                }
-                Some(None) => {}
-                None => {
-                    // Not rendered yet.
-                    if let Some(color) = self.get_bg_color(cartridge) {
-                        buffer.set_chunk(x as usize, y as usize, color);
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Render sprite back of the background.
-        if self.mask_sprite_visible() && (x >= 8 || self.mask_sprite_visible_left8()) {
-            match zero_color_bg {
-                Some(Some(color)) => {
-                    buffer.set_chunk(x as usize, y as usize, color);
-                    return;
-                }
-                Some(None) => {}
-                None => {
-                    // Not rendered yet.
-                    if let Some(color) = self.get_sprite_color(0, true, cartridge) {
-                        buffer.set_chunk(x as usize, y as usize, color);
-                        return;
-                    }
-                }
-            }
-            for idx in 1..64 {
-                if let Some(color) = self.get_sprite_color(idx, true, cartridge) {
-                    buffer.set_chunk(x as usize, y as usize, color);
-                    return;
-                }
-            }
-        }
-
-        // Fill the screen with the background color.
+    fn fill_undef(&mut self, frame_buffer: &mut FrameBuffer, cartridge: &mut Cartridge) {
+        // Fill the undefined pixels with the background color.
         let color = PixelColor::from_nes_color(
             self.read_mem(PALETTE_BASE_ADDR, cartridge),
             self.mask_grey_scale(),
         );
-        buffer.set_chunk(x as usize, y as usize, color);
+
+        for y in 0..NES_FRAME_HEIGHT {
+            for x in 0..NES_FRAME_WIDTH {
+                if frame_buffer.get_chunk(x, y) == UNDEF_COLOR {
+                    frame_buffer.set_chunk(x, y, color);
+                }
+            }
+        }
     }
 
-    pub fn clock(&mut self, cartridge: &mut Cartridge) {
-        if self.x == 0 {
-            self.relative_x = self.reg_x as u16;
-        }
-
-        if self.x < NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
-            self.render(self.x as u8, self.y as u8, cartridge);
-
-            self.relative_x += 1;
-            if self.relative_x == 8 {
-                self.relative_x = 0;
-                self.coarse_x_inc();
+    pub fn complete_rendering(
+        &mut self,
+        frame_buffer: &mut FrameBuffer,
+        cartridge: &mut Cartridge,
+    ) {
+        if self.mask_sprite_visible() {
+            // Render sprites reversely.
+            for priority in 0..64 {
+                self.render_sprite(63 - priority, frame_buffer, cartridge);
             }
         }
-
-        if self.x == NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
-            self.y_inc();
-        }
-
-        if self.x == NES_FRAME_WIDTH as u16 + 1 && self.y < NES_FRAME_HEIGHT as u16 {
-            self.update_horizontal_v();
-        }
-        if 280 <= self.x && self.x <= 304 && self.y == NES_FRAME_HEIGHT as u16 + PPU_VBLANK - 1 {
-            self.update_vertical_v();
-        }
-
-        if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
-            // Set VBLANK flag
-            self.reg_status |= 0x80;
-
-            if self.ctrl_nmi_enable() {
-                NESCPU::interrupt(InterruptType::NMI);
-            }
-        }
-
-        self.x += 1;
-        if self.x >= PPU_CYCLE {
-            self.x = 0;
-            self.y += 1;
-        }
-        if self.y >= NES_FRAME_HEIGHT as u16 + PPU_VBLANK {
-            self.y = 0;
-
-            // Clear VBLANK flag
-            self.reg_status &= 0x7F;
-
-            // Clear sprite 0 hit flag
-            self.reg_status &= !0x40;
-        }
+        // Fill the undefined pixels with the background color.
+        self.fill_undef(frame_buffer, cartridge);
     }
 }
 
@@ -871,5 +969,6 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
         bg_palette_table: PaletteTable { colors: [0; 32] },
         sprite_palette_table: PaletteTable { colors: [0; 32] },
         oam: OAM::new(),
+        bg_transparent: vec![true; NES_FRAME_WIDTH * NES_FRAME_HEIGHT],
     })
 });
