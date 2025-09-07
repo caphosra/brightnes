@@ -801,7 +801,7 @@ impl NESPPU {
                 if color_idx != 0 {
                     // Sprite 0 hit is occurred.
                     let start = start_y * PPU_CYCLE + start_x;
-                    let current_pos = self.y * PPU_CYCLE + self.x;
+                    let current_pos = y * PPU_CYCLE + x;
                     let end = end_y * PPU_CYCLE + end_x;
                     if start <= current_pos && current_pos < end {
                         // Sprite 0 hit is occurred in the given range.
