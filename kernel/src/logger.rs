@@ -74,6 +74,12 @@ impl Logger {
         // Rerender the screen.
         if Process::mode() == ProcessMode::Log {
             self.render_internal(before, self.scroll);
+
+            // Flush the frame buffer.
+            {
+                let mut buffer = LOG_FB.write();
+                buffer.flush(false);
+            }
         }
     }
 

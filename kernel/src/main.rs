@@ -12,7 +12,7 @@ use crate::font::FontManager;
 use crate::info::InfoProc;
 use crate::int::Interrupt;
 use crate::logger::Logger;
-use crate::nes::bus::NESBus;
+use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::NES_CPU;
 use crate::nes::ppu::{GAME_FB, NES_PPU};
@@ -47,8 +47,8 @@ pub extern "C" fn kernel_main() -> ! {
     {
         let mut cpu = NES_CPU.write();
         let mut cartridge = CARTRIDGE.write();
-        let lo = NESBus::read(0xFFFC, &mut cartridge);
-        let hi = NESBus::read(0xFFFD, &mut cartridge);
+        let lo = CPUBus::read(0xFFFC, &mut cartridge);
+        let hi = CPUBus::read(0xFFFD, &mut cartridge);
         cpu.reg_pc = u16::from_le_bytes([lo, hi]);
 
         log!("[SYS] Entry Point: {:#06X}", cpu.reg_pc);

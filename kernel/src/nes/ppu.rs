@@ -4,7 +4,7 @@ use crate::{
     frame_buffer::{FrameBuffer, PixelColor},
     log,
     nes::{
-        bus::NESBus,
+        bus::CPUBus,
         cartridge::Cartridge,
         cpu::{InterruptType, NESCPU},
         Mirroring,
@@ -212,7 +212,7 @@ impl OAM {
         let base_addr = (hi as u16) << 8;
         for i in 0..=0xFF {
             let addr = base_addr + i as u16;
-            self.write(i, NESBus::read(addr, cartridge));
+            self.write(i, CPUBus::read(addr, cartridge));
         }
         NESCPU::stall(OAM_DMA_CYCLES);
     }

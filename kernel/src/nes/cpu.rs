@@ -1,7 +1,7 @@
 use spin::{Lazy, RwLock};
 
 use crate::log;
-use crate::nes::bus::NESBus;
+use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::instr::{AddrMode, InstrType, Instruction};
 
@@ -75,8 +75,8 @@ impl NESCPU {
                 self.push_stack((self.reg_pc & 0x00FF) as u8, cartridge);
                 self.push_stack(self.reg_p | 0b110000, cartridge);
 
-                let lo = NESBus::read(0xFFFE, cartridge);
-                let hi = NESBus::read(0xFFFF, cartridge);
+                let lo = CPUBus::read(0xFFFE, cartridge);
+                let hi = CPUBus::read(0xFFFF, cartridge);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
             }
             InterruptType::NMI => {
@@ -87,8 +87,8 @@ impl NESCPU {
 
                 self.push_stack((self.reg_p & 0b11001111) | 1 << 5, cartridge);
 
-                let lo = NESBus::read(0xFFFA, cartridge);
-                let hi = NESBus::read(0xFFFB, cartridge);
+                let lo = CPUBus::read(0xFFFA, cartridge);
+                let hi = CPUBus::read(0xFFFB, cartridge);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
             }
         }
@@ -140,14 +140,14 @@ impl NESCPU {
 
     pub fn push_stack(&mut self, data: u8, cartridge: &mut Cartridge) {
         let addr = 0x0100 | self.reg_sp as u16;
-        NESBus::write(addr, data, cartridge);
+        CPUBus::write(addr, data, cartridge);
         self.reg_sp = self.reg_sp.wrapping_sub(1);
     }
 
     pub fn pop_stack(&mut self, cartridge: &mut Cartridge) -> u8 {
         self.reg_sp = self.reg_sp.wrapping_add(1);
         let addr = 0x0100 | self.reg_sp as u16;
-        NESBus::read(addr, cartridge)
+        CPUBus::read(addr, cartridge)
     }
 
     pub fn execute(&mut self, cartridge: &mut Cartridge) -> u32 {
@@ -444,11 +444,11 @@ impl NESCPU {
                     inst.cycles
                 }
                 AddrMode::Indirect(addr) => {
-                    let lo = NESBus::read(addr, cartridge);
+                    let lo = CPUBus::read(addr, cartridge);
 
                     // Since NES cannot reflect the carry in cycles, we should calculate it separately.
                     let hi =
-                        NESBus::read((addr & 0xFF00) | (addr.wrapping_add(1) & 0x00FF), cartridge);
+                        CPUBus::read((addr & 0xFF00) | (addr.wrapping_add(1) & 0x00FF), cartridge);
 
                     self.reg_pc = u16::from_le_bytes([lo, hi]);
                     inst.cycles

@@ -8,9 +8,9 @@ use crate::{
     },
 };
 
-pub struct NESBus;
+pub struct CPUBus;
 
-impl NESBus {
+impl CPUBus {
     pub fn read(addr: u16, cartridge: &mut Cartridge) -> u8 {
         if addr < 0x2000 {
             // RAM
