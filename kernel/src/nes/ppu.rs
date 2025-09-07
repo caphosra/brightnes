@@ -384,7 +384,11 @@ impl NESPPU {
             self.bg_palette_table.colors[addr as usize - 0x3F00]
         } else if addr < 0x3F20 {
             // Sprite Palette
-            self.sprite_palette_table.colors[addr as usize - 0x3F10]
+            if addr % 4 == 0 {
+                self.read_mem(addr - 0x10, cartridge)
+            } else {
+                self.sprite_palette_table.colors[addr as usize - 0x3F10]
+            }
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F
             self.read_mem(addr - 0x20, cartridge)
@@ -426,7 +430,11 @@ impl NESPPU {
             self.bg_palette_table.colors[addr as usize - 0x3F00] = val;
         } else if addr < 0x3F20 {
             // Sprite Palette
-            self.sprite_palette_table.colors[addr as usize - 0x3F10] = val;
+            if addr % 4 == 0 {
+                self.write_mem(addr - 0x10, val, cartridge);
+            } else {
+                self.sprite_palette_table.colors[addr as usize - 0x3F10] = val;
+            }
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F
             self.write_mem(addr - 0x20, val, cartridge);
