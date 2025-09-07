@@ -652,8 +652,6 @@ impl NESPPU {
 
     pub fn get_sprite_color(
         &self,
-        x: u8,
-        y: u8,
         priority: usize,
         bg: bool,
         cartridge: &mut Cartridge,
@@ -664,21 +662,18 @@ impl NESPPU {
             return None;
         }
 
-        let top = (sprite.y as u16) as i16 - 1;
-        let bottom = top + self.ctrl_sprite_size() as i16;
-        let left = sprite.x as i16;
+        let top = sprite.y as u16 + 1;
+        let bottom = top + self.ctrl_sprite_size() as u16;
+        let left = sprite.x as u16;
         let right = left + 8;
 
-        let x = (x as u16) as i16;
-        let y = (y as u16) as i16;
-
-        if !(top <= y && y < bottom && left <= x && x < right) {
+        if !(top <= self.y && self.y < bottom && left <= self.x && self.x < right) {
             // The sprite is not visible at the current pixel.
             return None;
         }
 
-        let relative_x = (x - left) as u8;
-        let relative_y = (y - top) as u8;
+        let relative_x = (self.x - left) as u8;
+        let relative_y = (self.y - top) as u8;
 
         let relative_x = if sprite.flip_horizontal() {
             7 - relative_x
@@ -728,7 +723,7 @@ impl NESPPU {
 
         // Emulate sprite 0 hit detection.
         self.reg_status &= !0x40;
-        let zero_color_fg = self.get_sprite_color(x, y, 0, false, cartridge);
+        let zero_color_fg = self.get_sprite_color(0, false, cartridge);
         if let Some(_) = zero_color_fg {
             bg_color = Some(self.get_bg_color(cartridge));
             if let Some(Some(_)) = bg_color {
@@ -737,7 +732,7 @@ impl NESPPU {
             }
         } else {
             // Consider the background priority sprite.
-            zero_color_bg = Some(self.get_sprite_color(x, y, 0, true, cartridge));
+            zero_color_bg = Some(self.get_sprite_color(0, true, cartridge));
             if let Some(Some(_)) = zero_color_bg {
                 bg_color = Some(self.get_bg_color(cartridge));
                 if let Some(Some(_)) = bg_color {
@@ -754,7 +749,7 @@ impl NESPPU {
                 return;
             }
             for idx in 1..64 {
-                if let Some(color) = self.get_sprite_color(x, y, idx, false, cartridge) {
+                if let Some(color) = self.get_sprite_color(idx, false, cartridge) {
                     buffer.set_chunk(x as usize, y as usize, color);
                     return;
                 }
@@ -789,14 +784,14 @@ impl NESPPU {
                 Some(None) => {}
                 None => {
                     // Not rendered yet.
-                    if let Some(color) = self.get_sprite_color(x, y, 0, true, cartridge) {
+                    if let Some(color) = self.get_sprite_color(0, true, cartridge) {
                         buffer.set_chunk(x as usize, y as usize, color);
                         return;
                     }
                 }
             }
             for idx in 1..64 {
-                if let Some(color) = self.get_sprite_color(x, y, idx, true, cartridge) {
+                if let Some(color) = self.get_sprite_color(idx, true, cartridge) {
                     buffer.set_chunk(x as usize, y as usize, color);
                     return;
                 }
