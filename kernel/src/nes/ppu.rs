@@ -226,8 +226,6 @@ pub struct NESPPU {
     pub reg_data: u16,
     pub reg_data_is_lo: bool,
 
-    reg_data_buffer: u8,
-
     reg_v: u16,
     reg_t: u16,
     reg_x: u8,
@@ -383,20 +381,10 @@ impl NESPPU {
             self.read_mem(addr - 0x1000, cartridge)
         } else if addr < 0x3F10 {
             // Background Palette
-            if addr % 4 == 0 {
-                // Mirrors of $3F00.
-                self.bg_palette_table.colors[0]
-            } else {
-                self.bg_palette_table.colors[addr as usize - 0x3F00]
-            }
+            self.bg_palette_table.colors[addr as usize - 0x3F00]
         } else if addr < 0x3F20 {
             // Sprite Palette
-            if addr % 4 == 0 {
-                // Mirrors of $3F00.
-                self.bg_palette_table.colors[0]
-            } else {
-                self.sprite_palette_table.colors[addr as usize - 0x3F10]
-            }
+            self.sprite_palette_table.colors[addr as usize - 0x3F10]
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F
             self.read_mem(addr - 0x20, cartridge)
@@ -435,20 +423,10 @@ impl NESPPU {
             self.write_mem(addr - 0x1000, val, cartridge);
         } else if addr < 0x3F10 {
             // Background Palette
-            if addr % 4 == 0 {
-                // Mirrors of $3F00.
-                self.bg_palette_table.colors[0] = val;
-            } else {
-                self.bg_palette_table.colors[addr as usize - 0x3F00] = val;
-            }
+            self.bg_palette_table.colors[addr as usize - 0x3F00] = val;
         } else if addr < 0x3F20 {
             // Sprite Palette
-            if addr % 4 == 0 {
-                // Mirrors of $3F00.
-                self.bg_palette_table.colors[0] = val;
-            } else {
-                self.sprite_palette_table.colors[addr as usize - 0x3F10] = val;
-            }
+            self.sprite_palette_table.colors[addr as usize - 0x3F10] = val;
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F
             self.write_mem(addr - 0x20, val, cartridge);
@@ -468,9 +446,7 @@ impl NESPPU {
             self.reg_status
         } else if addr == PPU_DATA_ADDR {
             // PPU_DATA
-            let prev_data = self.reg_data_buffer;
-            self.reg_data_buffer = self.read_mem(self.reg_data, cartridge);
-            prev_data
+            self.read_mem(self.reg_data, cartridge)
         } else {
             log!("[PPU] Invalid register reading: {:#06X}", addr);
             0
@@ -854,8 +830,6 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
         reg_status: 0,
         reg_data: 0,
         reg_data_is_lo: false,
-
-        reg_data_buffer: 0,
 
         reg_v: 0,
         reg_t: 0,
