@@ -226,6 +226,8 @@ pub struct NESPPU {
     pub reg_data: u16,
     pub reg_data_is_lo: bool,
 
+    reg_data_buffer: u8,
+
     reg_v: u16,
     reg_t: u16,
     reg_x: u8,
@@ -454,7 +456,9 @@ impl NESPPU {
             self.reg_status
         } else if addr == PPU_DATA_ADDR {
             // PPU_DATA
-            self.read_mem(self.reg_data, cartridge)
+            let data = self.reg_data_buffer;
+            self.reg_data_buffer = self.read_mem(self.reg_data, cartridge);
+            data
         } else {
             log!("[PPU] Invalid register reading: {:#06X}", addr);
             0
@@ -838,6 +842,8 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
         reg_status: 0,
         reg_data: 0,
         reg_data_is_lo: false,
+
+        reg_data_buffer: 0,
 
         reg_v: 0,
         reg_t: 0,
