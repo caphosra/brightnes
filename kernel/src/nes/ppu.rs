@@ -722,7 +722,6 @@ impl NESPPU {
         let mut bg_color = None;
 
         // Emulate sprite 0 hit detection.
-        self.reg_status &= !0x40;
         let zero_color_fg = self.get_sprite_color(0, false, cartridge);
         if let Some(_) = zero_color_fg {
             bg_color = Some(self.get_bg_color(cartridge));
@@ -851,6 +850,9 @@ impl NESPPU {
 
             // Clear VBLANK flag
             self.reg_status &= 0x7F;
+
+            // Clear sprite 0 hit flag
+            self.reg_status &= !0x40;
         }
     }
 }
