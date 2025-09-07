@@ -214,6 +214,7 @@ impl OAM {
             let addr = base_addr + i as u16;
             self.write(i, CPUBus::read(addr, cartridge));
         }
+        log!("[OAM] OAM DMA from {:#06X}", base_addr);
         NESCPU::stall(OAM_DMA_CYCLES);
     }
 }
@@ -616,13 +617,13 @@ impl NESPPU {
         let hi_bit = (hi & (1 << (7 - self.relative_x))) >> (7 - self.relative_x);
         let color_idx = (hi_bit << 1) | lo_bit;
 
-        let color = self.read_mem(
-            PALETTE_BASE_ADDR + (palette_idx as u16 * 4) + color_idx as u16,
-            cartridge,
-        );
         if color_idx == 0 {
             None
         } else {
+            let color = self.read_mem(
+                PALETTE_BASE_ADDR + (palette_idx as u16 * 4) + color_idx as u16,
+                cartridge,
+            );
             Some(PixelColor::from_nes_color(color, self.mask_grey_scale()))
         }
     }
@@ -681,13 +682,13 @@ impl NESPPU {
         let hi_bit = (hi & (1 << (7 - relative_x))) >> (7 - relative_x);
         let color_idx = (hi_bit << 1) | lo_bit;
 
-        let color = self.read_mem(
-            PALETTE_BASE_ADDR + 0x10 + (sprite.palette_idx() as u16 * 4) + color_idx as u16,
-            cartridge,
-        );
         if color_idx == 0 {
             None
         } else {
+            let color = self.read_mem(
+                PALETTE_BASE_ADDR + 0x10 + (sprite.palette_idx() as u16 * 4) + color_idx as u16,
+                cartridge,
+            );
             Some(PixelColor::from_nes_color(color, self.mask_grey_scale()))
         }
     }
