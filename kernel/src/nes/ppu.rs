@@ -717,7 +717,7 @@ impl NESPPU {
 
                 // This function assumes that it does not cross one frame.
                 // So, if it reaches here, just restart it.
-                self.render_bg(cycles - cycle_num, frame_buffer, cartridge);
+                self.render_bg(cycles - cycle_num - 1, frame_buffer, cartridge);
                 return;
             }
         }
@@ -800,9 +800,9 @@ impl NESPPU {
                 let color_idx = (hi_bit << 1) | lo_bit;
                 if color_idx != 0 {
                     // Sprite 0 hit is occurred.
-                    let start = start_y * PPU_CYCLE + start_x;
-                    let current_pos = y * PPU_CYCLE + x;
-                    let end = end_y * PPU_CYCLE + end_x;
+                    let start = start_y as u32 * PPU_CYCLE as u32 + start_x as u32;
+                    let current_pos = y as u32 * PPU_CYCLE as u32 + x as u32;
+                    let end = end_y as u32 * PPU_CYCLE as u32 + end_x as u32;
                     if start <= current_pos && current_pos < end {
                         // Sprite 0 hit is occurred in the given range.
                         return true;
