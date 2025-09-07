@@ -463,6 +463,9 @@ impl NESPPU {
             // PPU_DATA
             let data = self.reg_data_buffer;
             self.reg_data_buffer = self.read_mem(self.reg_data, cartridge);
+
+            self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
+
             data
         } else {
             log!("[PPU] Invalid register reading: {:#06X}", addr);
