@@ -12,10 +12,10 @@ use crate::font::FontManager;
 use crate::info::InfoProc;
 use crate::int::Interrupt;
 use crate::logger::Logger;
-use crate::nes::bus::NESBus;
+use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::NES_CPU;
-use crate::nes::ppu::{NES_FRAME_BUFFER, NES_PPU};
+use crate::nes::ppu::{GAME_FB, NES_PPU};
 use crate::proc::{Process, ProcessMode};
 
 #[no_mangle]
@@ -46,19 +46,15 @@ pub extern "C" fn kernel_main() -> ! {
 
     {
         let mut cpu = NES_CPU.write();
-        let lo = NESBus::read(0xFFFC);
-        let hi = NESBus::read(0xFFFD);
+        let mut cartridge = CARTRIDGE.write();
+        let lo = CPUBus::read(0xFFFC, &mut cartridge);
+        let hi = CPUBus::read(0xFFFD, &mut cartridge);
         cpu.reg_pc = u16::from_le_bytes([lo, hi]);
 
         log!("[SYS] Entry Point: {:#06X}", cpu.reg_pc);
     }
 
     log!("[SYS] Initialized the NES CPU.");
-
-    {
-        let mut buffer = NES_FRAME_BUFFER.write();
-        buffer.init();
-    }
 
     Interrupt::init();
     interrupts::enable();
@@ -73,8 +69,8 @@ pub extern "C" fn kernel_main() -> ! {
                 Process::mark_as_switched();
             }
             (ProcessMode::Game, true) => {
-                let buffer = NES_FRAME_BUFFER.read();
-                buffer.render_all();
+                let mut buffer = GAME_FB.write();
+                buffer.flush_all();
                 Process::mark_as_switched();
             }
             (ProcessMode::Info, true) => {
@@ -82,12 +78,26 @@ pub extern "C" fn kernel_main() -> ! {
                 Process::mark_as_switched();
             }
             (ProcessMode::Game, _) => {
-                for _ in 0..10 {
-                    NES_CPU.write().clock();
-                    for _ in 0..3 {
-                        NES_PPU.write().clock();
+                const FRAME_CYCLES: usize = 29780;
+
+                let mut cartridge = CARTRIDGE.write();
+                let mut cpu = NES_CPU.write();
+                let mut frame_buffer = GAME_FB.write();
+
+                let mut cycles = 0;
+                while cycles < FRAME_CYCLES {
+                    let required = cpu.clock(&mut cartridge) as usize;
+                    {
+                        let mut ppu = NES_PPU.write();
+                        ppu.render_bg(required * 3, &mut frame_buffer, &mut cartridge);
                     }
+                    cycles += required;
                 }
+                {
+                    let mut ppu = NES_PPU.write();
+                    ppu.complete_rendering(&mut frame_buffer, &mut cartridge);
+                }
+                frame_buffer.flush(false);
             }
             _ => {
                 hlt();

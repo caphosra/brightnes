@@ -1,17 +1,17 @@
 use crate::{
     log,
     nes::{
-        cartridge::CARTRIDGE,
+        cartridge::Cartridge,
         pad::PADS,
         ppu::{NES_PPU, OAM_DMA_ADDR},
         ram::NES_RAM,
     },
 };
 
-pub struct NESBus;
+pub struct CPUBus;
 
-impl NESBus {
-    pub fn read(addr: u16) -> u8 {
+impl CPUBus {
+    pub fn read(addr: u16, cartridge: &mut Cartridge) -> u8 {
         if addr < 0x2000 {
             // RAM
             let ram = NES_RAM.read();
@@ -19,11 +19,11 @@ impl NESBus {
         } else if addr < 0x4000 {
             // PPU
             let mut ppu = NES_PPU.write();
-            ppu.read_reg(addr)
+            ppu.read_reg(addr, cartridge)
         } else if addr == OAM_DMA_ADDR {
             // OAM DMA
             let mut ppu = NES_PPU.write();
-            ppu.read_reg(addr)
+            ppu.read_reg(addr, cartridge)
         } else if addr < 0x4016 {
             // APU
             log!("[BUS] Attempt to read from APU: {:#06X}", addr);
@@ -38,12 +38,11 @@ impl NESBus {
             pad[1].read() as u8
         } else {
             // Cartridge
-            let mut cartridge = CARTRIDGE.write();
             cartridge.read_cpu_mem(addr)
         }
     }
 
-    pub fn write(addr: u16, data: u8) {
+    pub fn write(addr: u16, data: u8, cartridge: &mut Cartridge) {
         if addr < 0x2000 {
             // RAM
             let mut ram = NES_RAM.write();
@@ -51,11 +50,11 @@ impl NESBus {
         } else if addr < 0x4000 {
             // PPU
             let mut ppu = NES_PPU.write();
-            ppu.write_reg(addr, data);
+            ppu.write_reg(addr, data, cartridge);
         } else if addr == OAM_DMA_ADDR {
             // OAM DMA
             let mut ppu = NES_PPU.write();
-            ppu.write_reg(addr, data);
+            ppu.write_reg(addr, data, cartridge);
         } else if addr < 0x4016 {
             // APU
             log!("[BUS] Attempt to write to APU: {:#06X}", addr);
@@ -69,7 +68,6 @@ impl NESBus {
             pad[1].write(data & 1 == 1);
         } else {
             // Cartridge
-            let mut cartridge = CARTRIDGE.write();
             cartridge.write_cpu_mem(addr, data);
         }
     }

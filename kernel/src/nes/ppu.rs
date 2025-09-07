@@ -1,95 +1,32 @@
+use alloc::vec;
 use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
 
 use crate::{
-    frame_buffer::{FrameBuffer, PixelColor},
+    frame_buffer::{FrameBuffer, PixelColor, UNDEF_COLOR},
     log,
     nes::{
-        bus::NESBus,
-        cartridge::{self, CARTRIDGE},
+        bus::CPUBus,
+        cartridge::Cartridge,
         cpu::{InterruptType, NESCPU},
         Mirroring,
     },
-    proc::{Process, ProcessMode},
 };
 
 const NES_FRAME_WIDTH: usize = 256;
 const NES_FRAME_HEIGHT: usize = 240;
 
-pub struct NESFrameBuffer {
-    data: Vec<PixelColor>,
-    offset_x: usize,
-    offset_y: usize,
-    pixel_size: usize,
-}
+pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
+    let (width, height) = FrameBuffer::max_size();
 
-pub static NES_FRAME_BUFFER: Lazy<RwLock<NESFrameBuffer>> = Lazy::new(|| {
-    RwLock::new(NESFrameBuffer {
-        data: Vec::with_capacity(NES_FRAME_WIDTH * NES_FRAME_HEIGHT),
-        offset_x: 0,
-        offset_y: 0,
-        pixel_size: 0,
-    })
+    let pixel_size = (width / NES_FRAME_WIDTH).min(height / NES_FRAME_HEIGHT);
+    let offset_x = (width - pixel_size * NES_FRAME_WIDTH) / 2;
+    let offset_y = (height - pixel_size * NES_FRAME_HEIGHT) / 2;
+
+    RwLock::new(FrameBuffer::new(
+        offset_x, offset_y, width, height, pixel_size,
+    ))
 });
-
-impl NESFrameBuffer {
-    pub fn init(&mut self) {
-        let raw_buffer = FrameBuffer::get();
-
-        for _ in 0..NES_FRAME_WIDTH * NES_FRAME_HEIGHT {
-            self.data.push(raw_buffer.make_color(0xFF, 0xFF, 0xFF));
-        }
-
-        self.pixel_size =
-            (raw_buffer.width / NES_FRAME_WIDTH).min(raw_buffer.height / NES_FRAME_HEIGHT);
-
-        log!("[FB] Set pixel size: {}", self.pixel_size);
-
-        self.offset_x = (raw_buffer.width - self.pixel_size * NES_FRAME_WIDTH) / 2;
-        self.offset_y = (raw_buffer.height - self.pixel_size * NES_FRAME_HEIGHT) / 2;
-    }
-
-    pub fn bg_color(raw_buffer: &FrameBuffer) -> PixelColor {
-        raw_buffer.make_color(0x0, 0x0, 0x0)
-    }
-
-    pub fn render_all(&self) {
-        let raw_buffer = FrameBuffer::get();
-        let bg_color = NESFrameBuffer::bg_color(&raw_buffer);
-
-        raw_buffer.clear(bg_color);
-        for y in 0..NES_FRAME_HEIGHT {
-            for x in 0..NES_FRAME_WIDTH {
-                let pixel = self.data[y * NES_FRAME_WIDTH + x];
-                raw_buffer.draw_rect(
-                    self.offset_x + x * self.pixel_size,
-                    self.offset_y + y * self.pixel_size,
-                    self.pixel_size,
-                    self.pixel_size,
-                    pixel,
-                );
-            }
-        }
-    }
-
-    pub fn set_color(&mut self, x: usize, y: usize, color: PixelColor) {
-        assert!(x < NES_FRAME_WIDTH);
-        assert!(y < NES_FRAME_HEIGHT);
-
-        self.data[y * NES_FRAME_WIDTH + x] = color;
-
-        if Process::mode() == ProcessMode::Game {
-            let raw_buffer = FrameBuffer::get();
-            raw_buffer.draw_rect(
-                self.offset_x + x * self.pixel_size,
-                self.offset_y + y * self.pixel_size,
-                self.pixel_size,
-                self.pixel_size,
-                color,
-            );
-        }
-    }
-}
 
 const NAME_TABLE_SIZE: usize = 0x3C0;
 
@@ -117,96 +54,93 @@ impl AttributeTable {
     }
 }
 
-pub struct PaletteTable {
-    pub colors: [u8; 32],
+trait NESColorConverter {
+    fn from_nes_color(nes_color: u8, grey_scale: bool) -> Self;
 }
 
-impl PaletteTable {
-    pub fn get_encoded_color(&self, palette_idx: usize, color_idx: usize) -> u8 {
-        assert!(palette_idx < 8);
-        assert!(color_idx < 4);
+impl NESColorConverter for PixelColor {
+    fn from_nes_color(nes_color: u8, grey_scale: bool) -> Self {
+        assert!(nes_color < 0x40);
 
-        self.colors[palette_idx * 4 + color_idx] & 0x3F
-    }
+        // Converts to grey scale if needed
+        let nes_color = if grey_scale {
+            nes_color & 0x30
+        } else {
+            nes_color
+        };
 
-    pub fn decode_color(encoded: u8) -> PixelColor {
-        let buffer = FrameBuffer::get();
-        match encoded {
-            0x00 => buffer.make_color(0x62, 0x62, 0x62),
-            0x01 => buffer.make_color(0x00, 0x1C, 0x95),
-            0x02 => buffer.make_color(0x19, 0x04, 0xAC),
-            0x03 => buffer.make_color(0x42, 0x00, 0x9D),
-            0x04 => buffer.make_color(0x61, 0x00, 0x6B),
-            0x05 => buffer.make_color(0x6E, 0x00, 0x25),
-            0x06 => buffer.make_color(0x65, 0x05, 0x00),
-            0x07 => buffer.make_color(0x49, 0x1E, 0x00),
-            0x08 => buffer.make_color(0x22, 0x37, 0x00),
-            0x09 => buffer.make_color(0x00, 0x49, 0x00),
-            0x0A => buffer.make_color(0x00, 0x4F, 0x00),
-            0x0B => buffer.make_color(0x00, 0x48, 0x16),
-            0x0C => buffer.make_color(0x00, 0x35, 0x5E),
-            0x0D => buffer.make_color(0x00, 0x00, 0x00),
-            0x0E => buffer.make_color(0x00, 0x00, 0x00),
-            0x0F => buffer.make_color(0x00, 0x00, 0x00),
-            0x10 => buffer.make_color(0xAB, 0xAB, 0xAB),
-            0x11 => buffer.make_color(0x0C, 0x4E, 0xDB),
-            0x12 => buffer.make_color(0x3D, 0x2E, 0xFF),
-            0x13 => buffer.make_color(0x71, 0x15, 0xF3),
-            0x14 => buffer.make_color(0x9B, 0x0B, 0xB9),
-            0x15 => buffer.make_color(0xB0, 0x12, 0x62),
-            0x16 => buffer.make_color(0xA9, 0x27, 0x04),
-            0x17 => buffer.make_color(0x89, 0x46, 0x00),
-            0x18 => buffer.make_color(0x57, 0x66, 0x00),
-            0x19 => buffer.make_color(0x23, 0x7F, 0x00),
-            0x1A => buffer.make_color(0x00, 0x89, 0x00),
-            0x1B => buffer.make_color(0x00, 0x83, 0x32),
-            0x1C => buffer.make_color(0x00, 0x6D, 0x90),
-            0x1D => buffer.make_color(0x00, 0x00, 0x00),
-            0x1E => buffer.make_color(0x00, 0x00, 0x00),
-            0x1F => buffer.make_color(0x00, 0x00, 0x00),
-            0x20 => buffer.make_color(0xFF, 0xFF, 0xFF),
-            0x21 => buffer.make_color(0x57, 0xA5, 0xFF),
-            0x22 => buffer.make_color(0x82, 0x87, 0xFF),
-            0x23 => buffer.make_color(0xB4, 0x6D, 0xFF),
-            0x24 => buffer.make_color(0xDF, 0x60, 0xFF),
-            0x25 => buffer.make_color(0xF8, 0x63, 0xC6),
-            0x26 => buffer.make_color(0xF8, 0x74, 0x6D),
-            0x27 => buffer.make_color(0xDE, 0x90, 0x20),
-            0x28 => buffer.make_color(0xB3, 0xAE, 0x00),
-            0x29 => buffer.make_color(0x81, 0xC8, 0x00),
-            0x2A => buffer.make_color(0x56, 0xD5, 0x22),
-            0x2B => buffer.make_color(0x3D, 0xD3, 0x6F),
-            0x2C => buffer.make_color(0x3E, 0xC1, 0xC8),
-            0x2D => buffer.make_color(0x4E, 0x4E, 0x4E),
-            0x2E => buffer.make_color(0x00, 0x00, 0x00),
-            0x2F => buffer.make_color(0x00, 0x00, 0x00),
-            0x30 => buffer.make_color(0xFF, 0xFF, 0xFF),
-            0x31 => buffer.make_color(0xBE, 0xE0, 0xFF),
-            0x32 => buffer.make_color(0xCD, 0xD4, 0xFF),
-            0x33 => buffer.make_color(0xE0, 0xCA, 0xFF),
-            0x34 => buffer.make_color(0xF1, 0xC4, 0xFF),
-            0x35 => buffer.make_color(0xFC, 0xC4, 0xEF),
-            0x36 => buffer.make_color(0xFD, 0xCA, 0xCE),
-            0x37 => buffer.make_color(0xF5, 0xD4, 0xAF),
-            0x38 => buffer.make_color(0xE6, 0xDF, 0x9C),
-            0x39 => buffer.make_color(0xD3, 0xE9, 0x9A),
-            0x3A => buffer.make_color(0xC2, 0xEF, 0xA8),
-            0x3B => buffer.make_color(0xB7, 0xEF, 0xC4),
-            0x3C => buffer.make_color(0xB6, 0xEA, 0xE5),
-            0x3D => buffer.make_color(0xB8, 0xB8, 0xB8),
-            0x3E => buffer.make_color(0x00, 0x00, 0x00),
-            0x3F => buffer.make_color(0x00, 0x00, 0x00),
-            _ => buffer.make_color(0x00, 0x00, 0x00),
+        match nes_color {
+            0x00 => FrameBuffer::make_color(0x62, 0x62, 0x62),
+            0x01 => FrameBuffer::make_color(0x00, 0x1C, 0x95),
+            0x02 => FrameBuffer::make_color(0x19, 0x04, 0xAC),
+            0x03 => FrameBuffer::make_color(0x42, 0x00, 0x9D),
+            0x04 => FrameBuffer::make_color(0x61, 0x00, 0x6B),
+            0x05 => FrameBuffer::make_color(0x6E, 0x00, 0x25),
+            0x06 => FrameBuffer::make_color(0x65, 0x05, 0x00),
+            0x07 => FrameBuffer::make_color(0x49, 0x1E, 0x00),
+            0x08 => FrameBuffer::make_color(0x22, 0x37, 0x00),
+            0x09 => FrameBuffer::make_color(0x00, 0x49, 0x00),
+            0x0A => FrameBuffer::make_color(0x00, 0x4F, 0x00),
+            0x0B => FrameBuffer::make_color(0x00, 0x48, 0x16),
+            0x0C => FrameBuffer::make_color(0x00, 0x35, 0x5E),
+            0x0D => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x0E => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x0F => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x10 => FrameBuffer::make_color(0xAB, 0xAB, 0xAB),
+            0x11 => FrameBuffer::make_color(0x0C, 0x4E, 0xDB),
+            0x12 => FrameBuffer::make_color(0x3D, 0x2E, 0xFF),
+            0x13 => FrameBuffer::make_color(0x71, 0x15, 0xF3),
+            0x14 => FrameBuffer::make_color(0x9B, 0x0B, 0xB9),
+            0x15 => FrameBuffer::make_color(0xB0, 0x12, 0x62),
+            0x16 => FrameBuffer::make_color(0xA9, 0x27, 0x04),
+            0x17 => FrameBuffer::make_color(0x89, 0x46, 0x00),
+            0x18 => FrameBuffer::make_color(0x57, 0x66, 0x00),
+            0x19 => FrameBuffer::make_color(0x23, 0x7F, 0x00),
+            0x1A => FrameBuffer::make_color(0x00, 0x89, 0x00),
+            0x1B => FrameBuffer::make_color(0x00, 0x83, 0x32),
+            0x1C => FrameBuffer::make_color(0x00, 0x6D, 0x90),
+            0x1D => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x1E => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x1F => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x20 => FrameBuffer::make_color(0xFF, 0xFF, 0xFF),
+            0x21 => FrameBuffer::make_color(0x57, 0xA5, 0xFF),
+            0x22 => FrameBuffer::make_color(0x82, 0x87, 0xFF),
+            0x23 => FrameBuffer::make_color(0xB4, 0x6D, 0xFF),
+            0x24 => FrameBuffer::make_color(0xDF, 0x60, 0xFF),
+            0x25 => FrameBuffer::make_color(0xF8, 0x63, 0xC6),
+            0x26 => FrameBuffer::make_color(0xF8, 0x74, 0x6D),
+            0x27 => FrameBuffer::make_color(0xDE, 0x90, 0x20),
+            0x28 => FrameBuffer::make_color(0xB3, 0xAE, 0x00),
+            0x29 => FrameBuffer::make_color(0x81, 0xC8, 0x00),
+            0x2A => FrameBuffer::make_color(0x56, 0xD5, 0x22),
+            0x2B => FrameBuffer::make_color(0x3D, 0xD3, 0x6F),
+            0x2C => FrameBuffer::make_color(0x3E, 0xC1, 0xC8),
+            0x2D => FrameBuffer::make_color(0x4E, 0x4E, 0x4E),
+            0x2E => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x2F => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x30 => FrameBuffer::make_color(0xFF, 0xFF, 0xFF),
+            0x31 => FrameBuffer::make_color(0xBE, 0xE0, 0xFF),
+            0x32 => FrameBuffer::make_color(0xCD, 0xD4, 0xFF),
+            0x33 => FrameBuffer::make_color(0xE0, 0xCA, 0xFF),
+            0x34 => FrameBuffer::make_color(0xF1, 0xC4, 0xFF),
+            0x35 => FrameBuffer::make_color(0xFC, 0xC4, 0xEF),
+            0x36 => FrameBuffer::make_color(0xFD, 0xCA, 0xCE),
+            0x37 => FrameBuffer::make_color(0xF5, 0xD4, 0xAF),
+            0x38 => FrameBuffer::make_color(0xE6, 0xDF, 0x9C),
+            0x39 => FrameBuffer::make_color(0xD3, 0xE9, 0x9A),
+            0x3A => FrameBuffer::make_color(0xC2, 0xEF, 0xA8),
+            0x3B => FrameBuffer::make_color(0xB7, 0xEF, 0xC4),
+            0x3C => FrameBuffer::make_color(0xB6, 0xEA, 0xE5),
+            0x3D => FrameBuffer::make_color(0xB8, 0xB8, 0xB8),
+            0x3E => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            0x3F => FrameBuffer::make_color(0x00, 0x00, 0x00),
+            _ => FrameBuffer::make_color(0x00, 0x00, 0x00),
         }
     }
+}
 
-    pub fn get_color(&self, palette_idx: usize, color_idx: usize) -> PixelColor {
-        assert!(palette_idx < 8);
-        assert!(color_idx < 4);
-
-        let encoded = self.get_encoded_color(palette_idx, color_idx);
-        PaletteTable::decode_color(encoded)
-    }
+pub struct PaletteTable {
+    pub colors: [u8; 32],
 }
 
 #[derive(Clone, Copy)]
@@ -257,17 +191,6 @@ impl OAM {
         }
     }
 
-    pub fn read(&self, addr: u8) -> u8 {
-        let index = (addr / 4) as usize;
-        match addr % 4 {
-            0 => self.sprites[index].y,
-            1 => self.sprites[index].pattern_index,
-            2 => self.sprites[index].attributes,
-            3 => self.sprites[index].x,
-            _ => 0,
-        }
-    }
-
     pub fn write(&mut self, addr: u8, val: u8) {
         let index = (addr / 4) as usize;
         match addr % 4 {
@@ -287,12 +210,13 @@ impl OAM {
         }
     }
 
-    pub fn direct_mem_access(&mut self, hi: u8) {
+    pub fn direct_mem_access(&mut self, hi: u8, cartridge: &mut Cartridge) {
         let base_addr = (hi as u16) << 8;
         for i in 0..=0xFF {
             let addr = base_addr + i as u16;
-            self.write(i, NESBus::read(addr));
+            self.write(i, CPUBus::read(addr, cartridge));
         }
+        log!("[OAM] OAM DMA from {:#06X}", base_addr);
         NESCPU::stall(OAM_DMA_CYCLES);
     }
 }
@@ -301,12 +225,18 @@ pub struct NESPPU {
     pub reg_ctrl: u8,
     pub reg_mask: u8,
     pub reg_oam_addr: u8,
-    pub reg_scroll_x: u8,
-    pub reg_scroll_y: u8,
-    pub reg_scroll_is_x: bool,
     pub reg_status: u8,
     pub reg_data: u16,
     pub reg_data_is_lo: bool,
+
+    reg_data_buffer: u8,
+
+    reg_v: u16,
+    reg_t: u16,
+    reg_x: u8,
+    reg_w: bool,
+
+    relative_x: u16,
 
     pub x: u16,
     pub y: u16,
@@ -316,6 +246,8 @@ pub struct NESPPU {
     pub bg_palette_table: PaletteTable,
     pub sprite_palette_table: PaletteTable,
     pub oam: OAM,
+
+    bg_transparent: Vec<bool>,
 }
 
 const PPU_CTRL_ADDR: u16 = 0x2000;
@@ -328,18 +260,18 @@ const PPU_ADDR: u16 = 0x2006;
 const PPU_DATA_ADDR: u16 = 0x2007;
 pub const OAM_DMA_ADDR: u16 = 0x4014;
 
-const PALETTE_BASE_ADDR: u16 = 0x3f00;
+const PALETTE_BASE_ADDR: u16 = 0x3F00;
 
-const BG_TILE_SIZE: u16 = 8;
 const PATTERN_SIZE: u16 = 16;
 
 const PPU_CYCLE: u16 = 341;
 const PPU_VBLANK: u16 = 22;
 
 impl NESPPU {
-    pub fn ctrl_name_table(&self) -> u8 {
-        self.reg_ctrl & 0x03
-    }
+    const COARSE_X_MASK: u16 = 0b00000000_00011111;
+    const COARSE_Y_MASK: u16 = 0b00000011_11100000;
+    const FINE_Y_MASK: u16 = 0b01110000_00000000;
+    const NAME_TABLE_MASK: u16 = 0b00001100_00000000;
 
     #[inline(always)]
     pub fn ctrl_increment(&self) -> u16 {
@@ -388,7 +320,7 @@ impl NESPPU {
     }
 
     #[inline(always)]
-    pub fn mask_gley_scale(&self) -> bool {
+    pub fn mask_grey_scale(&self) -> bool {
         self.reg_mask & 0x01 != 0
     }
 
@@ -427,10 +359,9 @@ impl NESPPU {
         self.reg_mask & 0x80 != 0
     }
 
-    pub fn read_mem(&self, addr: u16) -> u8 {
+    fn read_mem(&self, addr: u16, cartridge: &mut Cartridge) -> u8 {
         if addr < 0x2000 {
             // CHR ROM
-            let mut cartridge = CARTRIDGE.write();
             cartridge.read_ppu_mem(addr)
         } else if addr < 0x3000 {
             let idx = (addr - 0x2000) / 0x400;
@@ -438,7 +369,6 @@ impl NESPPU {
 
             // Consider mirroring
             let idx = {
-                let cartridge = CARTRIDGE.read();
                 match cartridge.mirroring() {
                     Mirroring::Horizontal => idx / 2,
                     Mirroring::Vertical => idx % 2,
@@ -455,26 +385,29 @@ impl NESPPU {
             }
         } else if addr < 0x3F00 {
             // Mirrors of $2000-$2EFF
-            self.read_mem(addr - 0x1000)
+            self.read_mem(addr - 0x1000, cartridge)
         } else if addr < 0x3F10 {
             // Background Palette
             self.bg_palette_table.colors[addr as usize - 0x3F00]
         } else if addr < 0x3F20 {
             // Sprite Palette
-            self.sprite_palette_table.colors[addr as usize - 0x3F10]
+            if addr % 4 == 0 {
+                self.read_mem(addr - 0x10, cartridge)
+            } else {
+                self.sprite_palette_table.colors[addr as usize - 0x3F10]
+            }
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F
-            self.read_mem(addr - 0x20)
+            self.read_mem(addr - 0x20, cartridge)
         } else {
             log!("[PPU] Invalid address reading: {:#06X}", addr);
-            self.read_mem(addr & 0x3FFF)
+            self.read_mem(addr & 0x3FFF, cartridge)
         }
     }
 
-    pub fn write_mem(&mut self, addr: u16, val: u8) {
+    fn write_mem(&mut self, addr: u16, val: u8, cartridge: &mut Cartridge) {
         if addr < 0x2000 {
             // CHR ROM
-            let mut cartridge = CARTRIDGE.write();
             cartridge.write_ppu_mem(addr, val);
         } else if addr < 0x3000 {
             let idx = (addr - 0x2000) / 0x400;
@@ -482,7 +415,6 @@ impl NESPPU {
 
             // Consider mirroring
             let idx = {
-                let cartridge = CARTRIDGE.read();
                 match cartridge.mirroring() {
                     Mirroring::Horizontal => idx / 2,
                     Mirroring::Vertical => idx % 2,
@@ -499,41 +431,52 @@ impl NESPPU {
             }
         } else if addr < 0x3F00 {
             // Mirrors of $2000-$2EFF
-            self.write_mem(addr - 0x1000, val);
+            self.write_mem(addr - 0x1000, val, cartridge);
         } else if addr < 0x3F10 {
             // Background Palette
             self.bg_palette_table.colors[addr as usize - 0x3F00] = val;
         } else if addr < 0x3F20 {
             // Sprite Palette
-            self.sprite_palette_table.colors[addr as usize - 0x3F10] = val;
+            if addr % 4 == 0 {
+                self.write_mem(addr - 0x10, val, cartridge);
+            } else {
+                self.sprite_palette_table.colors[addr as usize - 0x3F10] = val;
+            }
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F
-            self.write_mem(addr - 0x20, val);
+            self.write_mem(addr - 0x20, val, cartridge);
         } else {
             log!("[PPU] Invalid address writing: {:#06X}", addr);
-            self.write_mem(addr & 0x3FFF, val);
+            self.write_mem(addr & 0x3FFF, val, cartridge);
         }
     }
 
-    pub fn read_reg(&mut self, addr: u16) -> u8 {
+    pub fn read_reg(&mut self, addr: u16, cartridge: &mut Cartridge) -> u8 {
         // Mirroring every 8 bytes.
         let addr = 0x2000 + ((addr - 0x2000) & 0x7);
         if addr == PPU_STATUS_ADDR {
             // PPU_STATUS
+            self.reg_w = false;
+
             self.reg_status
         } else if addr == PPU_DATA_ADDR {
             // PPU_DATA
-            self.read_mem(self.reg_data)
+            let data = self.reg_data_buffer;
+            self.reg_data_buffer = self.read_mem(self.reg_data, cartridge);
+
+            self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
+
+            data
         } else {
             log!("[PPU] Invalid register reading: {:#06X}", addr);
             0
         }
     }
 
-    pub fn write_reg(&mut self, addr: u16, val: u8) {
+    pub fn write_reg(&mut self, addr: u16, val: u8, cartridge: &mut Cartridge) {
         if addr == OAM_DMA_ADDR {
             // OAM_DMA
-            self.oam.direct_mem_access(val);
+            self.oam.direct_mem_access(val, cartridge);
             return;
         }
 
@@ -542,9 +485,13 @@ impl NESPPU {
         if addr == PPU_CTRL_ADDR {
             // PPU_CTRL
             self.reg_ctrl = val;
+
+            self.reg_t = (self.reg_t & !Self::NAME_TABLE_MASK) | (((val as u16) & 0x03) << 10);
         } else if addr == PPU_MASK_ADDR {
             // PPU_MASK
             self.reg_mask = val;
+
+            self.reg_w = false;
         } else if addr == PPU_OAM_ADDR {
             // PPU_OAM_ADDR
             self.reg_oam_addr = val;
@@ -554,12 +501,17 @@ impl NESPPU {
             self.reg_oam_addr = self.reg_oam_addr.wrapping_add(1);
         } else if addr == PPU_SCROLL_ADDR {
             // PPU_SCROLL
-            if self.reg_scroll_is_x {
-                self.reg_scroll_x = val;
-                self.reg_scroll_is_x = false;
+            if self.reg_w {
+                // Second write configures Y
+                self.reg_t = (self.reg_t & (!Self::COARSE_Y_MASK) & (!Self::FINE_Y_MASK))
+                    | (((val as u16) >> 3) << 5)
+                    | (((val as u16) & 0b111) << 12);
+                self.reg_w = false;
             } else {
-                self.reg_scroll_y = val;
-                self.reg_scroll_is_x = true;
+                // First write configures X
+                self.reg_t = (self.reg_t & !Self::COARSE_X_MASK) | ((val as u16) >> 3);
+                self.reg_x = val & 0b111;
+                self.reg_w = true;
             }
         } else if addr == PPU_ADDR {
             // PPU_ADDR
@@ -570,9 +522,20 @@ impl NESPPU {
                 self.reg_data = ((val as u16) << 8) | (self.reg_data & 0x00FF);
                 self.reg_data_is_lo = true;
             }
+
+            if self.reg_w {
+                // Second write
+                self.reg_t = (self.reg_t & 0xFF00) | val as u16;
+                self.reg_v = self.reg_t;
+                self.reg_w = false;
+            } else {
+                // First write
+                self.reg_t = (self.reg_t & 0x00FF) | (((val as u16) & 0b111111) << 8);
+                self.reg_w = true;
+            }
         } else if addr == PPU_DATA_ADDR {
             let addr = self.reg_data;
-            self.write_mem(addr, val);
+            self.write_mem(addr, val, cartridge);
 
             self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
         } else {
@@ -580,99 +543,393 @@ impl NESPPU {
         }
     }
 
-    pub fn read_pattern(&self, id: u8, x: u8, y: u8) -> u8 {
-        assert!(x < 8);
-        assert!(y < 8);
-
-        let lo = self.read_mem(id as u16 * PATTERN_SIZE + y as u16);
-        let hi = self.read_mem(id as u16 * PATTERN_SIZE + PATTERN_SIZE / 2 + y as u16);
-        let lo_bit = (lo & (1 << (7 - x))) >> (7 - x);
-        let hi_bit = (hi & (1 << (7 - x))) >> (7 - x);
-        (hi_bit << 1) | lo_bit
+    #[inline(always)]
+    fn tile_addr(&self) -> u16 {
+        0x2000 | (self.reg_v & 0x0FFF)
     }
 
-    pub fn get_bg_color(&self, x: u8, y: u8) -> Option<PixelColor> {
-        if !self.mask_bg_visible() || (x < 8 && !self.mask_bg_visible_left8()) {
-            return None;
+    #[inline(always)]
+    fn attribute_addr(&self) -> u16 {
+        0x23C0 | (self.reg_v & 0x0C00) | ((self.reg_v >> 4) & 0x38) | ((self.reg_v >> 2) & 0x07)
+    }
+
+    fn coarse_x_inc(&mut self) {
+        if (self.reg_v & Self::COARSE_X_MASK) == 31 {
+            self.reg_v &= !Self::COARSE_X_MASK;
+
+            // Switch name table horizontally
+            self.reg_v ^= 0b00000100_00000000;
+        } else {
+            self.reg_v += 1;
         }
+    }
 
-        let global_x = self.reg_scroll_x as u16 + x as u16;
-        let global_y = self.reg_scroll_y as u16 + y as u16;
-        let x = global_x / BG_TILE_SIZE;
-        let y = global_y / BG_TILE_SIZE;
+    fn y_inc(&mut self) {
+        if (self.reg_v & Self::FINE_Y_MASK) != Self::FINE_Y_MASK {
+            self.reg_v += 0x1000;
+        } else {
+            self.reg_v &= !Self::FINE_Y_MASK;
 
-        let horizontal_tiles = NES_FRAME_WIDTH as u16 / BG_TILE_SIZE;
-        let vertical_tiles = NES_FRAME_HEIGHT as u16 / BG_TILE_SIZE;
+            let mut y = (self.reg_v & Self::COARSE_Y_MASK) >> 5;
+            if y == 29 {
+                y = 0;
+                // Switch name table vertically
+                self.reg_v ^= 0b00001000_00000000;
+            } else if y == 31 {
+                y = 0;
+            } else {
+                y += 1;
+            }
+            self.reg_v = (self.reg_v & !Self::COARSE_Y_MASK) | (y << 5);
+        }
+    }
 
-        let x_page = x / horizontal_tiles;
-        let y_page = y / vertical_tiles;
-        let table_idx = (y_page * 2 + x_page) as usize;
+    fn update_horizontal_v(&mut self) {
+        self.reg_v = (self.reg_v & 0b01111011_11100000) | (self.reg_t & 0b00000100_00011111);
+    }
 
-        let x_offset = x % horizontal_tiles;
-        let y_offset = y % vertical_tiles;
-        let pattern = self.name_table[table_idx].pattern_ids
-            [(y_offset * horizontal_tiles + x_offset) as usize];
+    fn update_vertical_v(&mut self) {
+        self.reg_v = (self.reg_v & 0b00000100_00011111) | (self.reg_t & 0b01111011_11100000);
+    }
 
-        let x_offset = x_offset / 2;
-        let y_offset = y_offset / 2;
-        let attribute = self.attribute_table[table_idx].attributes
-            [(y_offset / 2 * (vertical_tiles / 4) + x_offset / 2) as usize];
+    fn get_palette_idx(&self, tile_id: u16, attribute: u8) -> u8 {
+        let internal_offset = (((tile_id >> 6) & 1) << 1) | ((tile_id >> 1) & 1);
+        (attribute >> (internal_offset * 2)) & 0b11
+    }
 
-        let internal_offset = y_offset % 2 * 2 + x_offset % 2;
-        let palette_idx =
-            ((attribute & (0b11 << (internal_offset * 2))) >> (internal_offset * 2)) as usize;
+    fn get_bg_color(&self, cartridge: &mut Cartridge) -> Option<PixelColor> {
+        let tile_addr = self.tile_addr();
+        let attribute_addr = self.attribute_addr();
 
-        let color_idx = self.read_pattern(
-            pattern,
-            (global_x % BG_TILE_SIZE) as u8,
-            (global_y % BG_TILE_SIZE) as u8,
-        ) as usize;
+        let attribute = self.read_mem(attribute_addr, cartridge);
+        let palette_idx = self.get_palette_idx(tile_addr, attribute);
+
+        let relative_y = (self.reg_v & Self::FINE_Y_MASK) >> 12;
+
+        let pattern_idx = self.read_mem(tile_addr, cartridge);
+        let bg_pattern_base_addr = self.ctrl_bg_pattern_table();
+
+        let lo = self.read_mem(
+            bg_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y,
+            cartridge,
+        );
+        let hi = self.read_mem(
+            bg_pattern_base_addr
+                + pattern_idx as u16 * PATTERN_SIZE
+                + PATTERN_SIZE / 2
+                + relative_y,
+            cartridge,
+        );
+        let lo_bit = (lo & (1 << (7 - self.relative_x))) >> (7 - self.relative_x);
+        let hi_bit = (hi & (1 << (7 - self.relative_x))) >> (7 - self.relative_x);
+        let color_idx = (hi_bit << 1) | lo_bit;
 
         if color_idx == 0 {
+            // The color is transparent.
             None
         } else {
-            Some(self.bg_palette_table.get_color(palette_idx, color_idx))
+            let color = self.read_mem(
+                PALETTE_BASE_ADDR + (palette_idx as u16 * 4) + color_idx as u16,
+                cartridge,
+            );
+            Some(PixelColor::from_nes_color(color, self.mask_grey_scale()))
         }
     }
 
-    pub fn render(&mut self, x: u8, y: u8) {
-        let mut buffer = NES_FRAME_BUFFER.write();
-        match self.get_bg_color(x, y) {
-            Some(color) => {
-                buffer.set_color(x as usize, y as usize, color);
+    fn is_bg_transparent(&self, x: u16, y: u16) -> bool {
+        self.bg_transparent[(y as usize) * NES_FRAME_WIDTH + (x as usize)]
+    }
+
+    fn set_bg_transparent(&mut self, x: u16, y: u16, transparent: bool) {
+        self.bg_transparent[(y as usize) * NES_FRAME_WIDTH + (x as usize)] = transparent;
+    }
+
+    /// Render the background.
+    pub fn render_bg(
+        &mut self,
+        cycles: usize,
+        frame_buffer: &mut FrameBuffer,
+        cartridge: &mut Cartridge,
+    ) {
+        let start_x = self.x;
+        let start_y = self.y;
+        for cycle_num in 0..cycles {
+            if self.x == 0 {
+                self.relative_x = self.reg_x as u16;
             }
-            None => {
-                let color = PaletteTable::decode_color(self.read_mem(PALETTE_BASE_ADDR));
-                buffer.set_color(x as usize, y as usize, color);
+
+            if self.x < NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
+                if self.mask_bg_visible() && (self.x >= 8 || self.mask_bg_visible_left8()) {
+                    // Get the color of the background.
+                    let color = self.get_bg_color(cartridge);
+
+                    if let Some(color) = color {
+                        // The background color is not transparent.
+                        self.set_bg_transparent(self.x, self.y, false);
+
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
+                    } else {
+                        // The background color is transparent.
+                        self.set_bg_transparent(self.x, self.y, true);
+
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, UNDEF_COLOR);
+                    }
+                }
+
+                self.relative_x += 1;
+                if self.relative_x == 8 {
+                    self.relative_x = 0;
+                    self.coarse_x_inc();
+                }
+            }
+
+            if self.x == NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
+                self.y_inc();
+            }
+
+            if self.x == NES_FRAME_WIDTH as u16 + 1 && self.y < NES_FRAME_HEIGHT as u16 {
+                self.update_horizontal_v();
+            }
+            if 280 <= self.x && self.x <= 304 && self.y == NES_FRAME_HEIGHT as u16 + PPU_VBLANK - 1
+            {
+                self.update_vertical_v();
+            }
+
+            if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
+                // Set VBLANK flag
+                self.reg_status |= 0x80;
+
+                if self.ctrl_nmi_enable() {
+                    NESCPU::interrupt(InterruptType::NMI);
+                }
+            }
+
+            self.x += 1;
+            if self.x >= PPU_CYCLE {
+                self.x = 0;
+                self.y += 1;
+            }
+            if self.y >= NES_FRAME_HEIGHT as u16 + PPU_VBLANK {
+                self.y = 0;
+
+                // Clear VBLANK flag
+                self.reg_status &= !0x80;
+
+                // Clear sprite 0 hit flag
+                self.reg_status &= !0x40;
+
+                // This function assumes that it does not cross one frame.
+                // So, if it reaches here, just restart it.
+                self.render_bg(cycles - cycle_num - 1, frame_buffer, cartridge);
+                return;
+            }
+        }
+
+        let zero_hit = self.sprite_zero_hit(start_x, start_y, self.x, self.y, cartridge);
+        if zero_hit {
+            // Set sprite 0 hit flag
+            self.reg_status |= 0x40;
+        }
+    }
+
+    fn sprite_zero_hit(
+        &self,
+        start_x: u16,
+        start_y: u16,
+        end_x: u16,
+        end_y: u16,
+        cartridge: &mut Cartridge,
+    ) -> bool {
+        let sprite = &self.oam.sprites[0];
+
+        let sprite_pattern_base_addr = self.ctrl_sprite_pattern_table();
+        let pattern_idx = sprite.pattern_index;
+
+        let top = sprite.y as u16 + 1;
+        let left = sprite.x as u16;
+        for y in top..top + self.ctrl_sprite_size() as u16 {
+            if y >= NES_FRAME_HEIGHT as u16 {
+                // Detect overflow.
+                break;
+            }
+
+            // Calculate the relative Y position.
+            let relative_y = if sprite.flip_vertical() {
+                self.ctrl_sprite_size() as u16 - 1 + top - y
+            } else {
+                y - top
+            };
+
+            // Read pattern data.
+            let lo = self.read_mem(
+                sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
+                cartridge,
+            );
+            let hi = self.read_mem(
+                sprite_pattern_base_addr
+                    + pattern_idx as u16 * PATTERN_SIZE
+                    + PATTERN_SIZE / 2
+                    + relative_y as u16,
+                cartridge,
+            );
+
+            for x in left..left + 8 {
+                if x >= NES_FRAME_WIDTH as u16 {
+                    // Detect overflow.
+                    break;
+                }
+
+                if self.is_bg_transparent(x, y) {
+                    // Sprite 0 hit is not occurred if the background is transparent.
+                    continue;
+                }
+
+                if x < 8 && !self.mask_bg_visible_left8() {
+                    // Left 8 pixels of the screen are not visible.
+                    continue;
+                }
+
+                // Calculate the relative X position.
+                let relative_x = if sprite.flip_horizontal() {
+                    7 + left - x
+                } else {
+                    x - left
+                };
+
+                // Read pattern data.
+                let lo_bit = (lo & (1 << (7 - relative_x))) >> (7 - relative_x);
+                let hi_bit = (hi & (1 << (7 - relative_x))) >> (7 - relative_x);
+
+                let color_idx = (hi_bit << 1) | lo_bit;
+                if color_idx != 0 {
+                    // Sprite 0 hit is occurred.
+                    let start = start_y as u32 * PPU_CYCLE as u32 + start_x as u32;
+                    let current_pos = y as u32 * PPU_CYCLE as u32 + x as u32;
+                    let end = end_y as u32 * PPU_CYCLE as u32 + end_x as u32;
+                    if start <= current_pos && current_pos < end {
+                        // Sprite 0 hit is occurred in the given range.
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /// Render a sprite.
+    fn render_sprite(
+        &self,
+        priority: usize,
+        frame_buffer: &mut FrameBuffer,
+        cartridge: &mut Cartridge,
+    ) {
+        let sprite = &self.oam.sprites[priority];
+
+        let sprite_pattern_base_addr = self.ctrl_sprite_pattern_table();
+        let pattern_idx = sprite.pattern_index;
+
+        let top = sprite.y as u16 + 1;
+        let left = sprite.x as u16;
+        for y in top..top + self.ctrl_sprite_size() as u16 {
+            if y >= NES_FRAME_HEIGHT as u16 {
+                // Detect overflow.
+                break;
+            }
+
+            // Calculate the relative Y position.
+            let relative_y = if sprite.flip_vertical() {
+                self.ctrl_sprite_size() as u16 - 1 + top - y
+            } else {
+                y - top
+            };
+
+            // Read pattern data.
+            let lo = self.read_mem(
+                sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
+                cartridge,
+            );
+            let hi = self.read_mem(
+                sprite_pattern_base_addr
+                    + pattern_idx as u16 * PATTERN_SIZE
+                    + PATTERN_SIZE / 2
+                    + relative_y as u16,
+                cartridge,
+            );
+
+            for x in left..left + 8 {
+                if x >= NES_FRAME_WIDTH as u16 {
+                    // Detect overflow.
+                    break;
+                }
+
+                if sprite.background() && !self.is_bg_transparent(x, y) {
+                    // The background has priority.
+                    continue;
+                }
+
+                if x < 8 && !self.mask_bg_visible_left8() {
+                    // Left 8 pixels of the screen are not visible.
+                    continue;
+                }
+
+                // Calculate the relative X position.
+                let relative_x = if sprite.flip_horizontal() {
+                    7 + left - x
+                } else {
+                    x - left
+                };
+
+                // Read pattern data.
+                let lo_bit = (lo & (1 << (7 - relative_x))) >> (7 - relative_x);
+                let hi_bit = (hi & (1 << (7 - relative_x))) >> (7 - relative_x);
+
+                let color_idx = (hi_bit << 1) | lo_bit;
+                if color_idx != 0 {
+                    let color = self.read_mem(
+                        PALETTE_BASE_ADDR
+                            + 0x10
+                            + (sprite.palette_idx() as u16 * 4)
+                            + color_idx as u16,
+                        cartridge,
+                    );
+                    let color = PixelColor::from_nes_color(color, self.mask_grey_scale());
+
+                    // Render the pixel.
+                    frame_buffer.set_chunk(x as usize, y as usize, color);
+                }
             }
         }
     }
 
-    pub fn clock(&mut self) {
-        if self.x < NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
-            self.render(self.x as u8, self.y as u8);
-        }
+    fn fill_undef(&mut self, frame_buffer: &mut FrameBuffer, cartridge: &mut Cartridge) {
+        // Fill the undefined pixels with the background color.
+        let color = PixelColor::from_nes_color(
+            self.read_mem(PALETTE_BASE_ADDR, cartridge),
+            self.mask_grey_scale(),
+        );
 
-        if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
-            // Set VBLANK flag
-            self.reg_status |= 0x80;
-
-            if self.ctrl_nmi_enable() {
-                NESCPU::interrupt(InterruptType::NMI);
+        for y in 0..NES_FRAME_HEIGHT {
+            for x in 0..NES_FRAME_WIDTH {
+                if frame_buffer.get_chunk(x, y) == UNDEF_COLOR {
+                    frame_buffer.set_chunk(x, y, color);
+                }
             }
         }
+    }
 
-        self.x += 1;
-        if self.x >= PPU_CYCLE {
-            self.x = 0;
-            self.y += 1;
+    pub fn complete_rendering(
+        &mut self,
+        frame_buffer: &mut FrameBuffer,
+        cartridge: &mut Cartridge,
+    ) {
+        if self.mask_sprite_visible() {
+            // Render sprites reversely.
+            for priority in 0..64 {
+                self.render_sprite(63 - priority, frame_buffer, cartridge);
+            }
         }
-        if self.y >= NES_FRAME_HEIGHT as u16 + PPU_VBLANK {
-            self.y = 0;
-
-            // Clear VBLANK flag
-            self.reg_status &= 0x7F;
-        }
+        // Fill the undefined pixels with the background color.
+        self.fill_undef(frame_buffer, cartridge);
     }
 }
 
@@ -681,12 +938,18 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
         reg_ctrl: 0,
         reg_mask: 0,
         reg_oam_addr: 0,
-        reg_scroll_x: 0,
-        reg_scroll_y: 0,
-        reg_scroll_is_x: true,
         reg_status: 0,
         reg_data: 0,
         reg_data_is_lo: false,
+
+        reg_data_buffer: 0,
+
+        reg_v: 0,
+        reg_t: 0,
+        reg_w: false,
+        reg_x: 0,
+
+        relative_x: 0,
 
         x: 0,
         y: 0,
@@ -706,5 +969,6 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
         bg_palette_table: PaletteTable { colors: [0; 32] },
         sprite_palette_table: PaletteTable { colors: [0; 32] },
         oam: OAM::new(),
+        bg_transparent: vec![true; NES_FRAME_WIDTH * NES_FRAME_HEIGHT],
     })
 });

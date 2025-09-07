@@ -24,13 +24,18 @@ static LOGGER: Lazy<RwLock<Logger>> = Lazy::new(|| {
     })
 });
 
+static LOG_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
+    let (width, height) = FrameBuffer::max_size();
+    RwLock::new(FrameBuffer::new(0, 0, width, height, 1))
+});
+
 impl Logger {
     fn log_internal(&mut self, text: String) {
         for line in text.split(|c| c == '\n') {
             if line.len() == 0 {
                 self.add_buffer(line.to_string());
             } else {
-                let width = FrameBuffer::get().text_width();
+                let width = LOG_FB.read().text_width();
                 for chunk in line.as_bytes().chunks(width) {
                     if self.buffer.len() == self.scroll {
                         self.scroll += 1;
@@ -50,8 +55,8 @@ impl Logger {
 
     fn scroll_internal(&mut self, lines: i32) {
         // Cannot scroll if the screen is not fully filled.
-        let buffer = FrameBuffer::get();
-        if self.scroll < buffer.text_height() {
+        let text_height = LOG_FB.read().text_height();
+        if self.scroll < text_height {
             return;
         }
 
@@ -64,11 +69,17 @@ impl Logger {
         }
 
         // Cannot scroll beyond the screen height.
-        self.scroll = self.scroll.max(buffer.text_height());
+        self.scroll = self.scroll.max(text_height);
 
         // Rerender the screen.
         if Process::mode() == ProcessMode::Log {
             self.render_internal(before, self.scroll);
+
+            // Flush the frame buffer.
+            {
+                let mut buffer = LOG_FB.write();
+                buffer.flush(false);
+            }
         }
     }
 
@@ -93,9 +104,9 @@ impl Logger {
             return;
         }
 
-        let buffer = FrameBuffer::get();
-        let font_color = buffer.make_color(0xFF, 0xFF, 0xFF);
-        let bg_color = Logger::bg_color(buffer);
+        let mut buffer = LOG_FB.write();
+        let font_color = FrameBuffer::make_color(0xFF, 0xFF, 0xFF);
+        let bg_color = Logger::bg_color();
         let height = buffer.text_height();
 
         if after < height {
@@ -137,23 +148,36 @@ impl Logger {
             if Process::mode() == ProcessMode::Log {
                 let after = logger.scroll;
                 logger.render_internal(before, after);
+
+                // Flush the frame buffer.
+                {
+                    let mut buffer = LOG_FB.write();
+                    buffer.flush(false);
+                }
             }
         });
     }
 
-    fn bg_color(buffer: &FrameBuffer) -> PixelColor {
-        buffer.make_color(0x20, 0x20, 0x20)
+    fn bg_color() -> PixelColor {
+        FrameBuffer::make_color(0x20, 0x20, 0x20)
     }
 
     pub fn render_all() {
-        let buffer = FrameBuffer::get();
-
         // Clear the frame buffer.
-        buffer.clear(Logger::bg_color(buffer));
+        {
+            let mut buffer = LOG_FB.write();
+            buffer.clear(Logger::bg_color());
+        }
 
         // Re-render the log.
         let mut logger = LOGGER.write();
         let scroll = logger.scroll;
         logger.render_internal(0, scroll);
+
+        // Flush the frame buffer.
+        {
+            let mut buffer = LOG_FB.write();
+            buffer.flush_all();
+        }
     }
 }

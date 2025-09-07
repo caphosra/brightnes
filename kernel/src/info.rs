@@ -1,4 +1,5 @@
 use alloc::format;
+use spin::{Lazy, RwLock};
 
 use crate::{
     font::FONT_HEIGHT,
@@ -12,7 +13,10 @@ use crate::{
     },
 };
 
-pub struct InfoProc;
+pub static INFO_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
+    let (width, height) = FrameBuffer::max_size();
+    RwLock::new(FrameBuffer::new(0, 0, width, height, 1))
+});
 
 const PADDING: usize = 10;
 
@@ -20,40 +24,42 @@ const PAD_WIDTH: usize = BUTTON_SIZE * 7 + PADDING * 6;
 const PAD_HEIGHT: usize = BUTTON_SIZE * 3 + PADDING * 2;
 const BUTTON_SIZE: usize = 10;
 
+pub struct InfoProc;
+
 impl InfoProc {
     #[inline(always)]
-    pub fn color_background(buffer: &FrameBuffer) -> PixelColor {
-        buffer.make_color(0x20, 0x20, 0x20)
+    fn color_background() -> PixelColor {
+        FrameBuffer::make_color(0x20, 0x20, 0x20)
     }
 
     #[inline(always)]
-    pub fn color_text(buffer: &FrameBuffer) -> PixelColor {
-        buffer.make_color(0xFF, 0xFF, 0xFF)
+    fn color_text() -> PixelColor {
+        FrameBuffer::make_color(0xFF, 0xFF, 0xFF)
     }
 
     #[inline(always)]
-    pub fn color_pad_base(buffer: &FrameBuffer) -> PixelColor {
-        buffer.make_color(0xF0, 0xF0, 0xF0)
+    fn color_pad_base() -> PixelColor {
+        FrameBuffer::make_color(0xF0, 0xF0, 0xF0)
     }
 
     #[inline(always)]
-    pub fn color_pressed(buffer: &FrameBuffer) -> PixelColor {
-        buffer.make_color(0xC2, 0x73, 0x19)
+    fn color_pressed() -> PixelColor {
+        FrameBuffer::make_color(0xC2, 0x73, 0x19)
     }
 
     #[inline(always)]
-    pub fn color_released(buffer: &FrameBuffer) -> PixelColor {
-        buffer.make_color(0x10, 0x10, 0x10)
+    fn color_released() -> PixelColor {
+        FrameBuffer::make_color(0x10, 0x10, 0x10)
     }
 
-    pub fn render_pad_base(buffer: &mut FrameBuffer, player: usize) {
+    fn render_pad_base(buffer: &mut FrameBuffer, player: usize) {
         let offset_x = if player == 0 {
             PADDING
         } else {
             PADDING * 2 + PAD_WIDTH
         };
         let offset_y = PADDING;
-        let color = InfoProc::color_pad_base(buffer);
+        let color = InfoProc::color_pad_base();
         buffer.draw_rect(offset_x, offset_y, PAD_WIDTH, PAD_HEIGHT, color);
     }
 
@@ -86,14 +92,16 @@ impl InfoProc {
             PadButton::Right => BUTTON_SIZE + PADDING,
         };
         let color = if pad.pressed[button as usize] {
-            InfoProc::color_pressed(buffer)
+            InfoProc::color_pressed()
         } else {
-            InfoProc::color_released(buffer)
+            InfoProc::color_released()
         };
         buffer.draw_rect(offset_x + x, offset_y + y, BUTTON_SIZE, BUTTON_SIZE, color);
+
+        buffer.flush(false);
     }
 
-    pub fn render_pad(buffer: &mut FrameBuffer, player: usize, pad: &Pad) {
+    fn render_pad(buffer: &mut FrameBuffer, player: usize, pad: &Pad) {
         InfoProc::render_pad_base(buffer, player);
         InfoProc::render_button(buffer, player, pad, PadButton::A);
         InfoProc::render_button(buffer, player, pad, PadButton::B);
@@ -105,11 +113,11 @@ impl InfoProc {
         InfoProc::render_button(buffer, player, pad, PadButton::Right);
     }
 
-    pub fn render_cpu(buffer: &mut FrameBuffer, cpu: &NESCPU) {
+    fn render_cpu(buffer: &mut FrameBuffer, cpu: &NESCPU) {
         let offset_x = PADDING;
         let offset_y = PAD_HEIGHT + PADDING * 2;
-        let color = InfoProc::color_text(buffer);
-        let background = InfoProc::color_background(buffer);
+        let color = InfoProc::color_text();
+        let background = InfoProc::color_background();
 
         buffer.draw_text(
             offset_x,
@@ -175,17 +183,17 @@ impl InfoProc {
     }
 
     pub fn render_all() {
-        let buffer = FrameBuffer::get();
+        let mut buffer = INFO_FB.write();
 
         // Clear the frame buffer.
-        let background_color = InfoProc::color_background(buffer);
-        let width = buffer.width;
-        let height = buffer.height;
-        buffer.draw_rect(0, 0, width, height, background_color);
+        let background_color = InfoProc::color_background();
+        buffer.clear(background_color);
 
-        InfoProc::render_cpu(buffer, &NES_CPU.read());
+        InfoProc::render_cpu(&mut buffer, &NES_CPU.read());
         for player in 0..2 {
-            InfoProc::render_pad(buffer, player as usize, &PADS.read()[player]);
+            InfoProc::render_pad(&mut buffer, player as usize, &PADS.read()[player]);
         }
+
+        buffer.flush_all();
     }
 }
