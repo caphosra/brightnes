@@ -5,10 +5,12 @@ use crate::{
     font::FONT_HEIGHT,
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
+        cartridge::CARTRIDGE,
         cpu::{
             BRK_FLAG, CARRY_FLAG, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, NESCPU, NES_CPU, OVERFLOW_FLAG,
             ZERO_FLAG,
         },
+        instr::Instruction,
         pad::{Pad, PadButton, PADS},
     },
 };
@@ -140,10 +142,13 @@ impl InfoProc {
             color,
             background,
         );
+
+        let mut cartridge = CARTRIDGE.write();
+        let inst = Instruction::fetch(cpu.reg_pc, &mut cartridge);
         buffer.draw_text(
             offset_x,
             offset_y + FONT_HEIGHT as usize * 3,
-            format!("REG PC: {:#06X}", cpu.reg_pc).as_bytes(),
+            format!("REG PC: {:#06X} {}", cpu.reg_pc, inst.to_string()).as_bytes(),
             color,
             background,
         );
