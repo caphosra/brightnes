@@ -140,7 +140,7 @@ impl Logger {
         self.scroll = self.scroll.max(text_height);
 
         // Rerender the screen.
-        if Process::mode() == ProcessMode::Log {
+        if Process::mode() == ProcessMode::Log || Process::mode() == ProcessMode::Recovery {
             self.render_internal(before, self.scroll);
 
             // Flush the frame buffer.
@@ -278,7 +278,7 @@ impl Logger {
             let before = logger.scroll;
             logger.log_internal(location, level, message);
 
-            if Process::mode() == ProcessMode::Log {
+            if Process::mode() == ProcessMode::Log || Process::mode() == ProcessMode::Recovery {
                 let after = logger.scroll;
                 logger.render_internal(before, after);
 

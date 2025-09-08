@@ -63,45 +63,53 @@ pub extern "C" fn kernel_main() -> ! {
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
     loop {
-        match Process::status() {
-            (ProcessMode::Log, true) => {
-                Logger::render_all();
-                Process::mark_as_switched();
-            }
-            (ProcessMode::Game, true) => {
-                let mut buffer = GAME_FB.write();
-                buffer.flush_all();
-                Process::mark_as_switched();
-            }
-            (ProcessMode::Info, true) => {
-                InfoProc::render_all();
-                Process::mark_as_switched();
-            }
-            (ProcessMode::Game, _) => {
-                const FRAME_CYCLES: usize = 29780;
+        main_loop();
+    }
+}
 
-                let mut cartridge = CARTRIDGE.write();
-                let mut cpu = NES_CPU.write();
-                let mut frame_buffer = GAME_FB.write();
+fn main_loop() {
+    match Process::status() {
+        (ProcessMode::Log, true) => {
+            Logger::render_all();
+            Process::mark_as_switched();
+        }
+        (ProcessMode::Recovery, true) => {
+            Logger::render_all();
+            Process::mark_as_switched();
+        }
+        (ProcessMode::Game, true) => {
+            let mut buffer = GAME_FB.write();
+            buffer.flush_all();
+            Process::mark_as_switched();
+        }
+        (ProcessMode::Info, true) => {
+            InfoProc::render_all();
+            Process::mark_as_switched();
+        }
+        (ProcessMode::Game, _) => {
+            const FRAME_CYCLES: usize = 29780;
 
-                let mut cycles = 0;
-                while cycles < FRAME_CYCLES {
-                    let required = cpu.clock(&mut cartridge) as usize;
-                    {
-                        let mut ppu = NES_PPU.write();
-                        ppu.render_bg(required * 3, &mut frame_buffer, &mut cartridge);
-                    }
-                    cycles += required;
-                }
+            let mut cartridge = CARTRIDGE.write();
+            let mut cpu = NES_CPU.write();
+            let mut frame_buffer = GAME_FB.write();
+
+            let mut cycles = 0;
+            while cycles < FRAME_CYCLES {
+                let required = cpu.clock(&mut cartridge) as usize;
                 {
                     let mut ppu = NES_PPU.write();
-                    ppu.complete_rendering(&mut frame_buffer, &mut cartridge);
+                    ppu.render_bg(required * 3, &mut frame_buffer, &mut cartridge);
                 }
-                frame_buffer.flush(false);
+                cycles += required;
             }
-            _ => {
-                hlt();
+            {
+                let mut ppu = NES_PPU.write();
+                ppu.complete_rendering(&mut frame_buffer, &mut cartridge);
             }
+            frame_buffer.flush(false);
+        }
+        _ => {
+            hlt();
         }
     }
 }

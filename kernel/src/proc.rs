@@ -5,6 +5,7 @@ pub enum ProcessMode {
     Log,
     Game,
     Info,
+    Recovery,
 }
 
 impl ProcessMode {
@@ -13,6 +14,7 @@ impl ProcessMode {
             ProcessMode::Log => ProcessMode::Game,
             ProcessMode::Game => ProcessMode::Info,
             ProcessMode::Info => ProcessMode::Log,
+            ProcessMode::Recovery => ProcessMode::Recovery,
         }
     }
 }
