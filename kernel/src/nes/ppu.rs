@@ -3,10 +3,9 @@ use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
 
 use crate::{
-    critical,
+    error,
     frame_buffer::{FrameBuffer, PixelColor, UNDEF_COLOR},
     log,
-    logger::NESResult,
     nes::{
         bus::CPUBus,
         cartridge::Cartridge,
@@ -212,15 +211,14 @@ impl OAM {
         }
     }
 
-    pub fn direct_mem_access(&mut self, hi: u8, cartridge: &mut Cartridge) -> NESResult<()> {
+    pub fn direct_mem_access(&mut self, hi: u8, cartridge: &mut Cartridge) {
         let base_addr = (hi as u16) << 8;
         for i in 0..=0xFF {
             let addr = base_addr + i as u16;
-            self.write(i, CPUBus::read(addr, cartridge)?);
+            self.write(i, CPUBus::read(addr, cartridge));
         }
         log!(OAM, "OAM DMA from {:#06X}", base_addr);
         NESCPU::stall(OAM_DMA_CYCLES);
-        Ok(())
     }
 }
 
@@ -342,7 +340,7 @@ impl NESPPU {
         self.reg_mask & 0x10 != 0
     }
 
-    fn read_mem(&self, addr: u16, cartridge: &mut Cartridge) -> NESResult<u8> {
+    fn read_mem(&self, addr: u16, cartridge: &mut Cartridge) -> u8 {
         if addr < 0x2000 {
             // CHR ROM
             cartridge.read_ppu_mem(addr)
@@ -360,37 +358,38 @@ impl NESPPU {
 
             if offset < NAME_TABLE_SIZE as u16 {
                 // Name Table
-                Ok(self.name_table[idx as usize].pattern_ids[offset as usize])
+                self.name_table[idx as usize].pattern_ids[offset as usize]
             } else {
                 // Attribute Table
-                Ok(self.attribute_table[idx as usize].attributes
-                    [(offset - NAME_TABLE_SIZE as u16) as usize])
+                self.attribute_table[idx as usize].attributes
+                    [(offset - NAME_TABLE_SIZE as u16) as usize]
             }
         } else if addr < 0x3F00 {
             // Mirrors of $2000-$2EFF
             self.read_mem(addr - 0x1000, cartridge)
         } else if addr < 0x3F10 {
             // Background Palette
-            Ok(self.bg_palette_table.colors[addr as usize - 0x3F00])
+            self.bg_palette_table.colors[addr as usize - 0x3F00]
         } else if addr < 0x3F20 {
             // Sprite Palette
             if addr % 4 == 0 {
                 self.read_mem(addr - 0x10, cartridge)
             } else {
-                Ok(self.sprite_palette_table.colors[addr as usize - 0x3F10])
+                self.sprite_palette_table.colors[addr as usize - 0x3F10]
             }
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F
             self.read_mem(addr - 0x20, cartridge)
         } else {
-            critical!(PPU, "Invalid address reading: {:#06X}", addr);
+            error!(PPU, "Invalid address reading: {:#06X}", addr);
+            self.read_mem(addr & 0x3FFF, cartridge)
         }
     }
 
-    fn write_mem(&mut self, addr: u16, val: u8, cartridge: &mut Cartridge) -> NESResult<()> {
+    fn write_mem(&mut self, addr: u16, val: u8, cartridge: &mut Cartridge) {
         if addr < 0x2000 {
             // CHR ROM
-            cartridge.write_ppu_mem(addr, val)
+            cartridge.write_ppu_mem(addr, val);
         } else if addr < 0x3000 {
             let idx = (addr - 0x2000) / 0x400;
             let offset = (addr - 0x2000) % 0x400;
@@ -406,61 +405,60 @@ impl NESPPU {
             if offset < NAME_TABLE_SIZE as u16 {
                 // Name Table
                 self.name_table[idx as usize].pattern_ids[offset as usize] = val;
-                Ok(())
             } else {
                 // Attribute Table
                 self.attribute_table[idx as usize].attributes
                     [(offset - NAME_TABLE_SIZE as u16) as usize] = val;
-                Ok(())
             }
         } else if addr < 0x3F00 {
             // Mirrors of $2000-$2EFF
-            self.write_mem(addr - 0x1000, val, cartridge)
+            self.write_mem(addr - 0x1000, val, cartridge);
         } else if addr < 0x3F10 {
             // Background Palette
             self.bg_palette_table.colors[addr as usize - 0x3F00] = val;
-            Ok(())
         } else if addr < 0x3F20 {
             // Sprite Palette
             if addr % 4 == 0 {
-                self.write_mem(addr - 0x10, val, cartridge)
+                self.write_mem(addr - 0x10, val, cartridge);
             } else {
                 self.sprite_palette_table.colors[addr as usize - 0x3F10] = val;
-                Ok(())
             }
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F
-            self.write_mem(addr - 0x20, val, cartridge)
+            self.write_mem(addr - 0x20, val, cartridge);
         } else {
-            critical!(PPU, "Invalid address writing: {:#06X}", addr);
+            error!(PPU, "Invalid address writing: {:#06X}", addr);
+            self.write_mem(addr & 0x3FFF, val, cartridge);
         }
     }
 
-    pub fn read_reg(&mut self, addr: u16, cartridge: &mut Cartridge) -> NESResult<u8> {
+    pub fn read_reg(&mut self, addr: u16, cartridge: &mut Cartridge) -> u8 {
         // Mirroring every 8 bytes.
         let addr = 0x2000 + ((addr - 0x2000) & 0x7);
         if addr == PPU_STATUS_ADDR {
             // PPU_STATUS
             self.reg_w = false;
 
-            Ok(self.reg_status)
+            self.reg_status
         } else if addr == PPU_DATA_ADDR {
             // PPU_DATA
             let data = self.reg_data_buffer;
-            self.reg_data_buffer = self.read_mem(self.reg_data, cartridge)?;
+            self.reg_data_buffer = self.read_mem(self.reg_data, cartridge);
 
             self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
 
-            Ok(data)
+            data
         } else {
-            critical!(PPU, "Invalid register reading: {:#06X}", addr);
+            error!(PPU, "Invalid register reading: {:#06X}", addr);
+            0
         }
     }
 
-    pub fn write_reg(&mut self, addr: u16, val: u8, cartridge: &mut Cartridge) -> NESResult<()> {
+    pub fn write_reg(&mut self, addr: u16, val: u8, cartridge: &mut Cartridge) {
         if addr == OAM_DMA_ADDR {
             // OAM_DMA
-            return self.oam.direct_mem_access(val, cartridge);
+            self.oam.direct_mem_access(val, cartridge);
+            return;
         }
 
         // Mirroring every 8 bytes.
@@ -470,22 +468,18 @@ impl NESPPU {
             self.reg_ctrl = val;
 
             self.reg_t = (self.reg_t & !Self::NAME_TABLE_MASK) | (((val as u16) & 0x03) << 10);
-            Ok(())
         } else if addr == PPU_MASK_ADDR {
             // PPU_MASK
             self.reg_mask = val;
 
             self.reg_w = false;
-            Ok(())
         } else if addr == PPU_OAM_ADDR {
             // PPU_OAM_ADDR
             self.reg_oam_addr = val;
-            Ok(())
         } else if addr == PPU_OAM_DATA_ADDR {
             // PPU_OAM_DATA
             self.oam.write(self.reg_oam_addr, val);
             self.reg_oam_addr = self.reg_oam_addr.wrapping_add(1);
-            Ok(())
         } else if addr == PPU_SCROLL_ADDR {
             // PPU_SCROLL
             if self.reg_w {
@@ -500,7 +494,6 @@ impl NESPPU {
                 self.reg_x = val & 0b111;
                 self.reg_w = true;
             }
-            Ok(())
         } else if addr == PPU_ADDR {
             // PPU_ADDR
             if self.reg_data_is_lo {
@@ -521,15 +514,13 @@ impl NESPPU {
                 self.reg_t = (self.reg_t & 0x00FF) | (((val as u16) & 0b111111) << 8);
                 self.reg_w = true;
             }
-            Ok(())
         } else if addr == PPU_DATA_ADDR {
             let addr = self.reg_data;
-            self.write_mem(addr, val, cartridge)?;
+            self.write_mem(addr, val, cartridge);
 
             self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
-            Ok(())
         } else {
-            critical!(PPU, "Invalid register writing: {:#06X}", addr);
+            error!(PPU, "Invalid register writing: {:#06X}", addr);
         }
     }
 
@@ -587,45 +578,42 @@ impl NESPPU {
         (attribute >> (internal_offset * 2)) & 0b11
     }
 
-    fn get_bg_color(&self, cartridge: &mut Cartridge) -> NESResult<Option<PixelColor>> {
+    fn get_bg_color(&self, cartridge: &mut Cartridge) -> Option<PixelColor> {
         let tile_addr = self.tile_addr();
         let attribute_addr = self.attribute_addr();
 
-        let attribute = self.read_mem(attribute_addr, cartridge)?;
+        let attribute = self.read_mem(attribute_addr, cartridge);
         let palette_idx = self.get_palette_idx(tile_addr, attribute);
 
         let relative_y = (self.reg_v & Self::FINE_Y_MASK) >> 12;
 
-        let pattern_idx = self.read_mem(tile_addr, cartridge)?;
+        let pattern_idx = self.read_mem(tile_addr, cartridge);
         let bg_pattern_base_addr = self.ctrl_bg_pattern_table();
 
         let lo = self.read_mem(
             bg_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y,
             cartridge,
-        )?;
+        );
         let hi = self.read_mem(
             bg_pattern_base_addr
                 + pattern_idx as u16 * PATTERN_SIZE
                 + PATTERN_SIZE / 2
                 + relative_y,
             cartridge,
-        )?;
+        );
         let lo_bit = (lo & (1 << (7 - self.relative_x))) >> (7 - self.relative_x);
         let hi_bit = (hi & (1 << (7 - self.relative_x))) >> (7 - self.relative_x);
         let color_idx = (hi_bit << 1) | lo_bit;
 
         if color_idx == 0 {
             // The color is transparent.
-            Ok(None)
+            None
         } else {
             let color = self.read_mem(
                 PALETTE_BASE_ADDR + (palette_idx as u16 * 4) + color_idx as u16,
                 cartridge,
-            )?;
-            Ok(Some(PixelColor::from_nes_color(
-                color,
-                self.mask_grey_scale(),
-            )))
+            );
+            Some(PixelColor::from_nes_color(color, self.mask_grey_scale()))
         }
     }
 
@@ -643,7 +631,7 @@ impl NESPPU {
         cycles: usize,
         frame_buffer: &mut FrameBuffer,
         cartridge: &mut Cartridge,
-    ) -> NESResult<()> {
+    ) {
         let start_x = self.x;
         let start_y = self.y;
         for cycle_num in 0..cycles {
@@ -654,7 +642,7 @@ impl NESPPU {
             if self.x < NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
                 if self.mask_bg_visible() && (self.x >= 8 || self.mask_bg_visible_left8()) {
                     // Get the color of the background.
-                    let color = self.get_bg_color(cartridge)?;
+                    let color = self.get_bg_color(cartridge);
 
                     if let Some(color) = color {
                         // The background color is not transparent.
@@ -713,17 +701,16 @@ impl NESPPU {
 
                 // This function assumes that it does not cross one frame.
                 // So, if it reaches here, just restart it.
-                return self.render_bg(cycles - cycle_num - 1, frame_buffer, cartridge);
+                self.render_bg(cycles - cycle_num - 1, frame_buffer, cartridge);
+                return;
             }
         }
 
-        let zero_hit = self.sprite_zero_hit(start_x, start_y, self.x, self.y, cartridge)?;
+        let zero_hit = self.sprite_zero_hit(start_x, start_y, self.x, self.y, cartridge);
         if zero_hit {
             // Set sprite 0 hit flag
             self.reg_status |= 0x40;
         }
-
-        Ok(())
     }
 
     fn sprite_zero_hit(
@@ -733,7 +720,7 @@ impl NESPPU {
         end_x: u16,
         end_y: u16,
         cartridge: &mut Cartridge,
-    ) -> NESResult<bool> {
+    ) -> bool {
         let sprite = &self.oam.sprites[0];
 
         let sprite_pattern_base_addr = self.ctrl_sprite_pattern_table();
@@ -758,14 +745,14 @@ impl NESPPU {
             let lo = self.read_mem(
                 sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
                 cartridge,
-            )?;
+            );
             let hi = self.read_mem(
                 sprite_pattern_base_addr
                     + pattern_idx as u16 * PATTERN_SIZE
                     + PATTERN_SIZE / 2
                     + relative_y as u16,
                 cartridge,
-            )?;
+            );
 
             for x in left..left + 8 {
                 if x >= NES_FRAME_WIDTH as u16 {
@@ -802,12 +789,12 @@ impl NESPPU {
                     let end = end_y as u32 * PPU_CYCLE as u32 + end_x as u32;
                     if start <= current_pos && current_pos < end {
                         // Sprite 0 hit is occurred in the given range.
-                        return Ok(true);
+                        return true;
                     }
                 }
             }
         }
-        Ok(false)
+        return false;
     }
 
     /// Render a sprite.
@@ -816,7 +803,7 @@ impl NESPPU {
         priority: usize,
         frame_buffer: &mut FrameBuffer,
         cartridge: &mut Cartridge,
-    ) -> NESResult<()> {
+    ) {
         let sprite = &self.oam.sprites[priority];
 
         let sprite_pattern_base_addr = self.ctrl_sprite_pattern_table();
@@ -841,14 +828,14 @@ impl NESPPU {
             let lo = self.read_mem(
                 sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
                 cartridge,
-            )?;
+            );
             let hi = self.read_mem(
                 sprite_pattern_base_addr
                     + pattern_idx as u16 * PATTERN_SIZE
                     + PATTERN_SIZE / 2
                     + relative_y as u16,
                 cartridge,
-            )?;
+            );
 
             for x in left..left + 8 {
                 if x >= NES_FRAME_WIDTH as u16 {
@@ -885,7 +872,7 @@ impl NESPPU {
                             + (sprite.palette_idx() as u16 * 4)
                             + color_idx as u16,
                         cartridge,
-                    )?;
+                    );
                     let color = PixelColor::from_nes_color(color, self.mask_grey_scale());
 
                     // Render the pixel.
@@ -893,18 +880,12 @@ impl NESPPU {
                 }
             }
         }
-
-        Ok(())
     }
 
-    fn fill_undef(
-        &mut self,
-        frame_buffer: &mut FrameBuffer,
-        cartridge: &mut Cartridge,
-    ) -> NESResult<()> {
+    fn fill_undef(&mut self, frame_buffer: &mut FrameBuffer, cartridge: &mut Cartridge) {
         // Fill the undefined pixels with the background color.
         let color = PixelColor::from_nes_color(
-            self.read_mem(PALETTE_BASE_ADDR, cartridge)?,
+            self.read_mem(PALETTE_BASE_ADDR, cartridge),
             self.mask_grey_scale(),
         );
 
@@ -915,25 +896,21 @@ impl NESPPU {
                 }
             }
         }
-
-        Ok(())
     }
 
     pub fn complete_rendering(
         &mut self,
         frame_buffer: &mut FrameBuffer,
         cartridge: &mut Cartridge,
-    ) -> NESResult<()> {
+    ) {
         if self.mask_sprite_visible() {
             // Render sprites reversely.
             for priority in 0..64 {
-                self.render_sprite(63 - priority, frame_buffer, cartridge)?;
+                self.render_sprite(63 - priority, frame_buffer, cartridge);
             }
         }
         // Fill the undefined pixels with the background color.
-        self.fill_undef(frame_buffer, cartridge)?;
-
-        Ok(())
+        self.fill_undef(frame_buffer, cartridge);
     }
 }
 

@@ -4,9 +4,8 @@ use core::ptr::slice_from_raw_parts_mut;
 use alloc::alloc::alloc;
 use spin::{Lazy, RwLock};
 
-use crate::logger::NESResult;
 use crate::nes::Mirroring;
-use crate::{critical, info};
+use crate::{error, info, log};
 
 #[repr(C)]
 pub struct NESHeader {
@@ -113,94 +112,94 @@ impl Cartridge {
         (self.header.flag6 >> 4) | (self.header.flag7 & 0xF0)
     }
 
-    pub fn read_cpu_mem(&mut self, addr: u16) -> NESResult<u8> {
+    pub fn read_cpu_mem(&mut self, addr: u16) -> u8 {
         let mapper = self.mapper();
         match mapper {
             0 => {
                 if addr < 0x8000 {
-                    critical!(BUS, "Attempt to read unused area: {:#06X}", addr);
+                    error!(BUS, "Attempt to read unused area: {:#06X}", addr);
+                    return 0;
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
-                Ok(self.prg_rom[addr])
+                self.prg_rom[addr]
             }
             2 => {
                 // 0x8000-0xBFFF: Switchable bank
                 // 0xC000-0xFFFF: Fixed to the last bank
                 if addr < 0x8000 {
-                    critical!(BUS, "Attempt to read unused area: {:#06X}", addr);
+                    error!(BUS, "Attempt to read unused area: {:#06X}", addr);
+                    return 0;
                 }
                 if addr < 0xC000 {
                     let addr = (addr as usize - 0x8000) + self.bank * PRG_ROM_UNIT;
-                    Ok(self.prg_rom[addr])
+                    self.prg_rom[addr]
                 } else {
                     let bank_len = self.prg_rom_size / PRG_ROM_UNIT;
                     let addr = (addr as usize - 0xC000) + (bank_len - 1) * PRG_ROM_UNIT;
-                    Ok(self.prg_rom[addr])
+                    self.prg_rom[addr]
                 }
             }
             _ => {
-                critical!(CAT, "Unsupported mapper: {}", self.mapper());
+                panic!("Unsupported mapper: {}", self.mapper());
             }
         }
     }
 
-    pub fn write_cpu_mem(&mut self, addr: u16, data: u8) -> NESResult<()> {
+    pub fn write_cpu_mem(&mut self, addr: u16, data: u8) {
         let mapper = self.mapper();
         match mapper {
             0 => {
                 if addr < 0x8000 {
-                    critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
+                    error!(BUS, "Attempt to write to unused area: {:#06X}", addr);
+                    return;
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
                 self.prg_rom[addr] = data;
-                Ok(())
             }
             2 => {
                 if addr < 0x8000 {
-                    critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
+                    error!(BUS, "Attempt to write to unused area: {:#06X}", addr);
+                    return;
                 }
                 self.bank = (data & 0b1111) as usize;
-                info!(CAT, "Switched to bank {}", self.bank);
-                Ok(())
+                log!(CAT, "Switched to bank {}", self.bank);
             }
             _ => {
-                critical!(CAT, "Unsupported mapper: {}", self.mapper());
+                panic!("Unsupported mapper: {}", self.mapper());
             }
         }
     }
 
-    pub fn read_ppu_mem(&mut self, addr: u16) -> NESResult<u8> {
+    pub fn read_ppu_mem(&mut self, addr: u16) -> u8 {
         let mapper = self.mapper();
         match mapper {
             0 => {
                 let addr = addr as usize % self.chr_rom_size;
-                Ok(self.chr_rom[addr])
+                self.chr_rom[addr]
             }
             2 => {
                 let addr = addr as usize % self.chr_rom_size;
-                Ok(self.chr_rom[addr])
+                self.chr_rom[addr]
             }
             _ => {
-                critical!(CAT, "Unsupported mapper: {}", self.mapper());
+                panic!("Unsupported mapper: {}", self.mapper());
             }
         }
     }
 
-    pub fn write_ppu_mem(&mut self, addr: u16, data: u8) -> NESResult<()> {
+    pub fn write_ppu_mem(&mut self, addr: u16, data: u8) {
         let mapper = self.mapper();
         match mapper {
             0 => {
                 let addr = addr as usize % self.chr_rom_size;
                 self.chr_rom[addr] = data;
-                Ok(())
             }
             2 => {
                 let addr = addr as usize % self.chr_rom_size;
                 self.chr_rom[addr] = data;
-                Ok(())
             }
             _ => {
-                critical!(CAT, "Unsupported mapper: {}", self.mapper());
+                panic!("Unsupported mapper: {}", self.mapper());
             }
         }
     }

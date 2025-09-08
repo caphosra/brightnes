@@ -3,7 +3,6 @@
 // https://www.masswerk.at/6502/6502_instruction_set.html
 //
 
-use crate::logger::NESResult;
 use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::NESCPU;
@@ -124,7 +123,7 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    pub fn fetch(pc: u16, cartridge: &mut Cartridge) -> NESResult<Self> {
+    pub fn fetch(pc: u16, cartridge: &mut Cartridge) -> Self {
         macro_rules! instr {
             ($inst:tt, Implied, $cycles:expr) => {
                 Instruction {
@@ -139,7 +138,7 @@ impl Instruction {
                     addr_mode: AddrMode::Immediate($crate::nes::bus::CPUBus::read(
                         pc + 1,
                         cartridge,
-                    )?),
+                    )),
                     cycles: $cycles,
                 }
             };
@@ -147,8 +146,8 @@ impl Instruction {
                 Instruction {
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::Absolute(u16::from_le_bytes([
-                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge)?,
-                        $crate::nes::bus::CPUBus::read(pc + 2, cartridge)?,
+                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge),
+                        $crate::nes::bus::CPUBus::read(pc + 2, cartridge),
                     ])),
                     cycles: $cycles,
                 }
@@ -159,7 +158,7 @@ impl Instruction {
                     addr_mode: AddrMode::ZeroPage($crate::nes::bus::CPUBus::read(
                         pc + 1,
                         cartridge,
-                    )?),
+                    )),
                     cycles: $cycles,
                 }
             };
@@ -167,8 +166,8 @@ impl Instruction {
                 Instruction {
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::AbsoluteX(u16::from_le_bytes([
-                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge)?,
-                        $crate::nes::bus::CPUBus::read(pc + 2, cartridge)?,
+                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge),
+                        $crate::nes::bus::CPUBus::read(pc + 2, cartridge),
                     ])),
                     cycles: $cycles,
                 }
@@ -177,8 +176,8 @@ impl Instruction {
                 Instruction {
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::AbsoluteY(u16::from_le_bytes([
-                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge)?,
-                        $crate::nes::bus::CPUBus::read(pc + 2, cartridge)?,
+                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge),
+                        $crate::nes::bus::CPUBus::read(pc + 2, cartridge),
                     ])),
                     cycles: $cycles,
                 }
@@ -189,7 +188,7 @@ impl Instruction {
                     addr_mode: AddrMode::ZeroPageX($crate::nes::bus::CPUBus::read(
                         pc + 1,
                         cartridge,
-                    )?),
+                    )),
                     cycles: $cycles,
                 }
             };
@@ -199,7 +198,7 @@ impl Instruction {
                     addr_mode: AddrMode::ZeroPageY($crate::nes::bus::CPUBus::read(
                         pc + 1,
                         cartridge,
-                    )?),
+                    )),
                     cycles: $cycles,
                 }
             };
@@ -207,8 +206,8 @@ impl Instruction {
                 Instruction {
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::Indirect(u16::from_le_bytes([
-                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge)?,
-                        $crate::nes::bus::CPUBus::read(pc + 2, cartridge)?,
+                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge),
+                        $crate::nes::bus::CPUBus::read(pc + 2, cartridge),
                     ])),
                     cycles: $cycles,
                 }
@@ -219,7 +218,7 @@ impl Instruction {
                     addr_mode: AddrMode::IndirectX($crate::nes::bus::CPUBus::read(
                         pc + 1,
                         cartridge,
-                    )?),
+                    )),
                     cycles: $cycles,
                 }
             };
@@ -229,7 +228,7 @@ impl Instruction {
                     addr_mode: AddrMode::IndirectY($crate::nes::bus::CPUBus::read(
                         pc + 1,
                         cartridge,
-                    )?),
+                    )),
                     cycles: $cycles,
                 }
             };
@@ -237,14 +236,14 @@ impl Instruction {
                 Instruction {
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::Relative(
-                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge)? as i8,
+                        $crate::nes::bus::CPUBus::read(pc + 1, cartridge) as i8,
                     ),
                     cycles: $cycles,
                 }
             };
         }
 
-        let inst = match CPUBus::read(pc, cartridge)? {
+        match CPUBus::read(pc, cartridge) {
             0x00 => instr!(BRK, Implied, 7),
             0x01 => instr!(ORA, IndirectX, 6),
             0x02 => instr!(JAM, Implied, 0),
@@ -501,9 +500,7 @@ impl Instruction {
             0xFD => instr!(SBC, AbsoluteX, 4),
             0xFE => instr!(INC, AbsoluteX, 6),
             0xFF => instr!(ISC, AbsoluteX, 7),
-        };
-
-        Ok(inst)
+        }
     }
 }
 
@@ -525,140 +522,151 @@ impl AddrMode {
         }
     }
 
-    pub fn resolve(&self, cpu: &NESCPU, cartridge: &mut Cartridge) -> NESResult<(u8, u8)> {
+    pub fn resolve(&self, cpu: &NESCPU, cartridge: &mut Cartridge) -> (u8, u8) {
         match self {
-            AddrMode::Implied => Ok((0, 0)),
-            AddrMode::Immediate(val) => Ok((*val, 0)),
-            AddrMode::ZeroPage(addr) => Ok((CPUBus::read(*addr as u16, cartridge)?, 0)),
+            AddrMode::Implied => (0, 0),
+            AddrMode::Immediate(val) => (*val, 0),
+            AddrMode::ZeroPage(addr) => (CPUBus::read(*addr as u16, cartridge), 0),
             AddrMode::ZeroPageX(addr) => {
                 let addr = addr.wrapping_add(cpu.reg_x);
-                Ok((CPUBus::read(addr as u16, cartridge)?, 0))
+                (CPUBus::read(addr as u16, cartridge), 0)
             }
             AddrMode::ZeroPageY(addr) => {
                 let addr = addr.wrapping_add(cpu.reg_y);
-                Ok((CPUBus::read(addr as u16, cartridge)?, 0))
+                (CPUBus::read(addr as u16, cartridge), 0)
             }
-            AddrMode::Absolute(addr) => Ok((CPUBus::read(*addr, cartridge)?, 0)),
+            AddrMode::Absolute(addr) => (CPUBus::read(*addr, cartridge), 0),
             AddrMode::AbsoluteX(addr) => {
                 let calc_addr = addr.wrapping_add(cpu.reg_x as u16);
-                Ok((
-                    CPUBus::read(calc_addr, cartridge)?,
+                (
+                    CPUBus::read(calc_addr, cartridge),
                     if addr & 0xFF00 != calc_addr & 0xFF00 {
                         1
                     } else {
                         0
                     },
-                ))
+                )
             }
             AddrMode::AbsoluteY(addr) => {
                 let calc_addr = addr.wrapping_add(cpu.reg_y as u16);
-                Ok((
-                    CPUBus::read(calc_addr, cartridge)?,
+                (
+                    CPUBus::read(calc_addr, cartridge),
                     if addr & 0xFF00 != calc_addr & 0xFF00 {
                         1
                     } else {
                         0
                     },
-                ))
+                )
             }
             AddrMode::Indirect(addr) => {
-                let lo = CPUBus::read(*addr, cartridge)?;
-                let hi = CPUBus::read(addr.wrapping_add(1), cartridge)?;
-                Ok((u16::from_le_bytes([lo, hi]) as u8, 0))
+                let lo = CPUBus::read(*addr, cartridge);
+                let hi = CPUBus::read(addr.wrapping_add(1), cartridge);
+                (u16::from_le_bytes([lo, hi]) as u8, 0)
             }
             AddrMode::IndirectX(addr) => {
                 let ptr = addr.wrapping_add(cpu.reg_x);
-                let lo = CPUBus::read(ptr as u16, cartridge)?;
-                let hi = CPUBus::read(ptr.wrapping_add(1) as u16, cartridge)?;
+                let lo = CPUBus::read(ptr as u16, cartridge);
+                let hi = CPUBus::read(ptr.wrapping_add(1) as u16, cartridge);
                 let addr = u16::from_le_bytes([lo, hi]);
-                Ok((CPUBus::read(addr, cartridge)?, 0))
+                (CPUBus::read(addr, cartridge), 0)
             }
             AddrMode::IndirectY(addr) => {
-                let lo = CPUBus::read(*addr as u16, cartridge)?;
-                let hi = CPUBus::read(addr.wrapping_add(1) as u16, cartridge)?;
+                let lo = CPUBus::read(*addr as u16, cartridge);
+                let hi = CPUBus::read(addr.wrapping_add(1) as u16, cartridge);
                 let addr = u16::from_le_bytes([lo, hi]);
                 let calc_addr = addr.wrapping_add(cpu.reg_y as u16);
-                Ok((
-                    CPUBus::read(calc_addr, cartridge)?,
+                (
+                    CPUBus::read(calc_addr, cartridge),
                     if addr & 0xFF00 != calc_addr & 0xFF00 {
                         1
                     } else {
                         0
                     },
-                ))
+                )
             }
-            AddrMode::Relative(offset) => Ok((
+            AddrMode::Relative(offset) => (
                 cpu.reg_pc.wrapping_add(*offset as u16).wrapping_add(2) as u8,
                 0,
-            )),
+            ),
         }
     }
 
-    pub fn resolve_addr(
+    pub fn resolve_implied(
         &self,
         cpu: &NESCPU,
+        implied: u8,
         cartridge: &mut Cartridge,
-    ) -> NESResult<Option<(u16, u8)>> {
+    ) -> (u8, u8) {
         match self {
-            AddrMode::Implied => Ok(None),
-            AddrMode::Immediate(_) => Ok(None),
-            AddrMode::ZeroPage(_) => Ok(None),
-            AddrMode::ZeroPageX(_) => Ok(None),
-            AddrMode::ZeroPageY(_) => Ok(None),
-            AddrMode::Absolute(addr) => Ok(Some((*addr, 0))),
-            AddrMode::AbsoluteX(_) => Ok(None),
-            AddrMode::AbsoluteY(_) => Ok(None),
-            AddrMode::Indirect(addr) => {
-                let lo = CPUBus::read(*addr, cartridge)?;
-                let hi = CPUBus::read(addr.wrapping_add(1), cartridge)?;
-                Ok(Some((u16::from_le_bytes([lo, hi]), 0)))
-            }
-            AddrMode::IndirectX(_) => Ok(None),
-            AddrMode::IndirectY(_) => Ok(None),
-            AddrMode::Relative(offset) => Ok(Some((
-                cpu.reg_pc.wrapping_add(*offset as u16).wrapping_add(2),
-                0,
-            ))),
+            AddrMode::Implied => (implied, 0),
+            _ => self.resolve(cpu, cartridge),
         }
     }
 
-    pub fn write(&self, cpu: &NESCPU, value: u8, cartridge: &mut Cartridge) -> NESResult<()> {
+    pub fn resolve_addr(&self, cpu: &NESCPU, cartridge: &mut Cartridge) -> Option<(u16, u8)> {
         match self {
-            AddrMode::Implied => Ok(()),
-            AddrMode::Immediate(_) => Ok(()),
-            AddrMode::ZeroPage(addr) => CPUBus::write(*addr as u16, value, cartridge),
+            AddrMode::Implied => None,
+            AddrMode::Immediate(_) => None,
+            AddrMode::ZeroPage(_) => None,
+            AddrMode::ZeroPageX(_) => None,
+            AddrMode::ZeroPageY(_) => None,
+            AddrMode::Absolute(addr) => Some((*addr, 0)),
+            AddrMode::AbsoluteX(_) => None,
+            AddrMode::AbsoluteY(_) => None,
+            AddrMode::Indirect(addr) => {
+                let lo = CPUBus::read(*addr, cartridge);
+                let hi = CPUBus::read(addr.wrapping_add(1), cartridge);
+                Some((u16::from_le_bytes([lo, hi]), 0))
+            }
+            AddrMode::IndirectX(_) => None,
+            AddrMode::IndirectY(_) => None,
+            AddrMode::Relative(offset) => {
+                Some((cpu.reg_pc.wrapping_add(*offset as u16).wrapping_add(2), 0))
+            }
+        }
+    }
+
+    pub fn write(&self, cpu: &NESCPU, value: u8, cartridge: &mut Cartridge) {
+        match self {
+            AddrMode::Implied => {}
+            AddrMode::Immediate(_) => {}
+            AddrMode::ZeroPage(addr) => {
+                CPUBus::write(*addr as u16, value, cartridge);
+            }
             AddrMode::ZeroPageX(addr) => {
                 let addr = addr.wrapping_add(cpu.reg_x);
-                CPUBus::write(addr as u16, value, cartridge)
+                CPUBus::write(addr as u16, value, cartridge);
             }
             AddrMode::ZeroPageY(addr) => {
                 let addr = addr.wrapping_add(cpu.reg_y);
-                CPUBus::write(addr as u16, value, cartridge)
+                CPUBus::write(addr as u16, value, cartridge);
             }
-            AddrMode::Absolute(addr) => CPUBus::write(*addr, value, cartridge),
+            AddrMode::Absolute(addr) => {
+                CPUBus::write(*addr, value, cartridge);
+            }
             AddrMode::AbsoluteX(addr) => {
                 let addr = addr.wrapping_add(cpu.reg_x as u16);
-                CPUBus::write(addr, value, cartridge)
+                CPUBus::write(addr, value, cartridge);
             }
             AddrMode::AbsoluteY(addr) => {
                 let addr = addr.wrapping_add(cpu.reg_y as u16);
-                CPUBus::write(addr, value, cartridge)
+                CPUBus::write(addr, value, cartridge);
             }
-            AddrMode::Indirect(_) => Ok(()),
+            AddrMode::Indirect(_) => {}
             AddrMode::IndirectX(addr) => {
                 let ptr = addr.wrapping_add(cpu.reg_x);
-                let lo = CPUBus::read(ptr as u16, cartridge)?;
-                let hi = CPUBus::read(ptr.wrapping_add(1) as u16, cartridge)?;
+                let lo = CPUBus::read(ptr as u16, cartridge);
+                let hi = CPUBus::read(ptr.wrapping_add(1) as u16, cartridge);
                 let addr = u16::from_le_bytes([lo, hi]);
-                CPUBus::write(addr, value, cartridge)
+                CPUBus::write(addr, value, cartridge);
             }
             AddrMode::IndirectY(addr) => {
-                let lo = CPUBus::read(*addr as u16, cartridge)?;
-                let hi = CPUBus::read(addr.wrapping_add(1) as u16, cartridge)?;
+                let lo = CPUBus::read(*addr as u16, cartridge);
+                let hi = CPUBus::read(addr.wrapping_add(1) as u16, cartridge);
                 let addr = u16::from_le_bytes([lo, hi]).wrapping_add(cpu.reg_y as u16);
-                CPUBus::write(addr, value, cartridge)
+                CPUBus::write(addr, value, cartridge);
             }
-            AddrMode::Relative(_) => Ok(()),
+            AddrMode::Relative(_) => {}
         }
     }
 }
