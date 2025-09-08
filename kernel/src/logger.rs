@@ -1,3 +1,4 @@
+use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
@@ -11,6 +12,8 @@ pub struct Logger {
     buffer: Vec<String>,
     scroll: usize,
 }
+
+struct LoggerColor;
 
 #[macro_export]
 macro_rules! log {
@@ -30,12 +33,16 @@ static LOG_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
 });
 
 impl Logger {
+    const PREFIX_LEN: usize = 5;
+
     fn log_internal(&mut self, text: String) {
         for line in text.split(|c| c == '\n') {
             if line.len() == 0 {
                 self.add_buffer(line.to_string());
             } else {
-                let width = LOG_FB.read().text_width();
+                // Wrap the line if it's too long.
+                // The width is reduced by 5 taking the prefix into account.
+                let width = LOG_FB.read().text_width() - Self::PREFIX_LEN;
                 for chunk in line.as_bytes().chunks(width) {
                     if self.buffer.len() == self.scroll {
                         self.scroll += 1;
@@ -105,24 +112,58 @@ impl Logger {
         }
 
         let mut buffer = LOG_FB.write();
-        let font_color = FrameBuffer::make_color(0xFF, 0xFF, 0xFF);
-        let bg_color = Logger::bg_color();
+        let prefix_color = LoggerColor::prefix_color();
+        let fg_color = LoggerColor::fg_color();
+        let bg_color = LoggerColor::bg_color();
         let height = buffer.text_height();
 
         if after < height {
             // The screen is not fully filled yet.
             assert!(before <= after);
             for idx in before..after {
+                // Draw the prefix.
+                buffer.draw_text(
+                    0,
+                    idx * FONT_HEIGHT as usize,
+                    format!("{:04X} ", idx).as_bytes(),
+                    prefix_color,
+                    bg_color,
+                );
+
+                // Draw the content.
                 let text = self.buffer[idx].as_bytes();
-                buffer.draw_text(0, idx * FONT_HEIGHT as usize, text, font_color, bg_color);
+                buffer.draw_text(
+                    Self::PREFIX_LEN * FONT_WIDTH as usize,
+                    idx * FONT_HEIGHT as usize,
+                    text,
+                    fg_color,
+                    bg_color,
+                );
             }
         } else {
             for idx in 0..height {
+                // Draw the prefix.
+                buffer.draw_text(
+                    0,
+                    idx * FONT_HEIGHT as usize,
+                    format!("{:04X} ", idx + after - height).as_bytes(),
+                    prefix_color,
+                    bg_color,
+                );
+
+                // Draw the content.
                 let text = self.buffer[idx + after - height].as_bytes();
-                buffer.draw_text(0, idx * FONT_HEIGHT as usize, text, font_color, bg_color);
+                buffer.draw_text(
+                    Self::PREFIX_LEN * FONT_WIDTH as usize,
+                    idx * FONT_HEIGHT as usize,
+                    text,
+                    fg_color,
+                    bg_color,
+                );
+
                 if idx + before >= height {
-                    let current_text_len = text.len();
-                    let prev_text_len = self.buffer[idx + before - height].len();
+                    let current_text_len = text.len() + Self::PREFIX_LEN;
+                    let prev_text_len = self.buffer[idx + before - height].len() + Self::PREFIX_LEN;
                     if prev_text_len > current_text_len {
                         // Erase the previous text.
                         buffer.draw_rect(
@@ -158,15 +199,11 @@ impl Logger {
         });
     }
 
-    fn bg_color() -> PixelColor {
-        FrameBuffer::make_color(0x20, 0x20, 0x20)
-    }
-
     pub fn render_all() {
         // Clear the frame buffer.
         {
             let mut buffer = LOG_FB.write();
-            buffer.clear(Logger::bg_color());
+            buffer.clear(LoggerColor::bg_color());
         }
 
         // Re-render the log.
@@ -179,5 +216,19 @@ impl Logger {
             let mut buffer = LOG_FB.write();
             buffer.flush_all();
         }
+    }
+}
+
+impl LoggerColor {
+    pub fn bg_color() -> PixelColor {
+        FrameBuffer::make_color(0x20, 0x20, 0x20)
+    }
+
+    pub fn fg_color() -> PixelColor {
+        FrameBuffer::make_color(0xFF, 0xFF, 0xFF)
+    }
+
+    pub fn prefix_color() -> PixelColor {
+        FrameBuffer::make_color(0xA0, 0xA0, 0xA0)
     }
 }
