@@ -25,10 +25,10 @@ impl BKeyboard {
                 (KeyState::Down, KeyCode::Tab) => {
                     Process::shift_proc();
                 }
-                (state, KeyCode::Spacebar) => {
+                (state, KeyCode::L) => {
                     BKeyboard::on_pad_button(state, PadButton::A);
                 }
-                (state, KeyCode::Return) => {
+                (state, KeyCode::K) => {
                     BKeyboard::on_pad_button(state, PadButton::B);
                 }
                 (state, KeyCode::W) => {
