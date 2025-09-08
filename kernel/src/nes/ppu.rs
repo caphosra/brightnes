@@ -739,14 +739,15 @@ impl NESPPU {
             };
 
             // Read pattern data.
+            let pattern_size = PATTERN_SIZE * (self.ctrl_sprite_size() as u16 >> 3);
             let lo = self.read_mem(
-                sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
+                sprite_pattern_base_addr + pattern_idx as u16 * pattern_size + relative_y as u16,
                 cartridge,
             );
             let hi = self.read_mem(
                 sprite_pattern_base_addr
-                    + pattern_idx as u16 * PATTERN_SIZE
-                    + PATTERN_SIZE / 2
+                    + pattern_idx as u16 * pattern_size
+                    + pattern_size / 2
                     + relative_y as u16,
                 cartridge,
             );
@@ -822,14 +823,15 @@ impl NESPPU {
             };
 
             // Read pattern data.
+            let pattern_size = PATTERN_SIZE * (self.ctrl_sprite_size() as u16 >> 3);
             let lo = self.read_mem(
-                sprite_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y as u16,
+                sprite_pattern_base_addr + pattern_idx as u16 * pattern_size + relative_y as u16,
                 cartridge,
             );
             let hi = self.read_mem(
                 sprite_pattern_base_addr
-                    + pattern_idx as u16 * PATTERN_SIZE
-                    + PATTERN_SIZE / 2
+                    + pattern_idx as u16 * pattern_size
+                    + pattern_size / 2
                     + relative_y as u16,
                 cartridge,
             );
