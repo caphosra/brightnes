@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
 
 use crate::{
-    error,
+    critical,
     frame_buffer::{FrameBuffer, PixelColor, UNDEF_COLOR},
     log,
     nes::{
@@ -381,8 +381,7 @@ impl NESPPU {
             // Mirrors of $3F00-$3F1F
             self.read_mem(addr - 0x20, cartridge)
         } else {
-            error!(PPU, "Invalid address reading: {:#06X}", addr);
-            self.read_mem(addr & 0x3FFF, cartridge)
+            critical!(PPU, "Invalid address reading: {:#06X}", addr);
         }
     }
 
@@ -427,8 +426,7 @@ impl NESPPU {
             // Mirrors of $3F00-$3F1F
             self.write_mem(addr - 0x20, val, cartridge);
         } else {
-            error!(PPU, "Invalid address writing: {:#06X}", addr);
-            self.write_mem(addr & 0x3FFF, val, cartridge);
+            critical!(PPU, "Invalid address writing: {:#06X}", addr);
         }
     }
 
@@ -449,8 +447,7 @@ impl NESPPU {
 
             data
         } else {
-            error!(PPU, "Invalid register reading: {:#06X}", addr);
-            0
+            critical!(PPU, "Invalid register reading: {:#06X}", addr);
         }
     }
 
@@ -520,7 +517,7 @@ impl NESPPU {
 
             self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
         } else {
-            error!(PPU, "Invalid register writing: {:#06X}", addr);
+            critical!(PPU, "Invalid register writing: {:#06X}", addr);
         }
     }
 

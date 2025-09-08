@@ -3,7 +3,7 @@ use spin::{Lazy, RwLock};
 use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::instr::{AddrMode, InstrType, Instruction};
-use crate::{error, warn};
+use crate::{critical, error};
 
 pub struct NESCPU {
     pub reg_a: u8,
@@ -454,8 +454,7 @@ impl NESCPU {
                     inst.cycles
                 }
                 _ => {
-                    error!(CPU, "Illegal JMP at PC={:#06x}", self.reg_pc);
-                    0
+                    critical!(CPU, "Illegal JMP at PC={:#06x}", self.reg_pc);
                 }
             },
             InstrType::JSR => match inst.addr_mode {
@@ -468,8 +467,7 @@ impl NESCPU {
                     inst.cycles
                 }
                 _ => {
-                    error!(CPU, "Illegal JSR at PC={:#06x}", self.reg_pc);
-                    0
+                    critical!(CPU, "Illegal JSR at PC={:#06x}", self.reg_pc);
                 }
             },
             InstrType::LDA => {
@@ -766,10 +764,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::ANE => {
-                error!(CPU, "ANE is highly unstable.");
-
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                critical!(CPU, "ANE is highly unstable.");
             }
             InstrType::ARR => {
                 let (mem, _) = inst.addr_mode.resolve(self, cartridge);
@@ -847,10 +842,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::LXA => {
-                error!(CPU, "LXA is highly unstable.");
-
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                critical!(CPU, "LXA is highly unstable.");
             }
             InstrType::RLA => {
                 let (val, _) = inst.addr_mode.resolve(self, cartridge);
@@ -984,8 +976,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::JAM => {
-                warn!(CPU, "JAM encountered at PC={:#06X}", self.reg_pc);
-                0x1
+                critical!(CPU, "JAM encountered at PC={:#06X}", self.reg_pc);
             }
         };
 

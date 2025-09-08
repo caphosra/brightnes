@@ -77,6 +77,14 @@ macro_rules! error {
     ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Error, alloc::format!($($arg)*)));
 }
 
+#[macro_export]
+macro_rules! critical {
+    ($loc:tt, $($arg:tt)*) => {
+        $crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Error, alloc::format!($($arg)*));
+        panic!("Critical error occurred.");
+    }
+}
+
 static LOGGER: Lazy<RwLock<Logger>> = Lazy::new(|| {
     RwLock::new(Logger {
         buffer: Vec::new(),

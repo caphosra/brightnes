@@ -5,7 +5,7 @@ use alloc::alloc::alloc;
 use spin::{Lazy, RwLock};
 
 use crate::nes::Mirroring;
-use crate::{error, info, log};
+use crate::{critical, info, log};
 
 #[repr(C)]
 pub struct NESHeader {
@@ -25,7 +25,7 @@ impl NESHeader {
         // Load the NES header.
         let nes_header = unsafe { (NES_FILE_ADDR as *const NESHeader).as_ref() }.unwrap();
         if nes_header.magic != NES_MAGIC {
-            panic!("The NES file is invalid.");
+            critical!(CAT, "The NES file is invalid.");
         }
 
         NESHeader {
@@ -117,8 +117,7 @@ impl Cartridge {
         match mapper {
             0 => {
                 if addr < 0x8000 {
-                    error!(BUS, "Attempt to read unused area: {:#06X}", addr);
-                    return 0;
+                    critical!(BUS, "Attempt to read unused area: {:#06X}", addr);
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
                 self.prg_rom[addr]
@@ -127,8 +126,7 @@ impl Cartridge {
                 // 0x8000-0xBFFF: Switchable bank
                 // 0xC000-0xFFFF: Fixed to the last bank
                 if addr < 0x8000 {
-                    error!(BUS, "Attempt to read unused area: {:#06X}", addr);
-                    return 0;
+                    critical!(BUS, "Attempt to read unused area: {:#06X}", addr);
                 }
                 if addr < 0xC000 {
                     let addr = (addr as usize - 0x8000) + self.bank * PRG_ROM_UNIT;
@@ -140,7 +138,7 @@ impl Cartridge {
                 }
             }
             _ => {
-                panic!("Unsupported mapper: {}", self.mapper());
+                critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
         }
     }
@@ -150,22 +148,20 @@ impl Cartridge {
         match mapper {
             0 => {
                 if addr < 0x8000 {
-                    error!(BUS, "Attempt to write to unused area: {:#06X}", addr);
-                    return;
+                    critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
                 self.prg_rom[addr] = data;
             }
             2 => {
                 if addr < 0x8000 {
-                    error!(BUS, "Attempt to write to unused area: {:#06X}", addr);
-                    return;
+                    critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
                 }
                 self.bank = (data & 0b1111) as usize;
                 log!(CAT, "Switched to bank {}", self.bank);
             }
             _ => {
-                panic!("Unsupported mapper: {}", self.mapper());
+                critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
         }
     }
@@ -182,7 +178,7 @@ impl Cartridge {
                 self.chr_rom[addr]
             }
             _ => {
-                panic!("Unsupported mapper: {}", self.mapper());
+                critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
         }
     }
@@ -199,7 +195,7 @@ impl Cartridge {
                 self.chr_rom[addr] = data;
             }
             _ => {
-                panic!("Unsupported mapper: {}", self.mapper());
+                critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
         }
     }

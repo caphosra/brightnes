@@ -62,6 +62,8 @@ pub extern "C" fn kernel_main() -> ! {
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
+    Process::switch_proc(ProcessMode::Game);
+
     loop {
         main_loop();
     }
@@ -70,10 +72,6 @@ pub extern "C" fn kernel_main() -> ! {
 fn main_loop() {
     match Process::status() {
         (ProcessMode::Log, true) => {
-            Logger::render_all();
-            Process::mark_as_switched();
-        }
-        (ProcessMode::Recovery, true) => {
             Logger::render_all();
             Process::mark_as_switched();
         }
@@ -116,7 +114,14 @@ fn main_loop() {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+    Process::enter_recovery();
+
+    Logger::render_all();
+    Process::mark_as_switched();
+
+    loop {
+        hlt();
+    }
 }
 
 mod font;
