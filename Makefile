@@ -14,7 +14,9 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/nes/cpu/instr.rs \
 	./kernel/src/nes/cpu/mod.rs \
 	./kernel/src/nes/ppu/bus.rs \
+	./kernel/src/nes/ppu/color.rs \
 	./kernel/src/nes/ppu/mod.rs \
+	./kernel/src/nes/ppu/oam.rs \
 	./kernel/src/nes/ppu/vram.rs \
 	./kernel/src/nes/cartridge.rs \
 	./kernel/src/nes/mod.rs \
