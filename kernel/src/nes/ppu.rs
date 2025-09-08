@@ -310,11 +310,6 @@ impl NESPPU {
     }
 
     #[inline(always)]
-    pub fn ctrl_master_slave(&self) -> bool {
-        self.reg_ctrl & 0x40 != 0
-    }
-
-    #[inline(always)]
     pub fn ctrl_nmi_enable(&self) -> bool {
         self.reg_ctrl & 0x80 != 0
     }
@@ -342,21 +337,6 @@ impl NESPPU {
     #[inline(always)]
     pub fn mask_sprite_visible(&self) -> bool {
         self.reg_mask & 0x10 != 0
-    }
-
-    #[inline(always)]
-    pub fn mask_emphasize_red(&self) -> bool {
-        self.reg_mask & 0x20 != 0
-    }
-
-    #[inline(always)]
-    pub fn mask_emphasize_green(&self) -> bool {
-        self.reg_mask & 0x40 != 0
-    }
-
-    #[inline(always)]
-    pub fn mask_emphasize_blue(&self) -> bool {
-        self.reg_mask & 0x80 != 0
     }
 
     fn read_mem(&self, addr: u16, cartridge: &mut Cartridge) -> u8 {
@@ -784,7 +764,7 @@ impl NESPPU {
                     continue;
                 }
 
-                if x < 8 && !self.mask_bg_visible_left8() {
+                if x < 8 && !self.mask_sprite_visible_left8() {
                     // Left 8 pixels of the screen are not visible.
                     continue;
                 }
@@ -867,7 +847,7 @@ impl NESPPU {
                     continue;
                 }
 
-                if x < 8 && !self.mask_bg_visible_left8() {
+                if x < 8 && !self.mask_sprite_visible_left8() {
                     // Left 8 pixels of the screen are not visible.
                     continue;
                 }
