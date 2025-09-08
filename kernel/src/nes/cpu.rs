@@ -1,4 +1,5 @@
 use spin::{Lazy, RwLock};
+use x86_64::instructions::interrupts;
 
 use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::Cartridge;
@@ -50,6 +51,8 @@ pub enum InterruptType {
 }
 
 impl NESCPU {
+    const MAX_STALL_CYCLES: u32 = 8;
+
     pub fn stall(cycles: u32) {
         let mut stall_cycles = CPU_STALL.write();
         *stall_cycles += cycles;
@@ -107,13 +110,18 @@ impl NESCPU {
             }
         }
 
-        let stall_cycles = {
+        let stall_cycles = interrupts::without_interrupts(|| {
             // Acquire a read-write lock of CPU_STALL.
             let mut stall_cycles = CPU_STALL.write();
-            let cycles = *stall_cycles;
-            *stall_cycles = 0;
-            cycles
-        };
+            if *stall_cycles > Self::MAX_STALL_CYCLES {
+                *stall_cycles -= Self::MAX_STALL_CYCLES;
+                Self::MAX_STALL_CYCLES
+            } else {
+                let cycles = *stall_cycles;
+                *stall_cycles = 0;
+                cycles
+            }
+        });
         if stall_cycles > 0 {
             // The CPU is stalling for external reasons.
             stall_cycles
