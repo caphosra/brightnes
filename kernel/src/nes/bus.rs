@@ -1,11 +1,11 @@
 use crate::{
-    log,
     nes::{
         cartridge::Cartridge,
         pad::PADS,
         ppu::{NES_PPU, OAM_DMA_ADDR},
         ram::NES_RAM,
     },
+    warn,
 };
 
 pub struct CPUBus;
@@ -26,7 +26,7 @@ impl CPUBus {
             ppu.read_reg(addr, cartridge)
         } else if addr < 0x4016 {
             // APU
-            log!("[BUS] Attempt to read from APU: {:#06X}", addr);
+            warn!(APU, "Attempt to read from APU: {:#06X}", addr);
             0
         } else if addr == 0x4016 {
             // Pad 1
@@ -57,7 +57,7 @@ impl CPUBus {
             ppu.write_reg(addr, data, cartridge);
         } else if addr < 0x4016 {
             // APU
-            log!("[BUS] Attempt to write to APU: {:#06X}", addr);
+            warn!(APU, "Attempt to write to APU: {:#06X}", addr);
         } else if addr == 0x4016 {
             // Pad 1
             let mut pad = PADS.write();

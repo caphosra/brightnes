@@ -4,8 +4,8 @@ use core::ptr::slice_from_raw_parts_mut;
 use alloc::alloc::alloc;
 use spin::{Lazy, RwLock};
 
-use crate::log;
 use crate::nes::Mirroring;
+use crate::{critical, info, log};
 
 #[repr(C)]
 pub struct NESHeader {
@@ -25,7 +25,7 @@ impl NESHeader {
         // Load the NES header.
         let nes_header = unsafe { (NES_FILE_ADDR as *const NESHeader).as_ref() }.unwrap();
         if nes_header.magic != NES_MAGIC {
-            panic!("The NES file is invalid.");
+            critical!(CAT, "The NES file is invalid.");
         }
 
         NESHeader {
@@ -74,21 +74,21 @@ pub static CARTRIDGE: Lazy<RwLock<Cartridge>> = Lazy::new(|| {
 
 impl Cartridge {
     pub fn load(&mut self) {
-        log!("[CTG] Mapper: {}", self.mapper());
+        info!(CAT, "Mapper: {}", self.mapper());
 
         // Load the program ROM.
         let prg_rom_start = unsafe { (NES_FILE_ADDR as *mut u8).add(size_of::<NESHeader>()) };
         self.prg_rom =
             unsafe { slice_from_raw_parts_mut(prg_rom_start, self.prg_rom_size).as_mut() }.unwrap();
 
-        log!("[CTG] Loaded PRG ROM ({:#x} bytes)", self.prg_rom_size);
+        info!(CAT, "Loaded PRG ROM ({:#x} bytes)", self.prg_rom_size);
 
         // Load the character ROM.
         let chr_rom_start = unsafe { prg_rom_start.add(self.prg_rom_size) };
         self.chr_rom =
             unsafe { slice_from_raw_parts_mut(chr_rom_start, self.chr_rom_size).as_mut() }.unwrap();
 
-        log!("[CTG] Loaded CHR ROM ({:#x} bytes)", self.chr_rom_size);
+        info!(CAT, "Loaded CHR ROM ({:#x} bytes)", self.chr_rom_size);
 
         if self.chr_rom_size == 0 {
             // Prepare CHR RAM if there are no CHR ROM.
@@ -98,7 +98,7 @@ impl Cartridge {
                 unsafe { slice_from_raw_parts_mut(chr_rom_start, CHR_ROM_UNIT).as_mut() }.unwrap();
 
             self.chr_rom_size = CHR_ROM_UNIT;
-            log!("[CTG] Prepared CHR RAM ({:#x} bytes)", self.chr_rom_size);
+            info!(CAT, "Prepared CHR RAM ({:#x} bytes)", self.chr_rom_size);
         }
     }
 
@@ -117,8 +117,7 @@ impl Cartridge {
         match mapper {
             0 => {
                 if addr < 0x8000 {
-                    log!("[BUS] Attempt to read unused area: {:#06X}", addr);
-                    return 0;
+                    critical!(BUS, "Attempt to read unused area: {:#06X}", addr);
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
                 self.prg_rom[addr]
@@ -127,8 +126,7 @@ impl Cartridge {
                 // 0x8000-0xBFFF: Switchable bank
                 // 0xC000-0xFFFF: Fixed to the last bank
                 if addr < 0x8000 {
-                    log!("[BUS] Attempt to read unused area: {:#06X}", addr);
-                    return 0;
+                    critical!(BUS, "Attempt to read unused area: {:#06X}", addr);
                 }
                 if addr < 0xC000 {
                     let addr = (addr as usize - 0x8000) + self.bank * PRG_ROM_UNIT;
@@ -141,14 +139,13 @@ impl Cartridge {
             }
             3 => {
                 if addr < 0x8000 {
-                    log!("[BUS] Attempt to read unused area: {:#06X}", addr);
-                    return 0;
+                    critical!(BUS, "Attempt to read unused area: {:#06X}", addr);
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
                 self.prg_rom[addr]
             }
             _ => {
-                panic!("Unsupported mapper: {}", self.mapper());
+                critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
         }
     }
@@ -157,26 +154,24 @@ impl Cartridge {
         let mapper = self.mapper();
         match mapper {
             0 => {
-                log!("[BUS] Attempt to write to read-only area: {:#06X}", addr);
+                critical!(BUS, "Attempt to write to read-only area: {:#06X}", addr);
             }
             2 => {
                 if addr < 0x8000 {
-                    log!("[BUS] Attempt to write to unused area: {:#06X}", addr);
-                    return;
+                    critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
                 }
                 self.bank = (data & 0b1111) as usize;
-                log!("[CTG] Switched to bank {}", self.bank);
+                log!(CAT, "Switched to bank {}", self.bank);
             }
             3 => {
                 if addr < 0x8000 {
-                    log!("[BUS] Attempt to write to unused area: {:#06X}", addr);
-                    return;
+                    critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
                 self.bank = (self.prg_rom[addr] & data) as usize & 0b11;
             }
             _ => {
-                panic!("Unsupported mapper: {}", self.mapper());
+                critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
         }
     }
@@ -197,7 +192,7 @@ impl Cartridge {
                 self.chr_rom[addr]
             }
             _ => {
-                panic!("Unsupported mapper: {}", self.mapper());
+                critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
         }
     }
@@ -218,7 +213,7 @@ impl Cartridge {
                 self.chr_rom[addr] = data;
             }
             _ => {
-                panic!("Unsupported mapper: {}", self.mapper());
+                critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
         }
     }

@@ -36,13 +36,14 @@ pub extern "C" fn kernel_main() -> ! {
     }
     FontManager::init_glyph_index_table();
 
-    log!("[SYS] Hello World from the kernel.");
+    log!(SYS, "Hello World from the kernel.");
+    info!(SYS, "Enabled logging system.");
 
     {
         let mut cartridge = CARTRIDGE.write();
         cartridge.load();
     }
-    log!("[SYS] Loaded the cartridge.");
+    info!(SYS, "Loaded the cartridge.");
 
     {
         let mut cpu = NES_CPU.write();
@@ -51,64 +52,76 @@ pub extern "C" fn kernel_main() -> ! {
         let hi = CPUBus::read(0xFFFD, &mut cartridge);
         cpu.reg_pc = u16::from_le_bytes([lo, hi]);
 
-        log!("[SYS] Entry Point: {:#06X}", cpu.reg_pc);
+        log!(SYS, "Entry Point: {:#06X}", cpu.reg_pc);
     }
-
-    log!("[SYS] Initialized the NES CPU.");
+    info!(SYS, "Initialized the NES CPU.");
 
     Interrupt::init();
     interrupts::enable();
 
-    log!("[SYS] Interrupts are enabled.");
-    log!("[SYS] It's time to enjoy BRIGHTNES!");
+    info!(SYS, "Interrupts are enabled.");
+    log!(SYS, "It's time to enjoy BRIGHTNES!");
+
+    Process::switch_proc(ProcessMode::Game);
 
     loop {
-        match Process::status() {
-            (ProcessMode::Log, true) => {
-                Logger::render_all();
-                Process::mark_as_switched();
-            }
-            (ProcessMode::Game, true) => {
-                let mut buffer = GAME_FB.write();
-                buffer.flush_all();
-                Process::mark_as_switched();
-            }
-            (ProcessMode::Info, true) => {
-                InfoProc::render_all();
-                Process::mark_as_switched();
-            }
-            (ProcessMode::Game, _) => {
-                const FRAME_CYCLES: usize = 29780;
+        main_loop();
+    }
+}
 
-                let mut cartridge = CARTRIDGE.write();
-                let mut cpu = NES_CPU.write();
-                let mut frame_buffer = GAME_FB.write();
+fn main_loop() {
+    match Process::status() {
+        (ProcessMode::Log, true) => {
+            Logger::render_all();
+            Process::mark_as_switched();
+        }
+        (ProcessMode::Game, true) => {
+            let mut buffer = GAME_FB.write();
+            buffer.flush_all();
+            Process::mark_as_switched();
+        }
+        (ProcessMode::Info, true) => {
+            InfoProc::render_all();
+            Process::mark_as_switched();
+        }
+        (ProcessMode::Game, _) => {
+            const FRAME_CYCLES: usize = 29780;
 
-                let mut cycles = 0;
-                while cycles < FRAME_CYCLES {
-                    let required = cpu.clock(&mut cartridge) as usize;
-                    {
-                        let mut ppu = NES_PPU.write();
-                        ppu.render_bg(required * 3, &mut frame_buffer, &mut cartridge);
-                    }
-                    cycles += required;
-                }
+            let mut cartridge = CARTRIDGE.write();
+            let mut cpu = NES_CPU.write();
+            let mut frame_buffer = GAME_FB.write();
+
+            let mut cycles = 0;
+            while cycles < FRAME_CYCLES {
+                let required = cpu.clock(&mut cartridge) as usize;
                 {
                     let mut ppu = NES_PPU.write();
-                    ppu.complete_rendering(&mut frame_buffer, &mut cartridge);
+                    ppu.render_bg(required * 3, &mut frame_buffer, &mut cartridge);
                 }
-                frame_buffer.flush(false);
+                cycles += required;
             }
-            _ => {
-                hlt();
+            {
+                let mut ppu = NES_PPU.write();
+                ppu.complete_rendering(&mut frame_buffer, &mut cartridge);
             }
+            frame_buffer.flush(false);
+        }
+        _ => {
+            hlt();
         }
     }
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+    Process::enter_recovery();
+
+    Logger::render_all();
+    Process::mark_as_switched();
+
+    loop {
+        hlt();
+    }
 }
 
 mod font;
