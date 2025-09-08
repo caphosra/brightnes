@@ -591,18 +591,6 @@ impl AddrMode {
         }
     }
 
-    pub fn resolve_implied(
-        &self,
-        cpu: &NESCPU,
-        implied: u8,
-        cartridge: &mut Cartridge,
-    ) -> (u8, u8) {
-        match self {
-            AddrMode::Implied => (implied, 0),
-            _ => self.resolve(cpu, cartridge),
-        }
-    }
-
     pub fn resolve_addr(&self, cpu: &NESCPU, cartridge: &mut Cartridge) -> Option<(u16, u8)> {
         match self {
             AddrMode::Implied => None,
