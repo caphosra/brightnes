@@ -232,9 +232,9 @@ pub struct NESPPU {
 
     reg_data_buffer: u8,
 
-    reg_v: u16,
-    reg_t: u16,
-    reg_x: u8,
+    pub reg_v: u16,
+    pub reg_t: u16,
+    pub reg_x: u8,
     reg_w: bool,
 
     relative_x: u16,

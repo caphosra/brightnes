@@ -4,7 +4,7 @@ use spin::{Lazy, RwLock};
 use crate::{
     logger::Logger,
     nes::pad::{PadButton, PADS},
-    proc::Process,
+    proc::{Process, ProcessMode},
 };
 
 pub struct BKeyboard;
@@ -24,6 +24,15 @@ impl BKeyboard {
             match (key.state, key.code) {
                 (KeyState::Down, KeyCode::Tab) => {
                     Process::shift_proc();
+                }
+                (KeyState::Down, KeyCode::F1) => {
+                    Process::switch_proc(ProcessMode::Game);
+                }
+                (KeyState::Down, KeyCode::F2) => {
+                    Process::switch_proc(ProcessMode::Info);
+                }
+                (KeyState::Down, KeyCode::F3) => {
+                    Process::switch_proc(ProcessMode::Log);
                 }
                 (state, KeyCode::L) => {
                     BKeyboard::on_pad_button(state, PadButton::A);
@@ -54,6 +63,12 @@ impl BKeyboard {
                 }
                 (KeyState::Down, KeyCode::ArrowDown) => {
                     Logger::scroll(1);
+                }
+                (KeyState::Down, KeyCode::PageUp) => {
+                    Logger::scroll(-0x100);
+                }
+                (KeyState::Down, KeyCode::PageDown) => {
+                    Logger::scroll(0x100);
                 }
                 (KeyState::Down, KeyCode::ArrowLeft) => {
                     Logger::scroll(-0xFFFFFFF);
