@@ -8,9 +8,6 @@ use crate::font::{FontManager, FONT_HEIGHT, FONT_WIDTH};
 pub type PixelColor = u32;
 
 const COLOR_BLACK: PixelColor = 0x0;
-/// This color cannot be constructed by `make_color`.
-/// It can be used to represent "transparent".
-pub const UNDEF_COLOR: PixelColor = 0xDEAD_BEEF;
 const FRAME_BUFFER_ADDR: u64 = 0x2_800_000;
 
 #[repr(C)]
@@ -109,13 +106,6 @@ impl FrameBuffer {
         }
     }
 
-    pub fn get_pixel(&self, x: usize, y: usize) -> PixelColor {
-        assert!(x < self.width);
-        assert!(y < self.height);
-
-        self.buffer[y * self.width + x]
-    }
-
     pub fn set_chunk(&mut self, chunk_x: usize, chunk_y: usize, color: PixelColor) {
         let start_x = chunk_x * self.chunk_size;
         let start_y = chunk_y * self.chunk_size;
@@ -130,19 +120,6 @@ impl FrameBuffer {
                 self.set_pixel(x, y, color);
             }
         }
-    }
-
-    pub fn get_chunk(&self, chunk_x: usize, chunk_y: usize) -> PixelColor {
-        let start_x = chunk_x * self.chunk_size;
-        let start_y = chunk_y * self.chunk_size;
-        let end_x = (chunk_x + 1) * self.chunk_size;
-        let end_y = (chunk_y + 1) * self.chunk_size;
-
-        assert!(end_x <= self.width);
-        assert!(end_y <= self.height);
-
-        // Return the color of the top-left pixel in the chunk.
-        self.get_pixel(start_x, start_y)
     }
 
     pub fn draw_rect(
