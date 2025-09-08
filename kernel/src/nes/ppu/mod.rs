@@ -501,8 +501,13 @@ impl NESPPU {
             let top = target_y;
             let left = sprite.x as u16;
 
-            let sprite_pattern_base_addr = self.ctrl_sprite_pattern_table();
             let pattern_idx = sprite.pattern_index;
+
+            let sprite_pattern_base_addr = if self.ctrl_sprite_size() == 16 {
+                (pattern_idx as u16 & 1) * 0x1000
+            } else {
+                self.ctrl_sprite_pattern_table()
+            };
 
             for y in top..top + self.ctrl_sprite_size() as u16 {
                 if y >= NES_FRAME_HEIGHT as u16 {
@@ -518,19 +523,23 @@ impl NESPPU {
                 };
 
                 // Read pattern data.
-                let pattern_size = PATTERN_SIZE * (self.ctrl_sprite_size() as u16 >> 3);
+                let pattern_idx = if self.ctrl_sprite_size() == 16 {
+                    (pattern_idx & !0x1) | ((relative_y >= 8) as u8)
+                } else {
+                    pattern_idx
+                };
                 let lo = PPUBus::read(
                     sprite_pattern_base_addr
-                        + pattern_idx as u16 * pattern_size
-                        + relative_y as u16,
+                        + pattern_idx as u16 * PATTERN_SIZE
+                        + (relative_y & 0b111),
                     &self.vram,
                     cartridge,
                 );
                 let hi = PPUBus::read(
                     sprite_pattern_base_addr
-                        + pattern_idx as u16 * pattern_size
-                        + pattern_size / 2
-                        + relative_y as u16,
+                        + pattern_idx as u16 * PATTERN_SIZE
+                        + (PATTERN_SIZE >> 1)
+                        + (relative_y & 0b111),
                     &self.vram,
                     cartridge,
                 );
