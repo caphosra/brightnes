@@ -22,7 +22,7 @@ const PAD_WIDTH: usize = BUTTON_SIZE * 7 + PADDING * 6;
 const PAD_HEIGHT: usize = BUTTON_SIZE * 3 + PADDING * 2;
 const BUTTON_SIZE: usize = 10;
 
-const CPU_PPU_HEIGHT: usize = FONT_HEIGHT as usize * 8;
+const CPU_PPU_HEIGHT: usize = FONT_HEIGHT as usize * 9;
 const REV_HEIGHT: usize = FONT_HEIGHT as usize * 8;
 
 static PAD1_FB: Lazy<RwLock<FrameBuffer>> =
@@ -161,86 +161,79 @@ impl InfoProc {
         InfoProc::render_button(buffer, pad, PadButton::Right);
     }
 
+    #[allow(unused_assignments)]
     fn render_cpu(buffer: &mut FrameBuffer, cpu: &NESCPU) {
         let color = InfoProc::color_text();
         let background = InfoProc::color_background();
 
         buffer.clear(Self::color_background());
 
-        buffer.draw_text(
-            0,
-            0,
-            format!("REG A: {:#04X}", cpu.reg_a).as_bytes(),
-            color,
-            background,
+        let mut pos = 0;
+        macro_rules! draw_field {
+            ($($arg:tt)*) => {
+                buffer.draw_text(
+                    0,
+                    FONT_HEIGHT as usize * pos,
+                    format!($($arg)*).as_bytes(),
+                    color,
+                    background,
+                );
+                pos += 1;
+            };
+        }
+
+        draw_field!("REG A:  {:#04X}", cpu.reg_a);
+        draw_field!("REG X:  {:#04X}", cpu.reg_x);
+        draw_field!("REG Y:  {:#04X}", cpu.reg_y);
+        draw_field!("REG PC: {:#06X}", cpu.reg_pc);
+        draw_field!("REG SP: {:#04X}", cpu.reg_sp);
+        draw_field!("REG P:  {:#04X}", cpu.reg_p);
+        draw_field!(
+            "  C: {:1}, Z: {:1}, I: {:1}, D: {:1}",
+            cpu.get_flag(CARRY_FLAG),
+            cpu.get_flag(ZERO_FLAG),
+            cpu.get_flag(INT_FLAG),
+            cpu.get_flag(DECIMAL_FLAG),
         );
-        buffer.draw_text(
-            0,
-            FONT_HEIGHT as usize,
-            format!("REG X: {:#04X}", cpu.reg_x).as_bytes(),
-            color,
-            background,
+        draw_field!(
+            "  B: {:1}, V: {:1}, N: {:1}",
+            cpu.get_flag(BRK_FLAG),
+            cpu.get_flag(OVERFLOW_FLAG),
+            cpu.get_flag(NEG_FLAG),
         );
-        buffer.draw_text(
-            0,
-            FONT_HEIGHT as usize * 2,
-            format!("REG Y: {:#04X}", cpu.reg_y).as_bytes(),
-            color,
-            background,
-        );
-        buffer.draw_text(
-            0,
-            FONT_HEIGHT as usize * 3,
-            format!("REG PC: {:#06X}", cpu.reg_pc).as_bytes(),
-            color,
-            background,
-        );
-        buffer.draw_text(
-            0,
-            FONT_HEIGHT as usize * 4,
-            format!("REG SP: {:#04X}", cpu.reg_sp).as_bytes(),
-            color,
-            background,
-        );
-        buffer.draw_text(
-            0,
-            FONT_HEIGHT as usize * 5,
-            format!("REG P: {:#04X}", cpu.reg_p,).as_bytes(),
-            color,
-            background,
-        );
-        buffer.draw_text(
-            0,
-            FONT_HEIGHT as usize * 6,
-            format!(
-                "C: {:1}, Z: {:1}, I: {:1}, D: {:1}, B: {:1}{:1}, V: {:1}, N: {:1}",
-                cpu.get_flag(CARRY_FLAG),
-                cpu.get_flag(ZERO_FLAG),
-                cpu.get_flag(INT_FLAG),
-                cpu.get_flag(DECIMAL_FLAG),
-                cpu.get_flag(BRK_FLAG),
-                cpu.get_flag(BRK_FLAG + 1),
-                cpu.get_flag(OVERFLOW_FLAG),
-                cpu.get_flag(NEG_FLAG),
-            )
-            .as_bytes(),
-            color,
-            background,
-        );
-        buffer.draw_text(
-            0,
-            FONT_HEIGHT as usize * 7,
-            format!("CYCLES: {:#018X}", cpu.cycles).as_bytes(),
-            color,
-            background,
-        );
+        draw_field!("CYCLES: {:#018X}", cpu.cycles);
     }
 
-    fn render_ppu(buffer: &mut FrameBuffer, _ppu: &NESPPU) {
-        let _color = InfoProc::color_text();
-        let _background = InfoProc::color_background();
+    #[allow(unused_assignments)]
+    fn render_ppu(buffer: &mut FrameBuffer, ppu: &NESPPU) {
+        let color = InfoProc::color_text();
+        let background = InfoProc::color_background();
 
         buffer.clear(Self::color_background());
+
+        let mut pos = 0;
+        macro_rules! draw_field {
+            ($($arg:tt)*) => {
+                buffer.draw_text(
+                    0,
+                    FONT_HEIGHT as usize * pos,
+                    format!($($arg)*).as_bytes(),
+                    color,
+                    background,
+                );
+                pos += 1;
+            };
+        }
+
+        draw_field!("CTRL:   {:#010b}", ppu.reg_ctrl);
+        draw_field!("MASK:   {:#010b}", ppu.reg_mask);
+        draw_field!("OAM A:  {:#010b}", ppu.reg_oam_addr);
+        draw_field!("STATUS: {:#010b}", ppu.reg_status);
+        draw_field!("DATA:   {:#06X}", ppu.reg_data);
+        draw_field!("REG V:  {:#06X}", ppu.reg_v);
+        draw_field!("REG T:  {:#06X}", ppu.reg_t);
+        draw_field!("REG X:  {:#04X}", ppu.reg_x);
+        draw_field!("X, Y:   {:#06X}, {:#06X}", ppu.x, ppu.y);
     }
 
     fn render_reversing(buffer: &mut FrameBuffer, _cpu: &NESCPU, _cartridge: &mut Cartridge) {
