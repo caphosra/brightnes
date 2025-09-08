@@ -23,7 +23,7 @@ const PAD_HEIGHT: usize = BUTTON_SIZE * 3 + PADDING * 2;
 const BUTTON_SIZE: usize = 10;
 
 const CPU_PPU_HEIGHT: usize = FONT_HEIGHT as usize * 9;
-const REV_HEIGHT: usize = FONT_HEIGHT as usize * 8;
+const REV_LEN: usize = 8;
 
 static PAD1_FB: Lazy<RwLock<FrameBuffer>> =
     Lazy::new(|| RwLock::new(FrameBuffer::new(PADDING, PADDING, PAD_WIDTH, PAD_HEIGHT, 1)));
@@ -74,7 +74,8 @@ static REV_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     let offset_x = PADDING;
     let offset_y = PADDING * 3 + PAD_HEIGHT + CPU_PPU_HEIGHT;
     let width = max_width - PADDING * 2;
-    RwLock::new(FrameBuffer::new(offset_x, offset_y, width, REV_HEIGHT, 1))
+    let height = REV_LEN * FONT_HEIGHT as usize;
+    RwLock::new(FrameBuffer::new(offset_x, offset_y, width, height, 1))
 });
 
 pub struct InfoProc;
@@ -236,11 +237,37 @@ impl InfoProc {
         draw_field!("X, Y:   {:#06X}, {:#06X}", ppu.x, ppu.y);
     }
 
-    fn render_reversing(buffer: &mut FrameBuffer, _cpu: &NESCPU, _cartridge: &mut Cartridge) {
-        let _color = InfoProc::color_text();
-        let _background = InfoProc::color_background();
+    #[allow(unused_assignments)]
+    fn render_reversing(buffer: &mut FrameBuffer, cpu: &NESCPU, cartridge: &mut Cartridge) {
+        let color = InfoProc::color_text();
+        let background = InfoProc::color_background();
 
         buffer.clear(Self::color_background());
+
+        let mut pos = 0;
+        macro_rules! draw_field {
+            ($($arg:tt)*) => {
+                buffer.draw_text(
+                    0,
+                    FONT_HEIGHT as usize * pos,
+                    format!($($arg)*).as_bytes(),
+                    color,
+                    background,
+                );
+                pos += 1;
+            };
+        }
+
+        let mut pc = cpu.reg_pc;
+        for idx in 0..REV_LEN {
+            let inst = Instruction::fetch(pc, cartridge);
+            if idx == 0 {
+                draw_field!("--> {:#06X}: {}", pc, inst.to_string());
+            } else {
+                draw_field!("    {:#06X}: {}", pc, inst.to_string());
+            }
+            pc = pc.wrapping_add(inst.addr_mode.size());
+        }
     }
 
     pub fn render_all() {
