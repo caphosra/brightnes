@@ -11,7 +11,7 @@ use x86_64::instructions::{hlt, interrupts};
 use crate::font::FontManager;
 use crate::info::InfoProc;
 use crate::int::Interrupt;
-use crate::logger::Logger;
+use crate::logger::{Logger, NESResult};
 use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::NES_CPU;
@@ -50,11 +50,19 @@ pub extern "C" fn kernel_main() -> ! {
         let mut cartridge = CARTRIDGE.write();
         let lo = CPUBus::read(0xFFFC, &mut cartridge);
         let hi = CPUBus::read(0xFFFD, &mut cartridge);
-        cpu.reg_pc = u16::from_le_bytes([lo, hi]);
+        match (lo, hi) {
+            (Ok(lo), Ok(hi)) => {
+                cpu.reg_pc = u16::from_le_bytes([lo, hi]);
 
-        log!(SYS, "Entry Point: {:#06X}", cpu.reg_pc);
+                log!(SYS, "Entry Point: {:#06X}", cpu.reg_pc);
+                info!(SYS, "Initialized the NES CPU.");
+            }
+            _ => {
+                error!(SYS, "Failed to read the entry point from the cartridge.");
+                Process::enter_recovery_mode();
+            }
+        }
     }
-    info!(SYS, "Initialized the NES CPU.");
 
     Interrupt::init();
     interrupts::enable();
@@ -62,12 +70,16 @@ pub extern "C" fn kernel_main() -> ! {
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
+    Process::switch_proc(ProcessMode::Game);
+
     loop {
-        main_loop();
+        if let Err(_) = main_loop() {
+            Process::enter_recovery_mode();
+        }
     }
 }
 
-fn main_loop() {
+fn main_loop() -> NESResult<()> {
     match Process::status() {
         (ProcessMode::Log, true) => {
             Logger::render_all();
@@ -95,16 +107,16 @@ fn main_loop() {
 
             let mut cycles = 0;
             while cycles < FRAME_CYCLES {
-                let required = cpu.clock(&mut cartridge) as usize;
+                let required = cpu.clock(&mut cartridge)? as usize;
                 {
                     let mut ppu = NES_PPU.write();
-                    ppu.render_bg(required * 3, &mut frame_buffer, &mut cartridge);
+                    ppu.render_bg(required * 3, &mut frame_buffer, &mut cartridge)?;
                 }
                 cycles += required;
             }
             {
                 let mut ppu = NES_PPU.write();
-                ppu.complete_rendering(&mut frame_buffer, &mut cartridge);
+                ppu.complete_rendering(&mut frame_buffer, &mut cartridge)?;
             }
             frame_buffer.flush(false);
         }
@@ -112,11 +124,21 @@ fn main_loop() {
             hlt();
         }
     }
+    Ok(())
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+fn panic(info: &PanicInfo) -> ! {
+    error!(SYS, "KERNEL PANIC: {}", info.message().as_str().unwrap());
+
+    Process::enter_recovery_mode();
+
+    Logger::render_all();
+    Process::mark_as_switched();
+
+    loop {
+        hlt();
+    }
 }
 
 mod font;

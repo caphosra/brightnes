@@ -1,7 +1,4 @@
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    ptr::null_mut,
-};
+use core::alloc::{GlobalAlloc, Layout};
 
 use spin::{Lazy, Mutex};
 use x86_64::instructions::interrupts;
@@ -24,32 +21,24 @@ unsafe impl Sync for MemoryAllocator {}
 
 unsafe impl GlobalAlloc for MemoryAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // Interrupt during memory allocation can corrupt the memory.
-        // Also, it can cause a deadlock due to the mutexes.
-        let int_enabled = interrupts::are_enabled();
-        interrupts::disable();
+        interrupts::without_interrupts(|| {
+            let allocated = {
+                let mut used = self.used.lock();
 
-        let allocated = {
-            let mut used = self.used.lock();
+                let size = layout.size();
+                let align = layout.align();
 
-            let size = layout.size();
-            let align = layout.align();
+                let start_offset = ((*used + align - 1) / align) * align;
+                let end_offset = start_offset + size;
+                if end_offset >= HEAP_SIZE {
+                    panic!("The heap memory is exhausted.");
+                }
+                *used = end_offset;
 
-            let start_offset = ((*used + align - 1) / align) * align;
-            let end_offset = start_offset + size;
-            if end_offset >= HEAP_SIZE {
-                return null_mut();
-            }
-            *used = end_offset;
-
-            unsafe { self.arena.add(start_offset) }
-        };
-
-        if int_enabled {
-            interrupts::enable();
-        }
-
-        allocated
+                unsafe { self.arena.add(start_offset) }
+            };
+            allocated
+        })
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {

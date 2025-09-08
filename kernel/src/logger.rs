@@ -8,6 +8,8 @@ use crate::font::{FONT_HEIGHT, FONT_WIDTH};
 use crate::frame_buffer::{FrameBuffer, PixelColor};
 use crate::proc::{Process, ProcessMode};
 
+pub type NESResult<T> = Result<T, ()>;
+
 #[derive(Clone, Copy)]
 pub enum LogLocation {
     SYS,
@@ -75,6 +77,14 @@ macro_rules! warn {
 #[macro_export]
 macro_rules! error {
     ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Error, alloc::format!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! critical {
+    ($loc:tt, $($arg:tt)*) => {{
+        $crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Error, alloc::format!($($arg)*));
+        return Err(());
+    }};
 }
 
 static LOGGER: Lazy<RwLock<Logger>> = Lazy::new(|| {

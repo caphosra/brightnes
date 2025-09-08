@@ -2,6 +2,7 @@ use spin::{Lazy, RwLock};
 
 use crate::{
     info::{InfoProc, INFO_FB},
+    logger::NESResult,
     proc::{Process, ProcessMode},
 };
 
@@ -73,19 +74,20 @@ impl Pad {
         }
     }
 
-    pub fn read(&mut self) -> bool {
+    pub fn read(&mut self) -> NESResult<bool> {
         let out = self.pressed[self.selected as usize];
         if !self.strobe_enabled {
             self.selected =
                 PadButton::from_u8(((self.selected as usize + 1) % PAD_BUTTON_LEN) as u8);
         }
-        out
+        Ok(out)
     }
 
-    pub fn write(&mut self, strobe: bool) {
+    pub fn write(&mut self, strobe: bool) -> NESResult<()> {
         self.strobe_enabled = strobe;
         if strobe {
             self.selected = PadButton::A;
         }
+        Ok(())
     }
 }
