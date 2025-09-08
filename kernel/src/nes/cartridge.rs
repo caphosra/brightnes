@@ -169,6 +169,7 @@ impl Cartridge {
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
                 self.bank = (self.prg_rom[addr] & data) as usize & 0b11;
+                log!(CAT, "Switched to bank {}", self.bank);
             }
             _ => {
                 critical!(CAT, "Unsupported mapper: {}", self.mapper());
