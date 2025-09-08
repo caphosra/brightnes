@@ -100,10 +100,6 @@ fn main_loop() {
                 }
                 cycles += required;
             }
-            {
-                let mut ppu = NES_PPU.write();
-                ppu.complete_rendering(&mut frame_buffer, &mut cartridge);
-            }
             frame_buffer.flush(false);
         }
         _ => {
