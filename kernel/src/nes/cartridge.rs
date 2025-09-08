@@ -137,6 +137,13 @@ impl Cartridge {
                     self.prg_rom[addr]
                 }
             }
+            3 => {
+                if addr < 0x8000 {
+                    critical!(BUS, "Attempt to read unused area: {:#06X}", addr);
+                }
+                let addr = (addr as usize - 0x8000) % self.prg_rom_size;
+                self.prg_rom[addr]
+            }
             _ => {
                 critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
@@ -147,17 +154,21 @@ impl Cartridge {
         let mapper = self.mapper();
         match mapper {
             0 => {
-                if addr < 0x8000 {
-                    critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
-                }
-                let addr = (addr as usize - 0x8000) % self.prg_rom_size;
-                self.prg_rom[addr] = data;
+                critical!(BUS, "Attempt to write to read-only area: {:#06X}", addr);
             }
             2 => {
                 if addr < 0x8000 {
                     critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
                 }
                 self.bank = (data & 0b1111) as usize;
+                log!(CAT, "Switched to bank {}", self.bank);
+            }
+            3 => {
+                if addr < 0x8000 {
+                    critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
+                }
+                let addr = (addr as usize - 0x8000) % self.prg_rom_size;
+                self.bank = (self.prg_rom[addr] & data) as usize & 0b11;
                 log!(CAT, "Switched to bank {}", self.bank);
             }
             _ => {
@@ -177,6 +188,10 @@ impl Cartridge {
                 let addr = addr as usize % self.chr_rom_size;
                 self.chr_rom[addr]
             }
+            3 => {
+                let addr = addr as usize + self.bank * CHR_ROM_UNIT;
+                self.chr_rom[addr]
+            }
             _ => {
                 critical!(CAT, "Unsupported mapper: {}", self.mapper());
             }
@@ -192,6 +207,10 @@ impl Cartridge {
             }
             2 => {
                 let addr = addr as usize % self.chr_rom_size;
+                self.chr_rom[addr] = data;
+            }
+            3 => {
+                let addr = addr as usize + self.bank * CHR_ROM_UNIT;
                 self.chr_rom[addr] = data;
             }
             _ => {

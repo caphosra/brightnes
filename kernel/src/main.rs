@@ -12,8 +12,8 @@ use crate::font::FontManager;
 use crate::info::InfoProc;
 use crate::int::Interrupt;
 use crate::logger::Logger;
-use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::CARTRIDGE;
+use crate::nes::cpu::bus::CPUBus;
 use crate::nes::cpu::NES_CPU;
 use crate::nes::ppu::{GAME_FB, NES_PPU};
 use crate::proc::{Process, ProcessMode};
@@ -93,16 +93,15 @@ fn main_loop() {
 
             let mut cycles = 0;
             while cycles < FRAME_CYCLES {
-                let required = cpu.clock(&mut cartridge) as usize;
+                let (required, dma_transfer_ends) = cpu.clock(&mut cartridge);
                 {
                     let mut ppu = NES_PPU.write();
-                    ppu.render_bg(required * 3, &mut frame_buffer, &mut cartridge);
+                    if dma_transfer_ends {
+                        ppu.oam.do_dma_transfer(&mut cartridge);
+                    }
+                    ppu.render_bg(required as usize * 3, &mut frame_buffer, &mut cartridge);
                 }
-                cycles += required;
-            }
-            {
-                let mut ppu = NES_PPU.write();
-                ppu.complete_rendering(&mut frame_buffer, &mut cartridge);
+                cycles += required as usize;
             }
             frame_buffer.flush(false);
         }
