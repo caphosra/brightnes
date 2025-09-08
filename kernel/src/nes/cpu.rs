@@ -1,9 +1,9 @@
 use spin::{Lazy, RwLock};
 
-use crate::log;
 use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::instr::{AddrMode, InstrType, Instruction};
+use crate::{error, warn};
 
 pub struct NESCPU {
     pub reg_a: u8,
@@ -454,7 +454,7 @@ impl NESCPU {
                     inst.cycles
                 }
                 _ => {
-                    log!("[CPU] Illegal JMP at PC={:#06x}", self.reg_pc);
+                    error!(CPU, "Illegal JMP at PC={:#06x}", self.reg_pc);
                     0
                 }
             },
@@ -468,7 +468,7 @@ impl NESCPU {
                     inst.cycles
                 }
                 _ => {
-                    log!("[CPU] Illegal JSR at PC={:#06x}", self.reg_pc);
+                    error!(CPU, "Illegal JSR at PC={:#06x}", self.reg_pc);
                     0
                 }
             },
@@ -766,7 +766,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::ANE => {
-                log!("[CPU] ANE is highly unstable.");
+                error!(CPU, "ANE is highly unstable.");
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
@@ -847,7 +847,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::LXA => {
-                log!("[CPU] LXA is highly unstable.");
+                error!(CPU, "LXA is highly unstable.");
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
@@ -913,17 +913,17 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::SHA => {
-                log!("[CPU] SHA is unstable.");
+                error!(CPU, "SHA is unstable.");
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
             InstrType::SHX => {
-                log!("[CPU] SHX is unstable.");
+                error!(CPU, "SHX is unstable.");
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
             InstrType::SHY => {
-                log!("[CPU] SHY is unstable.");
+                error!(CPU, "SHY is unstable.");
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
@@ -960,7 +960,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::TAS => {
-                log!("[CPU] TAS is unstable.");
+                error!(CPU, "TAS is unstable.");
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
@@ -984,7 +984,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::JAM => {
-                log!("[CPU] JAM encountered at PC={:#06X}", self.reg_pc);
+                warn!(CPU, "JAM encountered at PC={:#06X}", self.reg_pc);
                 0x1
             }
         };

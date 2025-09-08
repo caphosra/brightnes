@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
 
 use crate::{
+    error,
     frame_buffer::{FrameBuffer, PixelColor, UNDEF_COLOR},
     log,
     nes::{
@@ -216,7 +217,7 @@ impl OAM {
             let addr = base_addr + i as u16;
             self.write(i, CPUBus::read(addr, cartridge));
         }
-        log!("[OAM] OAM DMA from {:#06X}", base_addr);
+        log!(OAM, "OAM DMA from {:#06X}", base_addr);
         NESCPU::stall(OAM_DMA_CYCLES);
     }
 }
@@ -380,7 +381,7 @@ impl NESPPU {
             // Mirrors of $3F00-$3F1F
             self.read_mem(addr - 0x20, cartridge)
         } else {
-            log!("[PPU] Invalid address reading: {:#06X}", addr);
+            error!(PPU, "Invalid address reading: {:#06X}", addr);
             self.read_mem(addr & 0x3FFF, cartridge)
         }
     }
@@ -426,7 +427,7 @@ impl NESPPU {
             // Mirrors of $3F00-$3F1F
             self.write_mem(addr - 0x20, val, cartridge);
         } else {
-            log!("[PPU] Invalid address writing: {:#06X}", addr);
+            error!(PPU, "Invalid address writing: {:#06X}", addr);
             self.write_mem(addr & 0x3FFF, val, cartridge);
         }
     }
@@ -448,7 +449,7 @@ impl NESPPU {
 
             data
         } else {
-            log!("[PPU] Invalid register reading: {:#06X}", addr);
+            error!(PPU, "Invalid register reading: {:#06X}", addr);
             0
         }
     }
@@ -519,7 +520,7 @@ impl NESPPU {
 
             self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
         } else {
-            log!("[PPU] Invalid register writing: {:#06X}", addr);
+            error!(PPU, "Invalid register writing: {:#06X}", addr);
         }
     }
 

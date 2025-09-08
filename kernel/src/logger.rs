@@ -8,8 +8,50 @@ use crate::font::{FONT_HEIGHT, FONT_WIDTH};
 use crate::frame_buffer::{FrameBuffer, PixelColor};
 use crate::proc::{Process, ProcessMode};
 
+#[derive(Clone, Copy)]
+pub enum LogLocation {
+    SYS,
+    CPU,
+    PPU,
+    OAM,
+    APU,
+    CAT,
+    BUS,
+    #[allow(dead_code)]
+    UNK,
+}
+
+impl LogLocation {
+    pub fn to_str(&self) -> &str {
+        match self {
+            LogLocation::SYS => "SYS",
+            LogLocation::CPU => "CPU",
+            LogLocation::PPU => "PPU",
+            LogLocation::OAM => "OAM",
+            LogLocation::APU => "APU",
+            LogLocation::CAT => "CAT",
+            LogLocation::BUS => "BUS",
+            LogLocation::UNK => "UNK",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    Log,
+    Info,
+    Warn,
+    Error,
+}
+
+pub struct LogEntry {
+    pub location: LogLocation,
+    pub level: LogLevel,
+    pub message: String,
+}
+
 pub struct Logger {
-    buffer: Vec<String>,
+    buffer: Vec<LogEntry>,
     scroll: usize,
 }
 
@@ -17,7 +59,22 @@ struct LoggerColor;
 
 #[macro_export]
 macro_rules! log {
-    ($($arg:tt)*) => ($crate::logger::Logger::log(alloc::format!($($arg)*)));
+    ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Log, alloc::format!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! info {
+    ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Info, alloc::format!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! warn {
+    ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Warn, alloc::format!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! error {
+    ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Error, alloc::format!($($arg)*)));
 }
 
 static LOGGER: Lazy<RwLock<Logger>> = Lazy::new(|| {
@@ -33,12 +90,12 @@ static LOG_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
 });
 
 impl Logger {
-    const PREFIX_LEN: usize = 5;
+    const PREFIX_LEN: usize = 11;
 
-    fn log_internal(&mut self, text: String) {
-        for line in text.split(|c| c == '\n') {
+    fn log_internal(&mut self, location: LogLocation, level: LogLevel, message: String) {
+        for line in message.split(|c| c == '\n') {
             if line.len() == 0 {
-                self.add_buffer(line.to_string());
+                self.add_buffer(location, level, line.to_string());
             } else {
                 // Wrap the line if it's too long.
                 // The width is reduced by 5 taking the prefix into account.
@@ -47,17 +104,21 @@ impl Logger {
                     if self.buffer.len() == self.scroll {
                         self.scroll += 1;
                     }
-                    self.add_buffer(String::from_utf8_lossy(chunk).to_string());
+                    self.add_buffer(location, level, String::from_utf8_lossy(chunk).to_string());
                 }
             }
         }
     }
 
-    fn add_buffer(&mut self, text: String) {
+    fn add_buffer(&mut self, location: LogLocation, level: LogLevel, message: String) {
         if self.buffer.len() == self.scroll {
             self.scroll += 1;
         }
-        self.buffer.push(text);
+        self.buffer.push(LogEntry {
+            location,
+            level,
+            message,
+        });
     }
 
     fn scroll_internal(&mut self, lines: i32) {
@@ -121,6 +182,8 @@ impl Logger {
             // The screen is not fully filled yet.
             assert!(before <= after);
             for idx in before..after {
+                let entry = &self.buffer[idx];
+
                 // Draw the prefix.
                 buffer.draw_text(
                     0,
@@ -130,18 +193,33 @@ impl Logger {
                     bg_color,
                 );
 
+                // Draw the prefix.
+                buffer.draw_text(
+                    5 * FONT_WIDTH as usize,
+                    idx * FONT_HEIGHT as usize,
+                    format!("[{}] ", entry.location.to_str()).as_bytes(),
+                    LoggerColor::level_color(entry.level),
+                    bg_color,
+                );
+
                 // Draw the content.
-                let text = self.buffer[idx].as_bytes();
+                let text = entry.message.as_bytes();
                 buffer.draw_text(
                     Self::PREFIX_LEN * FONT_WIDTH as usize,
                     idx * FONT_HEIGHT as usize,
                     text,
-                    fg_color,
+                    if entry.level == LogLevel::Log {
+                        LoggerColor::log_color()
+                    } else {
+                        fg_color
+                    },
                     bg_color,
                 );
             }
         } else {
             for idx in 0..height {
+                let entry = &self.buffer[idx + after - height];
+
                 // Draw the prefix.
                 buffer.draw_text(
                     0,
@@ -151,19 +229,33 @@ impl Logger {
                     bg_color,
                 );
 
+                // Draw the prefix.
+                buffer.draw_text(
+                    5 * FONT_WIDTH as usize,
+                    idx * FONT_HEIGHT as usize,
+                    format!("[{}] ", entry.location.to_str()).as_bytes(),
+                    LoggerColor::level_color(entry.level),
+                    bg_color,
+                );
+
                 // Draw the content.
-                let text = self.buffer[idx + after - height].as_bytes();
+                let text = entry.message.as_bytes();
                 buffer.draw_text(
                     Self::PREFIX_LEN * FONT_WIDTH as usize,
                     idx * FONT_HEIGHT as usize,
                     text,
-                    fg_color,
+                    if entry.level == LogLevel::Log {
+                        LoggerColor::log_color()
+                    } else {
+                        fg_color
+                    },
                     bg_color,
                 );
 
                 if idx + before >= height {
                     let current_text_len = text.len() + Self::PREFIX_LEN;
-                    let prev_text_len = self.buffer[idx + before - height].len() + Self::PREFIX_LEN;
+                    let prev_text_len =
+                        self.buffer[idx + before - height].message.len() + Self::PREFIX_LEN;
                     if prev_text_len > current_text_len {
                         // Erase the previous text.
                         buffer.draw_rect(
@@ -179,12 +271,12 @@ impl Logger {
         }
     }
 
-    pub fn log(text: String) {
+    pub fn log(location: LogLocation, level: LogLevel, message: String) {
         interrupts::without_interrupts(|| {
             let mut logger = LOGGER.write();
 
             let before = logger.scroll;
-            logger.log_internal(text);
+            logger.log_internal(location, level, message);
 
             if Process::mode() == ProcessMode::Log {
                 let after = logger.scroll;
@@ -230,5 +322,26 @@ impl LoggerColor {
 
     pub fn prefix_color() -> PixelColor {
         FrameBuffer::make_color(0xA0, 0xA0, 0xA0)
+    }
+
+    pub fn log_color() -> PixelColor {
+        FrameBuffer::make_color(0xC0, 0xC0, 0xC0)
+    }
+
+    pub fn warn_color() -> PixelColor {
+        FrameBuffer::make_color(0xFF, 0xFF, 0x00)
+    }
+
+    pub fn error_color() -> PixelColor {
+        FrameBuffer::make_color(0xFF, 0x00, 0x00)
+    }
+
+    pub fn level_color(level: LogLevel) -> PixelColor {
+        match level {
+            LogLevel::Log => Self::log_color(),
+            LogLevel::Info => Self::fg_color(),
+            LogLevel::Warn => Self::warn_color(),
+            LogLevel::Error => Self::error_color(),
+        }
     }
 }

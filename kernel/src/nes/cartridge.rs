@@ -4,8 +4,8 @@ use core::ptr::slice_from_raw_parts_mut;
 use alloc::alloc::alloc;
 use spin::{Lazy, RwLock};
 
-use crate::log;
 use crate::nes::Mirroring;
+use crate::{error, info, log};
 
 #[repr(C)]
 pub struct NESHeader {
@@ -74,21 +74,21 @@ pub static CARTRIDGE: Lazy<RwLock<Cartridge>> = Lazy::new(|| {
 
 impl Cartridge {
     pub fn load(&mut self) {
-        log!("[CTG] Mapper: {}", self.mapper());
+        info!(CAT, "Mapper: {}", self.mapper());
 
         // Load the program ROM.
         let prg_rom_start = unsafe { (NES_FILE_ADDR as *mut u8).add(size_of::<NESHeader>()) };
         self.prg_rom =
             unsafe { slice_from_raw_parts_mut(prg_rom_start, self.prg_rom_size).as_mut() }.unwrap();
 
-        log!("[CTG] Loaded PRG ROM ({:#x} bytes)", self.prg_rom_size);
+        info!(CAT, "Loaded PRG ROM ({:#x} bytes)", self.prg_rom_size);
 
         // Load the character ROM.
         let chr_rom_start = unsafe { prg_rom_start.add(self.prg_rom_size) };
         self.chr_rom =
             unsafe { slice_from_raw_parts_mut(chr_rom_start, self.chr_rom_size).as_mut() }.unwrap();
 
-        log!("[CTG] Loaded CHR ROM ({:#x} bytes)", self.chr_rom_size);
+        info!(CAT, "Loaded CHR ROM ({:#x} bytes)", self.chr_rom_size);
 
         if self.chr_rom_size == 0 {
             // Prepare CHR RAM if there are no CHR ROM.
@@ -98,7 +98,7 @@ impl Cartridge {
                 unsafe { slice_from_raw_parts_mut(chr_rom_start, CHR_ROM_UNIT).as_mut() }.unwrap();
 
             self.chr_rom_size = CHR_ROM_UNIT;
-            log!("[CTG] Prepared CHR RAM ({:#x} bytes)", self.chr_rom_size);
+            info!(CAT, "Prepared CHR RAM ({:#x} bytes)", self.chr_rom_size);
         }
     }
 
@@ -117,7 +117,7 @@ impl Cartridge {
         match mapper {
             0 => {
                 if addr < 0x8000 {
-                    log!("[BUS] Attempt to read unused area: {:#06X}", addr);
+                    error!(BUS, "Attempt to read unused area: {:#06X}", addr);
                     return 0;
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
@@ -127,7 +127,7 @@ impl Cartridge {
                 // 0x8000-0xBFFF: Switchable bank
                 // 0xC000-0xFFFF: Fixed to the last bank
                 if addr < 0x8000 {
-                    log!("[BUS] Attempt to read unused area: {:#06X}", addr);
+                    error!(BUS, "Attempt to read unused area: {:#06X}", addr);
                     return 0;
                 }
                 if addr < 0xC000 {
@@ -150,7 +150,7 @@ impl Cartridge {
         match mapper {
             0 => {
                 if addr < 0x8000 {
-                    log!("[BUS] Attempt to write to unused area: {:#06X}", addr);
+                    error!(BUS, "Attempt to write to unused area: {:#06X}", addr);
                     return;
                 }
                 let addr = (addr as usize - 0x8000) % self.prg_rom_size;
@@ -158,11 +158,11 @@ impl Cartridge {
             }
             2 => {
                 if addr < 0x8000 {
-                    log!("[BUS] Attempt to write to unused area: {:#06X}", addr);
+                    error!(BUS, "Attempt to write to unused area: {:#06X}", addr);
                     return;
                 }
                 self.bank = (data & 0b1111) as usize;
-                log!("[CTG] Switched to bank {}", self.bank);
+                log!(CAT, "Switched to bank {}", self.bank);
             }
             _ => {
                 panic!("Unsupported mapper: {}", self.mapper());

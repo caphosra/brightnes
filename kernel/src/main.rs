@@ -36,13 +36,14 @@ pub extern "C" fn kernel_main() -> ! {
     }
     FontManager::init_glyph_index_table();
 
-    log!("[SYS] Hello World from the kernel.");
+    log!(SYS, "Hello World from the kernel.");
+    info!(SYS, "Enabled logging system.");
 
     {
         let mut cartridge = CARTRIDGE.write();
         cartridge.load();
     }
-    log!("[SYS] Loaded the cartridge.");
+    info!(SYS, "Loaded the cartridge.");
 
     {
         let mut cpu = NES_CPU.write();
@@ -51,16 +52,15 @@ pub extern "C" fn kernel_main() -> ! {
         let hi = CPUBus::read(0xFFFD, &mut cartridge);
         cpu.reg_pc = u16::from_le_bytes([lo, hi]);
 
-        log!("[SYS] Entry Point: {:#06X}", cpu.reg_pc);
+        log!(SYS, "Entry Point: {:#06X}", cpu.reg_pc);
     }
-
-    log!("[SYS] Initialized the NES CPU.");
+    info!(SYS, "Initialized the NES CPU.");
 
     Interrupt::init();
     interrupts::enable();
 
-    log!("[SYS] Interrupts are enabled.");
-    log!("[SYS] It's time to enjoy BRIGHTNES!");
+    info!(SYS, "Interrupts are enabled.");
+    log!(SYS, "It's time to enjoy BRIGHTNES!");
 
     loop {
         match Process::status() {
