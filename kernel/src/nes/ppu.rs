@@ -7,8 +7,8 @@ use crate::{
     frame_buffer::{FrameBuffer, PixelColor, UNDEF_COLOR},
     log,
     nes::{
-        bus::CPUBus,
         cartridge::Cartridge,
+        cpu::bus::CPUBus,
         cpu::{InterruptType, NESCPU},
         Mirroring,
     },

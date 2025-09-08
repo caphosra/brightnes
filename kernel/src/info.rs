@@ -6,11 +6,11 @@ use crate::{
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
         cartridge::{Cartridge, CARTRIDGE},
+        cpu::instr::Instruction,
         cpu::{
             BRK_FLAG, CARRY_FLAG, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, NESCPU, NES_CPU, OVERFLOW_FLAG,
             ZERO_FLAG,
         },
-        instr::Instruction,
         pad::{Pad, PadButton, PADS},
         ppu::{NESPPU, NES_PPU},
     },

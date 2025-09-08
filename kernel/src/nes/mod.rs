@@ -15,10 +15,8 @@ impl From<u8> for Mirroring {
     }
 }
 
-pub mod bus;
 pub mod cartridge;
 pub mod cpu;
-pub mod instr;
 pub mod pad;
 pub mod ppu;
 pub mod ram;

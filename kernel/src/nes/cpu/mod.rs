@@ -1,9 +1,9 @@
 use spin::{Lazy, RwLock};
 use x86_64::instructions::interrupts;
 
-use crate::nes::bus::CPUBus;
 use crate::nes::cartridge::Cartridge;
-use crate::nes::instr::{AddrMode, InstrType, Instruction};
+use crate::nes::cpu::bus::CPUBus;
+use crate::nes::cpu::instr::{AddrMode, InstrType, Instruction};
 use crate::{critical, error};
 
 pub struct NESCPU {
@@ -991,3 +991,6 @@ impl NESCPU {
         cycles as u32
     }
 }
+
+pub mod bus;
+pub mod instr;
