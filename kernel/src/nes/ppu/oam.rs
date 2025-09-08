@@ -41,16 +41,18 @@ impl Sprite {
     }
 }
 
-const OAM_DMA_CYCLES: u32 = 513;
+pub const OAM_DMA_CYCLES: u32 = 513;
 
 pub struct OAM {
     pub sprites: [Sprite; 64],
+    dma_request_addr: u16,
 }
 
 impl OAM {
     pub fn new() -> Self {
         OAM {
             sprites: [Sprite::new(); 64],
+            dma_request_addr: 0,
         }
     }
 
@@ -73,13 +75,25 @@ impl OAM {
         }
     }
 
-    pub fn direct_mem_access(&mut self, hi: u8, cartridge: &mut Cartridge) {
-        let base_addr = (hi as u16) << 8;
+    pub fn request_dma_transfer(&mut self, hi: u8) {
+        self.dma_request_addr = (hi as u16) << 8;
+        log!(
+            OAM,
+            "Requested OAM DMA transfer from {:#06X}",
+            self.dma_request_addr
+        );
+        NESCPU::dma_stall();
+    }
+
+    pub fn do_dma_transfer(&mut self, cartridge: &mut Cartridge) {
         for i in 0..=0xFF {
-            let addr = base_addr + i as u16;
+            let addr = self.dma_request_addr + i as u16;
             self.write(i, CPUBus::read(addr, cartridge));
         }
-        log!(OAM, "OAM DMA from {:#06X}", base_addr);
-        NESCPU::stall(OAM_DMA_CYCLES);
+        log!(
+            OAM,
+            "Done OAM DMA transfer from {:#06X}",
+            self.dma_request_addr
+        );
     }
 }

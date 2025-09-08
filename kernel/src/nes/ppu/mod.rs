@@ -49,7 +49,7 @@ pub struct NESPPU {
     pub y: u16,
 
     vram: VRAM,
-    oam: OAM,
+    pub oam: OAM,
 
     frame_counter: usize,
 
@@ -176,7 +176,7 @@ impl NESPPU {
     pub fn write_reg(&mut self, addr: u16, val: u8, cartridge: &mut Cartridge) {
         if addr == OAM_DMA_ADDR {
             // OAM_DMA
-            self.oam.direct_mem_access(val, cartridge);
+            self.oam.request_dma_transfer(val);
             return;
         }
 

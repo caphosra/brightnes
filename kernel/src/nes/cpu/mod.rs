@@ -4,6 +4,7 @@ use x86_64::instructions::interrupts;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::bus::CPUBus;
 use crate::nes::cpu::instr::{AddrMode, InstrType, Instruction};
+use crate::nes::ppu::oam::OAM_DMA_CYCLES;
 use crate::{critical, error};
 
 pub struct NESCPU {
@@ -40,7 +41,7 @@ pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
 });
 
 // Since stalling cycles can be modified during DMA transfer, we need to split this from the CPU struct.
-static CPU_STALL: Lazy<RwLock<u32>> = Lazy::new(|| RwLock::new(0));
+static CPU_DMA_STALL: Lazy<RwLock<u32>> = Lazy::new(|| RwLock::new(0));
 
 static CPU_INT: Lazy<RwLock<Option<InterruptType>>> = Lazy::new(|| RwLock::new(None));
 
@@ -53,9 +54,9 @@ pub enum InterruptType {
 impl NESCPU {
     const MAX_STALL_CYCLES: u32 = 8;
 
-    pub fn stall(cycles: u32) {
-        let mut stall_cycles = CPU_STALL.write();
-        *stall_cycles += cycles;
+    pub fn dma_stall() {
+        let mut stall_cycles = CPU_DMA_STALL.write();
+        *stall_cycles += OAM_DMA_CYCLES;
     }
 
     pub fn interrupt(int_type: InterruptType) {
@@ -97,7 +98,7 @@ impl NESCPU {
         }
     }
 
-    pub fn clock(&mut self, cartridge: &mut Cartridge) -> u32 {
+    pub fn clock(&mut self, cartridge: &mut Cartridge) -> (u32, bool) {
         {
             let mut int = CPU_INT.write();
             if let Some(int_type) = *int {
@@ -106,31 +107,36 @@ impl NESCPU {
                 *int = None;
 
                 // Assume that an interrupt does not consume time.
-                return 0;
+                return (0, false);
             }
         }
 
+        let mut dma_transfer_done = false;
         let stall_cycles = interrupts::without_interrupts(|| {
             // Acquire a read-write lock of CPU_STALL.
-            let mut stall_cycles = CPU_STALL.write();
+            let mut stall_cycles = CPU_DMA_STALL.write();
             if *stall_cycles > Self::MAX_STALL_CYCLES {
                 *stall_cycles -= Self::MAX_STALL_CYCLES;
                 Self::MAX_STALL_CYCLES
             } else {
                 let cycles = *stall_cycles;
                 *stall_cycles = 0;
+
+                // DMA transfer ends.
+                dma_transfer_done = true;
+
                 cycles
             }
         });
         if stall_cycles > 0 {
             // The CPU is stalling for external reasons.
-            stall_cycles
+            (stall_cycles, dma_transfer_done)
         } else {
             // The CPU is not stalling so execute the next instruction.
             let cycles = self.execute(cartridge);
             self.inst += 1;
             self.cycles += cycles as u64;
-            cycles
+            (cycles, false)
         }
     }
 
