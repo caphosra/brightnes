@@ -4,10 +4,15 @@ OUT_DIR = ./dest
 NES_FILE = ./res/nes/$(GAME)
 
 QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
-	-drive format=raw,file=fat:rw:$(OUT_DIR)
+	-drive format=raw,file=fat:rw:$(OUT_DIR) \
+	-drive if=none,id=main_drive,file=./dest/test.txt,format=raw \
+	-device virtio-blk-pci,drive=main_drive \
+	-device virtio-sound-pci
 
 KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/kernel.ld \
+	./kernel/src/drivers/mod.rs \
+	./kernel/src/drivers/pci.rs \
 	./kernel/src/int/keyboard.rs \
 	./kernel/src/int/mod.rs \
 	./kernel/src/nes/cpu/bus.rs \
