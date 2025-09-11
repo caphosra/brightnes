@@ -5,7 +5,7 @@ use x86_64::instructions::interrupts;
 
 use crate::proc::{Process, ProcessMode};
 
-pub const HEAP_START_ADDR: usize = 0x400_0000;
+pub const HEAP_START_ADDR: usize = 0x1000_0000;
 pub const HEAP_SIZE: usize = 0x1000_0000;
 pub const SAFETY_MARGIN: usize = 0x1_0000;
 
