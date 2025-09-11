@@ -1,13 +1,13 @@
 use spin::{Lazy, RwLock};
 
-use crate::{error, info};
+use crate::info;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ProcessMode {
     Log,
     Game,
     Info,
-    Safety,
+    Recovery,
 }
 
 impl ProcessMode {
@@ -16,7 +16,7 @@ impl ProcessMode {
             ProcessMode::Log => ProcessMode::Game,
             ProcessMode::Game => ProcessMode::Info,
             ProcessMode::Info => ProcessMode::Log,
-            ProcessMode::Safety => ProcessMode::Safety,
+            ProcessMode::Recovery => ProcessMode::Recovery,
         }
     }
 }
@@ -31,7 +31,7 @@ impl Process {
         let proc_mode = CURRENT_PROC_MODE.try_write();
         match proc_mode {
             Some(mut pm) => {
-                if pm.0 != ProcessMode::Safety {
+                if pm.0 != ProcessMode::Recovery {
                     *pm = (mode, true);
                 }
             }
@@ -58,10 +58,9 @@ impl Process {
         *proc_mode = (proc_mode.0, false);
     }
 
-    pub fn enter_safety_mode() {
-        error!(SYS, "UNRECOVERABLE ERROR OCCURRED.");
-        info!(SYS, "Entering safety mode.");
+    pub fn enter_recovery() {
+        info!(SYS, "Entering recovery mode");
 
-        Self::switch_proc(ProcessMode::Safety);
+        Self::switch_proc(ProcessMode::Recovery);
     }
 }
