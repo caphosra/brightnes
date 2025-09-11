@@ -11,6 +11,9 @@ QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
 
 KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/kernel.ld \
+	./kernel/src/drivers/virtio/block.rs \
+	./kernel/src/drivers/virtio/mod.rs \
+	./kernel/src/drivers/virtio/sound.rs \
 	./kernel/src/drivers/mod.rs \
 	./kernel/src/drivers/pci.rs \
 	./kernel/src/int/keyboard.rs \

@@ -35,3 +35,4 @@ pub static AUDIO_DRIVER: Lazy<RwLock<Box<dyn AudioDriver + Send + Sync>>> =
     Lazy::new(|| RwLock::new(Box::new(DummyAudioDriver {})));
 
 pub mod pci;
+pub mod virtio;

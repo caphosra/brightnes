@@ -8,6 +8,7 @@ use core::panic::PanicInfo;
 
 use x86_64::instructions::{hlt, interrupts};
 
+use crate::drivers::virtio::VirtIODevice;
 use crate::font::FontManager;
 use crate::info::InfoProc;
 use crate::int::Interrupt;
@@ -38,6 +39,9 @@ pub extern "C" fn kernel_main() -> ! {
 
     log!(SYS, "Hello World from the kernel.");
     info!(SYS, "Enabled logging system.");
+
+    let mut block_device = VirtIODevice::new(0x1001).unwrap();
+    block_device.init_device();
 
     {
         let mut cartridge = CARTRIDGE.write();
@@ -123,6 +127,7 @@ fn panic(_info: &PanicInfo) -> ! {
     }
 }
 
+mod drivers;
 mod font;
 mod frame_buffer;
 mod info;
