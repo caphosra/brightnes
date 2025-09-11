@@ -12,6 +12,7 @@ use crate::font::FontManager;
 use crate::info::InfoProc;
 use crate::int::Interrupt;
 use crate::logger::Logger;
+use crate::mem::MemoryAllocator;
 use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::bus::CPUBus;
 use crate::nes::cpu::NES_CPU;
@@ -105,6 +106,9 @@ fn main_loop() {
             }
             frame_buffer.flush(false);
         }
+        (ProcessMode::Safety, _) => {
+            panic!("Something went wrong.");
+        }
         _ => {
             hlt();
         }
@@ -113,7 +117,11 @@ fn main_loop() {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    Process::enter_recovery();
+    if MemoryAllocator::exhausted() {
+        error!(SYS, "The memory has been exhausted.");
+    }
+
+    Process::enter_safety_mode();
 
     Logger::render_all();
     Process::mark_as_switched();
