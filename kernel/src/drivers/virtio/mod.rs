@@ -2,11 +2,50 @@ use core::ptr::write_volatile;
 
 use crate::{drivers::pci::PCIDevice, log};
 
+#[repr(C)]
+pub struct VirtQDesc {
+    addr: u64,
+    len: u32,
+    flags: u16,
+    next: u16,
+}
+
+pub const VIRT_QUEUE_SIZE: usize = 8;
+
+#[repr(C)]
+pub struct VirtQAvail {
+    flags: u16,
+    idx: u16,
+    ring: [u16; VIRT_QUEUE_SIZE],
+    used_event: u16,
+}
+
+#[repr(C)]
+struct VirtQUsed {
+    flags: u16,
+    idx: u16,
+    ring: [VirtQUsedElem; VIRT_QUEUE_SIZE],
+    avail_event: u16,
+}
+
+#[repr(C)]
+struct VirtQUsedElem {
+    id: u32,
+    len: u32,
+}
+
+impl VirtQDesc {
+    pub const VIRTQ_DESC_F_NEXT: u16 = 1;
+    pub const VIRTQ_DESC_F_WRITE: u16 = 2;
+    pub const VIRTQ_DESC_F_INDIRECT: u16 = 4;
+}
+
 pub struct VirtIODevice {
     pci_device: PCIDevice,
     pub common_config: &'static mut PCICommonConfig,
 }
 
+#[repr(C)]
 pub struct PCICommonConfig {
     /* About the whole device. */
     pub device_feature_select: u32,
