@@ -74,11 +74,11 @@ extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
     }
 }
 
-extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
+extern "x86-interrupt" fn keyboard_handler(mut stack_frame: InterruptStackFrame) {
     let mut port = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
 
-    BKeyboard::on_event(scancode);
+    BKeyboard::on_event(scancode, &mut stack_frame);
 
     unsafe {
         PICS.lock()

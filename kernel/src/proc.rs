@@ -4,32 +4,36 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::info;
+use crate::{
+    game_main, info, info_main, log_main, on_game_switched, on_info_switched, on_log_switched,
+};
 
 const STACK_SIZE: usize = 0x1_0000;
 const PROC_SIZE: usize = 3;
 
+const INFO_STACK_BOTTOM: *const u8 = 0x680_0000 as *const u8;
+const LOG_STACK_BOTTOM: *const u8 = 0x700_0000 as *const u8;
+
 #[repr(C, align(16))]
 pub struct ProcessInfo {
-    pub dedicated_stack: [u8; STACK_SIZE],
-    entry_point: fn() -> (),
-    on_changed: Option<fn() -> ()>,
+    pub stack_bottom: VirtAddr,
+    entry_point: fn() -> !,
+    switched_handler: fn() -> (),
     pub saved_state: Option<InterruptStackFrameValue>,
 }
 
 impl ProcessInfo {
-    pub fn new(entry_point: fn() -> (), on_changed: Option<fn() -> ()>) -> Self {
+    pub fn new(
+        stack_bottom: VirtAddr,
+        entry_point: fn() -> !,
+        switched_handler: fn() -> (),
+    ) -> Self {
         Self {
-            dedicated_stack: [0; STACK_SIZE],
+            stack_bottom,
             entry_point,
-            on_changed,
+            switched_handler,
             saved_state: None,
         }
-    }
-
-    pub fn stack_top(&self) -> VirtAddr {
-        let stack_top_raw = unsafe { self.dedicated_stack.as_ptr().add(STACK_SIZE) };
-        VirtAddr::from_ptr(stack_top_raw)
     }
 
     pub fn entry_point_addr(&self) -> VirtAddr {
@@ -53,42 +57,23 @@ impl ProcessSwitcher {
     pub fn new() -> Self {
         Self {
             processes: [
+                ProcessInfo::new(VirtAddr::zero(), game_main, on_game_switched),
                 ProcessInfo::new(
-                    || {},
-                    Some(|| {
-                        info!(SYS, "Switched to Log process.");
-                    }),
+                    VirtAddr::from_ptr(INFO_STACK_BOTTOM),
+                    info_main,
+                    on_info_switched,
                 ),
                 ProcessInfo::new(
-                    || {},
-                    Some(|| {
-                        info!(SYS, "Switched to Game process.");
-                    }),
-                ),
-                ProcessInfo::new(
-                    || {},
-                    Some(|| {
-                        info!(SYS, "Switched to Info process.");
-                    }),
+                    VirtAddr::from_ptr(LOG_STACK_BOTTOM),
+                    log_main,
+                    on_log_switched,
                 ),
             ],
-            current_proc: ProcessMode::Log,
+            current_proc: ProcessMode::Game,
         }
     }
 
-    fn stack_top(&self, mode: ProcessMode) -> VirtAddr {
-        let mode_idx: usize = mode.into();
-        let stack = self.processes[mode_idx].dedicated_stack;
-        let stack_top_raw = unsafe { stack.as_ptr().add(STACK_SIZE) };
-        VirtAddr::from_ptr(stack_top_raw)
-    }
-
-    pub fn switch_proc(
-        &mut self,
-        new_proc: ProcessMode,
-        current_frame: &mut InterruptStackFrame,
-        save_state: bool,
-    ) {
+    pub fn switch_proc(&mut self, new_proc: ProcessMode, current_frame: &mut InterruptStackFrame) {
         let old_mode_idx: usize = self.current_proc.into();
         let mode_idx: usize = new_proc.into();
 
@@ -97,11 +82,12 @@ impl ProcessSwitcher {
             return;
         }
 
-        if save_state {
-            // Save the current state.
-            let old_state = current_frame.clone();
-            self.processes[old_mode_idx].saved_state = Some(old_state);
-        }
+        // Save the current state.
+        let old_state = current_frame.clone();
+        self.processes[old_mode_idx].saved_state = Some(old_state);
+
+        // Call on_changed handler.
+        (self.processes[mode_idx].switched_handler)();
 
         // Load the new state.
         let new_state = &mut self.processes[mode_idx].saved_state;
@@ -112,13 +98,13 @@ impl ProcessSwitcher {
             }
             None => {
                 // Create a new state.
-                let stack_top = self.stack_top(new_proc);
+                let stack_bottom = self.processes[mode_idx].stack_bottom;
                 let entry_point = self.processes[mode_idx].entry_point_addr();
                 InterruptStackFrameValue::new(
                     entry_point,
                     current_frame.code_segment,
                     current_frame.cpu_flags,
-                    stack_top,
+                    stack_bottom,
                     current_frame.stack_segment,
                 )
             }
@@ -130,22 +116,31 @@ impl ProcessSwitcher {
 
         self.current_proc = new_proc;
     }
+
+    pub fn shift_proc(&mut self, current_frame: &mut InterruptStackFrame) {
+        let new_proc = self.current_proc.shift();
+        self.switch_proc(new_proc, current_frame);
+    }
+
+    pub fn mode(&self) -> ProcessMode {
+        self.current_proc
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ProcessMode {
-    Log,
     Game,
     Info,
+    Log,
     Recovery,
 }
 
 impl From<ProcessMode> for usize {
     fn from(mode: ProcessMode) -> Self {
         match mode {
-            ProcessMode::Log => 0,
-            ProcessMode::Game => 1,
-            ProcessMode::Info => 2,
+            ProcessMode::Game => 0,
+            ProcessMode::Info => 1,
+            ProcessMode::Log => 2,
             ProcessMode::Recovery => 3,
         }
     }
@@ -154,9 +149,9 @@ impl From<ProcessMode> for usize {
 impl ProcessMode {
     pub fn shift(&self) -> ProcessMode {
         match self {
-            ProcessMode::Log => ProcessMode::Game,
             ProcessMode::Game => ProcessMode::Info,
             ProcessMode::Info => ProcessMode::Log,
+            ProcessMode::Log => ProcessMode::Game,
             ProcessMode::Recovery => ProcessMode::Recovery,
         }
     }
@@ -165,7 +160,7 @@ impl ProcessMode {
 pub struct Process;
 
 static CURRENT_PROC_MODE: Lazy<RwLock<(ProcessMode, bool)>> =
-    Lazy::new(|| RwLock::new((ProcessMode::Log, false)));
+    Lazy::new(|| RwLock::new((ProcessMode::Game, false)));
 
 impl Process {
     pub fn switch_proc(mode: ProcessMode) {

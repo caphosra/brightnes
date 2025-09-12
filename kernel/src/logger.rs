@@ -6,14 +6,13 @@ use x86_64::instructions::interrupts;
 
 use crate::font::{FONT_HEIGHT, FONT_WIDTH};
 use crate::frame_buffer::{FrameBuffer, PixelColor};
-use crate::proc::{Process, ProcessMode};
+use crate::proc::{ProcessMode, PROCESS_SWITCHER};
 
 #[derive(Clone, Copy)]
 pub enum LogLocation {
     SYS,
     CPU,
     PPU,
-    OAM,
     APU,
     CAT,
     BUS,
@@ -27,7 +26,6 @@ impl LogLocation {
             LogLocation::SYS => "SYS",
             LogLocation::CPU => "CPU",
             LogLocation::PPU => "PPU",
-            LogLocation::OAM => "OAM",
             LogLocation::APU => "APU",
             LogLocation::CAT => "CAT",
             LogLocation::BUS => "BUS",
@@ -150,7 +148,8 @@ impl Logger {
         self.scroll = self.scroll.max(text_height);
 
         // Rerender the screen.
-        if Process::mode() == ProcessMode::Log || Process::mode() == ProcessMode::Recovery {
+        let switcher = PROCESS_SWITCHER.read();
+        if switcher.mode() == ProcessMode::Log {
             self.render_internal(before, self.scroll);
 
             // Flush the frame buffer.
@@ -291,7 +290,8 @@ impl Logger {
             let after = logger.scroll;
             logger.render_internal(before, after);
 
-            if Process::mode() == ProcessMode::Log || Process::mode() == ProcessMode::Recovery {
+            let switcher = PROCESS_SWITCHER.read();
+            if switcher.mode() == ProcessMode::Log {
                 // Flush the frame buffer.
                 let mut buffer = LOG_FB.write();
                 buffer.flush(false);

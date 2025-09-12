@@ -16,7 +16,6 @@ use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::bus::CPUBus;
 use crate::nes::cpu::NES_CPU;
 use crate::nes::ppu::{GAME_FB, NES_PPU};
-use crate::proc::{Process, ProcessMode};
 
 #[no_mangle]
 #[inline(never)]
@@ -26,7 +25,7 @@ pub extern "C" fn kernel_main() -> ! {
     }
 
     // Initialize the frame buffer.
-    LOG_FB.write().flush_all();
+    on_log_switched();
 
     // Load the font data.
     // This task is required to render texts on the screen.
@@ -62,65 +61,62 @@ pub extern "C" fn kernel_main() -> ! {
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
-    Process::switch_proc(ProcessMode::Game);
+    on_game_switched();
+    game_main();
+}
 
+pub fn game_main() -> ! {
     loop {
-        main_loop();
+        const FRAME_CYCLES: usize = 29780;
+
+        let mut cartridge = CARTRIDGE.write();
+        let mut cpu = NES_CPU.write();
+        let mut frame_buffer = GAME_FB.write();
+
+        let mut cycles = 0;
+        while cycles < FRAME_CYCLES {
+            let (required, dma_transfer_ends) = cpu.clock(&mut cartridge);
+            {
+                let mut ppu = NES_PPU.write();
+                if dma_transfer_ends {
+                    ppu.oam.do_dma_transfer(&mut cartridge);
+                }
+                ppu.render_bg(required as usize * 3, &mut frame_buffer, &mut cartridge);
+            }
+            cycles += required as usize;
+        }
+        frame_buffer.flush(false);
     }
 }
 
-fn main_loop() {
-    match Process::status() {
-        (ProcessMode::Log, true) => {
-            LOG_FB.write().flush_all();
-            Process::mark_as_switched();
-        }
-        (ProcessMode::Game, true) => {
-            let mut buffer = GAME_FB.write();
-            buffer.flush_all();
-            Process::mark_as_switched();
-        }
-        (ProcessMode::Info, true) => {
-            InfoProc::render_all();
-            Process::mark_as_switched();
-        }
-        (ProcessMode::Game, _) => {
-            const FRAME_CYCLES: usize = 29780;
+pub fn on_game_switched() {
+    let mut buffer = GAME_FB.write();
+    buffer.flush_all();
+}
 
-            let mut cartridge = CARTRIDGE.write();
-            let mut cpu = NES_CPU.write();
-            let mut frame_buffer = GAME_FB.write();
-
-            let mut cycles = 0;
-            while cycles < FRAME_CYCLES {
-                let (required, dma_transfer_ends) = cpu.clock(&mut cartridge);
-                {
-                    let mut ppu = NES_PPU.write();
-                    if dma_transfer_ends {
-                        ppu.oam.do_dma_transfer(&mut cartridge);
-                    }
-                    ppu.render_bg(required as usize * 3, &mut frame_buffer, &mut cartridge);
-                }
-                cycles += required as usize;
-            }
-            frame_buffer.flush(false);
-        }
-        _ => {
-            hlt();
-        }
+pub fn log_main() -> ! {
+    loop {
+        hlt();
     }
+}
+
+pub fn on_log_switched() {
+    LOG_FB.write().flush_all();
+}
+
+pub fn info_main() -> ! {
+    loop {
+        hlt();
+    }
+}
+
+pub fn on_info_switched() {
+    InfoProc::render_all();
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    Process::enter_recovery();
-
-    LOG_FB.write().flush_all();
-    Process::mark_as_switched();
-
-    loop {
-        hlt();
-    }
+    loop {}
 }
 
 mod font;
