@@ -92,9 +92,11 @@ static LOGGER: Lazy<RwLock<Logger>> = Lazy::new(|| {
     })
 });
 
-static LOG_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
+pub static LOG_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     let (width, height) = FrameBuffer::max_size();
-    RwLock::new(FrameBuffer::new(0, 0, width, height, 1))
+    let mut frame_buffer = FrameBuffer::new(0, 0, width, height, 1);
+    frame_buffer.clear(LoggerColor::bg_color());
+    RwLock::new(frame_buffer)
 });
 
 impl Logger {
@@ -286,36 +288,15 @@ impl Logger {
             let before = logger.scroll;
             logger.log_internal(location, level, message);
 
-            if Process::mode() == ProcessMode::Log || Process::mode() == ProcessMode::Recovery {
-                let after = logger.scroll;
-                logger.render_internal(before, after);
+            let after = logger.scroll;
+            logger.render_internal(before, after);
 
+            if Process::mode() == ProcessMode::Log || Process::mode() == ProcessMode::Recovery {
                 // Flush the frame buffer.
-                {
-                    let mut buffer = LOG_FB.write();
-                    buffer.flush(false);
-                }
+                let mut buffer = LOG_FB.write();
+                buffer.flush(false);
             }
         });
-    }
-
-    pub fn render_all() {
-        // Clear the frame buffer.
-        {
-            let mut buffer = LOG_FB.write();
-            buffer.clear(LoggerColor::bg_color());
-        }
-
-        // Re-render the log.
-        let mut logger = LOGGER.write();
-        let scroll = logger.scroll;
-        logger.render_internal(0, scroll);
-
-        // Flush the frame buffer.
-        {
-            let mut buffer = LOG_FB.write();
-            buffer.flush_all();
-        }
     }
 }
 

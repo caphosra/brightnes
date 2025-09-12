@@ -11,7 +11,7 @@ use x86_64::instructions::{hlt, interrupts};
 use crate::font::FontManager;
 use crate::info::InfoProc;
 use crate::int::Interrupt;
-use crate::logger::Logger;
+use crate::logger::LOG_FB;
 use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::bus::CPUBus;
 use crate::nes::cpu::NES_CPU;
@@ -26,7 +26,7 @@ pub extern "C" fn kernel_main() -> ! {
     }
 
     // Initialize the frame buffer.
-    Logger::render_all();
+    LOG_FB.write().flush_all();
 
     // Load the font data.
     // This task is required to render texts on the screen.
@@ -72,7 +72,7 @@ pub extern "C" fn kernel_main() -> ! {
 fn main_loop() {
     match Process::status() {
         (ProcessMode::Log, true) => {
-            Logger::render_all();
+            LOG_FB.write().flush_all();
             Process::mark_as_switched();
         }
         (ProcessMode::Game, true) => {
@@ -115,7 +115,7 @@ fn main_loop() {
 fn panic(_info: &PanicInfo) -> ! {
     Process::enter_recovery();
 
-    Logger::render_all();
+    LOG_FB.write().flush_all();
     Process::mark_as_switched();
 
     loop {
