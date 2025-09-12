@@ -14,6 +14,7 @@ static PICS: Mutex<ChainedPics> =
 
 #[repr(u8)]
 pub enum InterruptIdx {
+    #[allow(dead_code)]
     Timer = PIC_1_OFFSET,
     Keyboard,
 }
@@ -24,7 +25,6 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     idt.general_protection_fault
         .set_handler_fn(general_protection_fault_handler);
     idt.page_fault.set_handler_fn(page_fault_handler);
-    idt[InterruptIdx::Timer as u8].set_handler_fn(timer_handler);
     idt[InterruptIdx::Keyboard as u8].set_handler_fn(keyboard_handler);
     idt
 });
@@ -38,7 +38,7 @@ impl Interrupt {
         {
             let mut pics = PICS.lock();
             unsafe { pics.initialize() };
-            unsafe { pics.write_masks(0xFC, 0xFF) };
+            unsafe { pics.write_masks(0xFD, 0xFF) };
         }
     }
 }
@@ -64,13 +64,6 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     loop {
         hlt();
-    }
-}
-
-extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
-    unsafe {
-        PICS.lock()
-            .notify_end_of_interrupt(InterruptIdx::Timer as u8);
     }
 }
 
