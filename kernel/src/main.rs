@@ -10,7 +10,7 @@ use x86_64::instructions::{hlt, interrupts};
 
 use crate::font::FontManager;
 use crate::info::InfoProc;
-use crate::int::Interrupt;
+use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
 use crate::logger::LOG_FB;
 use crate::nes::cartridge::CARTRIDGE;
@@ -24,8 +24,6 @@ pub extern "C" fn kernel_main() -> ! {
     if interrupts::are_enabled() {
         interrupts::disable();
     }
-
-    Interrupt::init();
 
     // Initialize the frame buffer.
     on_game_switched();
@@ -41,23 +39,7 @@ pub extern "C" fn kernel_main() -> ! {
     log!(SYS, "Hello World from the kernel.");
     info!(SYS, "Enabled logging system.");
 
-    {
-        let mut cartridge = CARTRIDGE.write();
-        cartridge.load();
-    }
-    info!(SYS, "Loaded the cartridge.");
-
-    {
-        let mut cpu = NES_CPU.write();
-        let mut cartridge = CARTRIDGE.write();
-        let lo = CPUBus::read(0xFFFC, &mut cartridge);
-        let hi = CPUBus::read(0xFFFD, &mut cartridge);
-        cpu.reg_pc = u16::from_le_bytes([lo, hi]);
-
-        log!(SYS, "Entry Point: {:#06X}", cpu.reg_pc);
-    }
-    info!(SYS, "Initialized the NES CPU.");
-
+    InterruptController::init();
     interrupts::enable();
 
     info!(SYS, "Interrupts are enabled.");
@@ -67,12 +49,24 @@ pub extern "C" fn kernel_main() -> ! {
 }
 
 pub fn game_main() -> ! {
+    let mut cartridge = CARTRIDGE.write();
+    let mut cpu = NES_CPU.write();
+    let mut frame_buffer = GAME_FB.write();
+
+    cartridge.load();
+
+    info!(SYS, "Loaded the cartridge.");
+
+    let lo = CPUBus::read(0xFFFC, &mut cartridge);
+    let hi = CPUBus::read(0xFFFD, &mut cartridge);
+    cpu.reg_pc = u16::from_le_bytes([lo, hi]);
+
+    log!(SYS, "Entry Point: {:#06X}", cpu.reg_pc);
+
+    info!(SYS, "Start the game.");
+
     loop {
         const FRAME_CYCLES: usize = 29780;
-
-        let mut cartridge = CARTRIDGE.write();
-        let mut cpu = NES_CPU.write();
-        let mut frame_buffer = GAME_FB.write();
 
         let mut cycles = 0;
         while cycles < FRAME_CYCLES {

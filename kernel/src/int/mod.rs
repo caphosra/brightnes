@@ -35,9 +35,9 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     idt
 });
 
-pub struct Interrupt;
+pub struct InterruptController;
 
-impl Interrupt {
+impl InterruptController {
     pub fn init() {
         IDT.load();
 
