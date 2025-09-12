@@ -4,9 +4,10 @@ use x86_64::instructions::hlt;
 use x86_64::instructions::port::Port;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::info;
 use crate::int::keyboard::BKeyboard;
+use crate::mem::MemoryAllocator;
 use crate::proc::PROCESS_SWITCHER;
+use crate::{error, info};
 
 const PIC_1_OFFSET: u8 = 0x20;
 const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -43,7 +44,7 @@ impl Interrupt {
         {
             let mut pics = PICS.lock();
             unsafe { pics.initialize() };
-            unsafe { pics.write_masks(0xFD, 0xFF) };
+            unsafe { pics.write_masks(0xFC, 0xFF) };
         }
     }
 }
@@ -72,7 +73,14 @@ extern "x86-interrupt" fn page_fault_handler(
     }
 }
 
-extern "x86-interrupt" fn timer_handler(_stack_frame: InterruptStackFrame) {
+extern "x86-interrupt" fn timer_handler(mut stack_frame: InterruptStackFrame) {
+    if MemoryAllocator::check_mem_error() {
+        error!(SYS, "Memory has been exhausted.");
+
+        let mut switcher = PROCESS_SWITCHER.write();
+        switcher.enter_safe_mode(&mut stack_frame);
+    }
+
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIdx::Timer as u8);
