@@ -11,6 +11,7 @@ use x86_64::instructions::{hlt, interrupts};
 use crate::font::FontManager;
 use crate::info::InfoProc;
 use crate::int::Interrupt;
+use crate::int::PANIC_INT_IDX;
 use crate::logger::LOG_FB;
 use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::bus::CPUBus;
@@ -24,8 +25,10 @@ pub extern "C" fn kernel_main() -> ! {
         interrupts::disable();
     }
 
+    Interrupt::init();
+
     // Initialize the frame buffer.
-    on_log_switched();
+    on_game_switched();
 
     // Load the font data.
     // This task is required to render texts on the screen.
@@ -55,13 +58,11 @@ pub extern "C" fn kernel_main() -> ! {
     }
     info!(SYS, "Initialized the NES CPU.");
 
-    Interrupt::init();
     interrupts::enable();
 
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
-    on_game_switched();
     game_main();
 }
 
@@ -121,6 +122,10 @@ pub fn on_info_switched() {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
+    interrupts::enable();
+    unsafe {
+        interrupts::software_interrupt::<PANIC_INT_IDX>();
+    }
     loop {}
 }
 

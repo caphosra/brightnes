@@ -4,11 +4,8 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::{
-    game_main, info, info_main, log_main, on_game_switched, on_info_switched, on_log_switched,
-};
+use crate::{game_main, info_main, log_main, on_game_switched, on_info_switched, on_log_switched};
 
-const STACK_SIZE: usize = 0x1_0000;
 const PROC_SIZE: usize = 3;
 
 const INFO_STACK_BOTTOM: *const u8 = 0x680_0000 as *const u8;
@@ -48,6 +45,7 @@ impl ProcessInfo {
 pub struct ProcessSwitcher {
     processes: [ProcessInfo; PROC_SIZE],
     current_proc: ProcessMode,
+    safe_mode: bool,
 }
 
 pub static PROCESS_SWITCHER: Lazy<RwLock<ProcessSwitcher>> =
@@ -70,10 +68,16 @@ impl ProcessSwitcher {
                 ),
             ],
             current_proc: ProcessMode::Game,
+            safe_mode: false,
         }
     }
 
     pub fn switch_proc(&mut self, new_proc: ProcessMode, current_frame: &mut InterruptStackFrame) {
+        if self.safe_mode {
+            // Do not allow switching processes in safety mode.
+            return;
+        }
+
         let old_mode_idx: usize = self.current_proc.into();
         let mode_idx: usize = new_proc.into();
 
@@ -122,6 +126,11 @@ impl ProcessSwitcher {
         self.switch_proc(new_proc, current_frame);
     }
 
+    pub fn enter_safe_mode(&mut self, current_frame: &mut InterruptStackFrame) {
+        self.switch_proc(ProcessMode::Log, current_frame);
+        self.safe_mode = true;
+    }
+
     pub fn mode(&self) -> ProcessMode {
         self.current_proc
     }
@@ -132,7 +141,6 @@ pub enum ProcessMode {
     Game,
     Info,
     Log,
-    Recovery,
 }
 
 impl From<ProcessMode> for usize {
@@ -141,7 +149,6 @@ impl From<ProcessMode> for usize {
             ProcessMode::Game => 0,
             ProcessMode::Info => 1,
             ProcessMode::Log => 2,
-            ProcessMode::Recovery => 3,
         }
     }
 }
@@ -152,51 +159,6 @@ impl ProcessMode {
             ProcessMode::Game => ProcessMode::Info,
             ProcessMode::Info => ProcessMode::Log,
             ProcessMode::Log => ProcessMode::Game,
-            ProcessMode::Recovery => ProcessMode::Recovery,
         }
-    }
-}
-
-pub struct Process;
-
-static CURRENT_PROC_MODE: Lazy<RwLock<(ProcessMode, bool)>> =
-    Lazy::new(|| RwLock::new((ProcessMode::Game, false)));
-
-impl Process {
-    pub fn switch_proc(mode: ProcessMode) {
-        let proc_mode = CURRENT_PROC_MODE.try_write();
-        match proc_mode {
-            Some(mut pm) => {
-                if pm.0 != ProcessMode::Recovery {
-                    *pm = (mode, true);
-                }
-            }
-            None => {}
-        }
-    }
-
-    pub fn shift_proc() {
-        let (mode, _) = *CURRENT_PROC_MODE.read();
-        Process::switch_proc(mode.shift());
-    }
-
-    pub fn mode() -> ProcessMode {
-        let (mode, _) = *CURRENT_PROC_MODE.read();
-        mode
-    }
-
-    pub fn status() -> (ProcessMode, bool) {
-        *CURRENT_PROC_MODE.read()
-    }
-
-    pub fn mark_as_switched() {
-        let mut proc_mode = CURRENT_PROC_MODE.write();
-        *proc_mode = (proc_mode.0, false);
-    }
-
-    pub fn enter_recovery() {
-        info!(SYS, "Entering recovery mode");
-
-        Self::switch_proc(ProcessMode::Recovery);
     }
 }

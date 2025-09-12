@@ -4,10 +4,14 @@ use x86_64::instructions::hlt;
 use x86_64::instructions::port::Port;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
+use crate::info;
 use crate::int::keyboard::BKeyboard;
+use crate::proc::PROCESS_SWITCHER;
 
 const PIC_1_OFFSET: u8 = 0x20;
 const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
+
+pub const PANIC_INT_IDX: u8 = 0x60;
 
 static PICS: Mutex<ChainedPics> =
     Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
@@ -26,6 +30,7 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     idt.page_fault.set_handler_fn(page_fault_handler);
     idt[InterruptIdx::Timer as u8].set_handler_fn(timer_handler);
     idt[InterruptIdx::Keyboard as u8].set_handler_fn(keyboard_handler);
+    idt[PANIC_INT_IDX].set_handler_fn(panic_handler);
     idt
 });
 
@@ -38,7 +43,7 @@ impl Interrupt {
         {
             let mut pics = PICS.lock();
             unsafe { pics.initialize() };
-            unsafe { pics.write_masks(0xFC, 0xFF) };
+            unsafe { pics.write_masks(0xFD, 0xFF) };
         }
     }
 }
@@ -84,6 +89,15 @@ extern "x86-interrupt" fn keyboard_handler(mut stack_frame: InterruptStackFrame)
         PICS.lock()
             .notify_end_of_interrupt(InterruptIdx::Keyboard as u8);
     }
+}
+
+extern "x86-interrupt" fn panic_handler(mut stack_frame: InterruptStackFrame) {
+    {
+        let mut switcher = PROCESS_SWITCHER.write();
+        switcher.enter_safe_mode(&mut stack_frame);
+    }
+
+    info!(SYS, "Entering safe mode");
 }
 
 mod keyboard;
