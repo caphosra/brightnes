@@ -6,9 +6,9 @@ use core::{
 use spin::{Lazy, Mutex};
 use x86_64::instructions::interrupts;
 
-pub const HEAP_START_ADDR: usize = 0x400_0000;
+pub const HEAP_START_ADDR: usize = 0x1000_0000;
 pub const HEAP_SAFE_MARGIN: usize = 0x1000;
-pub const HEAP_SIZE: usize = 0x200_0000;
+pub const HEAP_SIZE: usize = 0x2000_0000;
 
 pub struct MemoryAllocator {
     arena: *mut u8,
