@@ -90,6 +90,9 @@ pub fn game_main() -> ! {
 }
 
 pub fn on_game_switched() {
+    unsafe {
+        GAME_FB.force_write_unlock();
+    }
     let mut buffer = GAME_FB.write();
     buffer.flush_all();
 }
@@ -101,7 +104,9 @@ pub fn log_main() -> ! {
 }
 
 pub fn on_log_switched() {
-    LOG_FB.write().flush_all();
+    interrupts::without_interrupts(|| {
+        LOG_FB.write().flush_all();
+    });
 }
 
 pub fn info_main() -> ! {
