@@ -1,9 +1,6 @@
-use crate::{
-    log,
-    nes::{
-        cartridge::Cartridge,
-        cpu::{bus::CPUBus, NESCPU},
-    },
+use crate::nes::{
+    cartridge::Cartridge,
+    cpu::{bus::CPUBus, NESCPU},
 };
 
 #[derive(Clone, Copy)]
@@ -77,11 +74,6 @@ impl OAM {
 
     pub fn request_dma_transfer(&mut self, hi: u8) {
         self.dma_request_addr = (hi as u16) << 8;
-        log!(
-            OAM,
-            "Requested OAM DMA transfer from {:#06X}",
-            self.dma_request_addr
-        );
         NESCPU::dma_stall();
     }
 
@@ -90,10 +82,5 @@ impl OAM {
             let addr = self.dma_request_addr + i as u16;
             self.write(i, CPUBus::read(addr, cartridge));
         }
-        log!(
-            OAM,
-            "Done OAM DMA transfer from {:#06X}",
-            self.dma_request_addr
-        );
     }
 }

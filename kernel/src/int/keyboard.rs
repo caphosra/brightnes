@@ -1,10 +1,11 @@
 use pc_keyboard::{layouts::Us104Key, HandleControl, KeyCode, KeyState, Keyboard, ScancodeSet1};
 use spin::{Lazy, RwLock};
+use x86_64::structures::idt::InterruptStackFrame;
 
 use crate::{
     logger::Logger,
     nes::pad::{PadButton, PADS},
-    proc::{Process, ProcessMode},
+    proc::{ProcessMode, PROCESS_SWITCHER},
 };
 
 pub struct BKeyboard;
@@ -18,21 +19,25 @@ static KEYBOARD: Lazy<RwLock<Keyboard<Us104Key, ScancodeSet1>>> = Lazy::new(|| {
 });
 
 impl BKeyboard {
-    pub fn on_event(key: u8) {
+    pub fn on_event(key: u8, stack_frame: &mut InterruptStackFrame) {
         let mut keyboard = KEYBOARD.write();
         if let Ok(Some(key)) = keyboard.add_byte(key) {
             match (key.state, key.code) {
                 (KeyState::Down, KeyCode::Tab) => {
-                    Process::shift_proc();
+                    let mut switcher = PROCESS_SWITCHER.write();
+                    switcher.shift_proc(stack_frame);
                 }
                 (KeyState::Down, KeyCode::F1) => {
-                    Process::switch_proc(ProcessMode::Game);
+                    let mut switcher = PROCESS_SWITCHER.write();
+                    switcher.switch_proc(ProcessMode::Game, stack_frame);
                 }
                 (KeyState::Down, KeyCode::F2) => {
-                    Process::switch_proc(ProcessMode::Info);
+                    let mut switcher = PROCESS_SWITCHER.write();
+                    switcher.switch_proc(ProcessMode::Info, stack_frame);
                 }
                 (KeyState::Down, KeyCode::F3) => {
-                    Process::switch_proc(ProcessMode::Log);
+                    let mut switcher = PROCESS_SWITCHER.write();
+                    switcher.switch_proc(ProcessMode::Log, stack_frame);
                 }
                 (state, KeyCode::L) => {
                     BKeyboard::on_pad_button(state, PadButton::A);
