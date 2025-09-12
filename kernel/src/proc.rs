@@ -1,7 +1,5 @@
 use spin::{Lazy, RwLock};
 
-use crate::info;
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ProcessMode {
     Log,
@@ -56,11 +54,5 @@ impl Process {
     pub fn mark_as_switched() {
         let mut proc_mode = CURRENT_PROC_MODE.write();
         *proc_mode = (proc_mode.0, false);
-    }
-
-    pub fn enter_recovery() {
-        info!(SYS, "Entering recovery mode");
-
-        Self::switch_proc(ProcessMode::Recovery);
     }
 }
