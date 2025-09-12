@@ -9,14 +9,40 @@ use crate::info;
 const STACK_SIZE: usize = 0x1_0000;
 const PROC_SIZE: usize = 3;
 
+#[repr(C, align(16))]
+pub struct ProcessInfo {
+    pub dedicated_stack: [u8; STACK_SIZE],
+    entry_point: fn() -> (),
+    on_changed: Option<fn() -> ()>,
+    pub saved_state: Option<InterruptStackFrameValue>,
+}
+
+impl ProcessInfo {
+    pub fn new(entry_point: fn() -> (), on_changed: Option<fn() -> ()>) -> Self {
+        Self {
+            dedicated_stack: [0; STACK_SIZE],
+            entry_point,
+            on_changed,
+            saved_state: None,
+        }
+    }
+
+    pub fn stack_top(&self) -> VirtAddr {
+        let stack_top_raw = unsafe { self.dedicated_stack.as_ptr().add(STACK_SIZE) };
+        VirtAddr::from_ptr(stack_top_raw)
+    }
+
+    pub fn entry_point_addr(&self) -> VirtAddr {
+        VirtAddr::from_ptr(self.entry_point as *const ())
+    }
+}
+
 ///
 /// Supports switching between multiple processes.
 ///
-#[repr(C, align(16))]
+#[repr(C)]
 pub struct ProcessSwitcher {
-    stacks: [[u8; STACK_SIZE]; PROC_SIZE],
-    entry_points: [VirtAddr; PROC_SIZE],
-    saved_states: [Option<InterruptStackFrameValue>; PROC_SIZE],
+    processes: [ProcessInfo; PROC_SIZE],
     current_proc: ProcessMode,
 }
 
@@ -26,18 +52,35 @@ pub static PROCESS_SWITCHER: Lazy<RwLock<ProcessSwitcher>> =
 impl ProcessSwitcher {
     pub fn new() -> Self {
         Self {
-            stacks: [[0; STACK_SIZE]; PROC_SIZE],
-            entry_points: [VirtAddr::zero(); PROC_SIZE],
-            saved_states: [None; PROC_SIZE],
+            processes: [
+                ProcessInfo::new(
+                    || {},
+                    Some(|| {
+                        info!(SYS, "Switched to Log process.");
+                    }),
+                ),
+                ProcessInfo::new(
+                    || {},
+                    Some(|| {
+                        info!(SYS, "Switched to Game process.");
+                    }),
+                ),
+                ProcessInfo::new(
+                    || {},
+                    Some(|| {
+                        info!(SYS, "Switched to Info process.");
+                    }),
+                ),
+            ],
             current_proc: ProcessMode::Log,
         }
     }
 
     fn stack_top(&self, mode: ProcessMode) -> VirtAddr {
         let mode_idx: usize = mode.into();
-        let stack = self.stacks[mode_idx];
-        let stacl_top_raw = unsafe { stack.as_ptr().add(STACK_SIZE) };
-        VirtAddr::from_ptr(stacl_top_raw)
+        let stack = self.processes[mode_idx].dedicated_stack;
+        let stack_top_raw = unsafe { stack.as_ptr().add(STACK_SIZE) };
+        VirtAddr::from_ptr(stack_top_raw)
     }
 
     pub fn switch_proc(
@@ -57,11 +100,11 @@ impl ProcessSwitcher {
         if save_state {
             // Save the current state.
             let old_state = current_frame.clone();
-            self.saved_states[old_mode_idx] = Some(old_state);
+            self.processes[old_mode_idx].saved_state = Some(old_state);
         }
 
         // Load the new state.
-        let new_state = &mut self.saved_states[mode_idx];
+        let new_state = &mut self.processes[mode_idx].saved_state;
         let new_state = match new_state {
             Some(state) => {
                 // Restore the saved state.
@@ -70,7 +113,7 @@ impl ProcessSwitcher {
             None => {
                 // Create a new state.
                 let stack_top = self.stack_top(new_proc);
-                let entry_point = self.entry_points[mode_idx];
+                let entry_point = self.processes[mode_idx].entry_point_addr();
                 InterruptStackFrameValue::new(
                     entry_point,
                     current_frame.code_segment,
