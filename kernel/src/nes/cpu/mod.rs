@@ -49,6 +49,8 @@ static CPU_INT: Lazy<RwLock<Option<InterruptType>>> = Lazy::new(|| RwLock::new(N
 pub enum InterruptType {
     NMI,
     BRK,
+    IRQ,
+    RST,
 }
 
 impl NESCPU {
@@ -65,7 +67,10 @@ impl NESCPU {
     }
 
     fn interrupt_internal(&mut self, int_type: InterruptType, cartridge: &mut Cartridge) {
-        if self.get_flag(INT_FLAG) != 0 && (int_type == InterruptType::BRK) {
+        if self.get_flag(INT_FLAG) != 0
+            && (int_type == InterruptType::BRK)
+            && (int_type == InterruptType::IRQ)
+        {
             // Nested interrupt is not allowed for BRK and IRQ.
             return;
         }
@@ -93,6 +98,24 @@ impl NESCPU {
 
                 let lo = CPUBus::read(0xFFFA, cartridge);
                 let hi = CPUBus::read(0xFFFB, cartridge);
+                self.reg_pc = u16::from_le_bytes([lo, hi]);
+            }
+            InterruptType::IRQ => {
+                self.set_flag(BRK_FLAG, false);
+
+                self.push_stack((self.reg_pc >> 8) as u8, cartridge);
+                self.push_stack((self.reg_pc & 0x00FF) as u8, cartridge);
+
+                self.push_stack((self.reg_p & 0b11001111) | 1 << 5, cartridge);
+
+                let lo = CPUBus::read(0xFFFE, cartridge);
+                let hi = CPUBus::read(0xFFFF, cartridge);
+                self.reg_pc = u16::from_le_bytes([lo, hi]);
+            }
+            InterruptType::RST => {
+                let lo = CPUBus::read(0xFFFC, cartridge);
+                let hi = CPUBus::read(0xFFFD, cartridge);
+                self.reg_sp = 0xFD;
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
             }
         }

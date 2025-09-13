@@ -14,7 +14,7 @@ use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
 use crate::logger::LOG_FB;
 use crate::nes::cartridge::CARTRIDGE;
-use crate::nes::cpu::bus::CPUBus;
+use crate::nes::cpu::NESCPU;
 use crate::nes::cpu::NES_CPU;
 use crate::nes::ppu::{GAME_FB, NES_PPU};
 
@@ -57,11 +57,7 @@ pub fn game_main() -> ! {
 
     info!(SYS, "Loaded the cartridge.");
 
-    let lo = CPUBus::read(0xFFFC, &mut cartridge);
-    let hi = CPUBus::read(0xFFFD, &mut cartridge);
-    cpu.reg_pc = u16::from_le_bytes([lo, hi]);
-
-    log!(SYS, "Entry Point: {:#06X}", cpu.reg_pc);
+    NESCPU::interrupt(nes::cpu::InterruptType::RST);
 
     info!(SYS, "Start the game.");
 
