@@ -2,6 +2,8 @@ use core::ptr::write_volatile;
 
 use crate::{drivers::pci::PCIDevice, log};
 
+pub const VIRT_QUEUE_SIZE: usize = 8;
+
 #[repr(C)]
 pub struct VirtQDesc {
     addr: u64,
@@ -9,8 +11,6 @@ pub struct VirtQDesc {
     flags: u16,
     next: u16,
 }
-
-pub const VIRT_QUEUE_SIZE: usize = 8;
 
 #[repr(C)]
 pub struct VirtQAvail {
@@ -21,7 +21,7 @@ pub struct VirtQAvail {
 }
 
 #[repr(C)]
-struct VirtQUsed {
+pub struct VirtQUsed {
     flags: u16,
     idx: u16,
     ring: [VirtQUsedElem; VIRT_QUEUE_SIZE],
@@ -29,7 +29,7 @@ struct VirtQUsed {
 }
 
 #[repr(C)]
-struct VirtQUsedElem {
+pub struct VirtQUsedElem {
     id: u32,
     len: u32,
 }
@@ -38,6 +38,18 @@ impl VirtQDesc {
     pub const VIRTQ_DESC_F_NEXT: u16 = 1;
     pub const VIRTQ_DESC_F_WRITE: u16 = 2;
     pub const VIRTQ_DESC_F_INDIRECT: u16 = 4;
+}
+
+const VIRTQ_ALIGN: usize = 4096;
+const VIRTQ_PADDING: usize = VIRTQ_ALIGN
+    - (size_of::<VirtQDesc>() * VIRT_QUEUE_SIZE + size_of::<VirtQAvail>()) % VIRTQ_ALIGN;
+
+#[repr(C, align(4096))]
+pub struct VirtQ {
+    desc: [VirtQDesc; VIRT_QUEUE_SIZE],
+    avail: VirtQAvail,
+    padding: [u8; VIRTQ_PADDING],
+    used: VirtQUsed,
 }
 
 pub struct VirtIODevice {
