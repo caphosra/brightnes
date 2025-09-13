@@ -1,8 +1,9 @@
 use spin::{Lazy, RwLock};
+use x86_64::instructions::interrupts;
 
 use crate::{
     info::InfoProc,
-    proc::{Process, ProcessMode},
+    proc::{ProcessMode, PROCESS_SWITCHER},
 };
 
 #[derive(Clone, Copy)]
@@ -58,19 +59,25 @@ impl Pad {
     pub fn press_button(&mut self, button: PadButton) {
         self.pressed[button as usize] = true;
 
-        if Process::mode() == ProcessMode::Info {
-            let mut buffer = InfoProc::get_pad_frame_buffer(self.player).write();
-            InfoProc::render_button(&mut buffer, self, button);
-        }
+        interrupts::without_interrupts(|| {
+            let switcher = PROCESS_SWITCHER.read();
+            if switcher.mode() == ProcessMode::Info {
+                let mut buffer = InfoProc::get_pad_frame_buffer(self.player).write();
+                InfoProc::render_button(&mut buffer, self, button);
+            }
+        });
     }
 
     pub fn release_button(&mut self, button: PadButton) {
         self.pressed[button as usize] = false;
 
-        if Process::mode() == ProcessMode::Info {
-            let mut buffer = InfoProc::get_pad_frame_buffer(self.player).write();
-            InfoProc::render_button(&mut buffer, self, button);
-        }
+        interrupts::without_interrupts(|| {
+            let switcher = PROCESS_SWITCHER.read();
+            if switcher.mode() == ProcessMode::Info {
+                let mut buffer = InfoProc::get_pad_frame_buffer(self.player).write();
+                InfoProc::render_button(&mut buffer, self, button);
+            }
+        });
     }
 
     pub fn read(&mut self) -> bool {

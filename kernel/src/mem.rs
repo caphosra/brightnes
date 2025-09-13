@@ -6,18 +6,21 @@ use core::{
 use spin::{Lazy, Mutex};
 use x86_64::instructions::interrupts;
 
-pub const HEAP_START_ADDR: usize = 0x4_000_000;
-pub const HEAP_SIZE: usize = 0x2_000_000;
+pub const HEAP_START_ADDR: usize = 0x1000_0000;
+pub const HEAP_SAFE_MARGIN: usize = 0x1000;
+pub const HEAP_SIZE: usize = 0x2000_0000;
 
-struct MemoryAllocator {
+pub struct MemoryAllocator {
     arena: *mut u8,
     used: Lazy<Mutex<usize>>,
+    mem_error_notified: Lazy<Mutex<bool>>,
 }
 
 #[global_allocator]
 static MEM_ALLOC: MemoryAllocator = MemoryAllocator {
     arena: HEAP_START_ADDR as *mut u8,
     used: Lazy::new(|| Mutex::new(0)),
+    mem_error_notified: Lazy::new(|| Mutex::new(false)),
 };
 
 unsafe impl Sync for MemoryAllocator {}
@@ -54,5 +57,22 @@ unsafe impl GlobalAlloc for MemoryAllocator {
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
         // Do nothing.
+    }
+}
+
+impl MemoryAllocator {
+    pub fn check_mem_error() -> bool {
+        let mut mem_error_notified = MEM_ALLOC.mem_error_notified.lock();
+        if *mem_error_notified {
+            false
+        } else {
+            let used = MEM_ALLOC.used.lock();
+            if *used >= HEAP_SIZE - HEAP_SAFE_MARGIN {
+                *mem_error_notified = true;
+                true
+            } else {
+                false
+            }
+        }
     }
 }

@@ -11,13 +11,13 @@ use x86_64::instructions::{hlt, interrupts};
 use crate::drivers::virtio::VirtIODevice;
 use crate::font::FontManager;
 use crate::info::InfoProc;
-use crate::int::Interrupt;
-use crate::logger::Logger;
+use crate::int::InterruptController;
+use crate::int::PANIC_INT_IDX;
+use crate::logger::LOG_FB;
 use crate::nes::cartridge::CARTRIDGE;
-use crate::nes::cpu::bus::CPUBus;
+use crate::nes::cpu::NESCPU;
 use crate::nes::cpu::NES_CPU;
 use crate::nes::ppu::{GAME_FB, NES_PPU};
-use crate::proc::{Process, ProcessMode};
 
 #[no_mangle]
 #[inline(never)]
@@ -27,7 +27,7 @@ pub extern "C" fn kernel_main() -> ! {
     }
 
     // Initialize the frame buffer.
-    Logger::render_all();
+    on_game_switched();
 
     // Load the font data.
     // This task is required to render texts on the screen.
@@ -40,91 +40,84 @@ pub extern "C" fn kernel_main() -> ! {
     log!(SYS, "Hello World from the kernel.");
     info!(SYS, "Enabled logging system.");
 
-    let mut block_device = VirtIODevice::new(0x1001).unwrap();
-    block_device.init_device();
-
-    {
-        let mut cartridge = CARTRIDGE.write();
-        cartridge.load();
-    }
-    info!(SYS, "Loaded the cartridge.");
-
-    {
-        let mut cpu = NES_CPU.write();
-        let mut cartridge = CARTRIDGE.write();
-        let lo = CPUBus::read(0xFFFC, &mut cartridge);
-        let hi = CPUBus::read(0xFFFD, &mut cartridge);
-        cpu.reg_pc = u16::from_le_bytes([lo, hi]);
-
-        log!(SYS, "Entry Point: {:#06X}", cpu.reg_pc);
-    }
-    info!(SYS, "Initialized the NES CPU.");
-
-    Interrupt::init();
+    InterruptController::init();
     interrupts::enable();
 
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
-    Process::switch_proc(ProcessMode::Game);
+    game_main();
+}
+
+pub fn game_main() -> ! {
+    let mut cartridge = CARTRIDGE.write();
+    let mut cpu = NES_CPU.write();
+    let mut frame_buffer = GAME_FB.write();
+
+    cartridge.load();
+
+    info!(SYS, "Loaded the cartridge.");
+
+    NESCPU::interrupt(nes::cpu::InterruptType::RST);
+
+    info!(SYS, "Start the game.");
 
     loop {
-        main_loop();
+        const FRAME_CYCLES: usize = 29780;
+
+        let mut cycles = 0;
+        while cycles < FRAME_CYCLES {
+            let (required, dma_transfer_ends) = cpu.clock(&mut cartridge);
+            {
+                let mut ppu = NES_PPU.write();
+                if dma_transfer_ends {
+                    ppu.oam.do_dma_transfer(&mut cartridge);
+                }
+                ppu.render_bg(required as usize * 3, &mut frame_buffer, &mut cartridge);
+            }
+            cycles += required as usize;
+        }
+        frame_buffer.flush(false);
     }
 }
 
-fn main_loop() {
-    match Process::status() {
-        (ProcessMode::Log, true) => {
-            Logger::render_all();
-            Process::mark_as_switched();
-        }
-        (ProcessMode::Game, true) => {
-            let mut buffer = GAME_FB.write();
-            buffer.flush_all();
-            Process::mark_as_switched();
-        }
-        (ProcessMode::Info, true) => {
-            InfoProc::render_all();
-            Process::mark_as_switched();
-        }
-        (ProcessMode::Game, _) => {
-            const FRAME_CYCLES: usize = 29780;
-
-            let mut cartridge = CARTRIDGE.write();
-            let mut cpu = NES_CPU.write();
-            let mut frame_buffer = GAME_FB.write();
-
-            let mut cycles = 0;
-            while cycles < FRAME_CYCLES {
-                let (required, dma_transfer_ends) = cpu.clock(&mut cartridge);
-                {
-                    let mut ppu = NES_PPU.write();
-                    if dma_transfer_ends {
-                        ppu.oam.do_dma_transfer(&mut cartridge);
-                    }
-                    ppu.render_bg(required as usize * 3, &mut frame_buffer, &mut cartridge);
-                }
-                cycles += required as usize;
-            }
-            frame_buffer.flush(false);
-        }
-        _ => {
-            hlt();
-        }
+pub fn on_game_switched() {
+    unsafe {
+        GAME_FB.force_write_unlock();
     }
+    let mut buffer = GAME_FB.write();
+    buffer.flush_all();
+}
+
+pub fn log_main() -> ! {
+    loop {
+        hlt();
+    }
+}
+
+pub fn on_log_switched() {
+    interrupts::without_interrupts(|| {
+        LOG_FB.write().flush_all();
+    });
+}
+
+pub fn info_main() -> ! {
+    loop {
+        hlt();
+    }
+}
+
+pub fn on_info_switched() {
+    InfoProc::render_all();
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    Process::enter_recovery();
-
-    Logger::render_all();
-    Process::mark_as_switched();
-
-    loop {
-        hlt();
+    interrupts::enable();
+    unsafe {
+        interrupts::software_interrupt::<PANIC_INT_IDX>();
     }
+    loop {}
 }
 
 mod drivers;

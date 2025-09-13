@@ -1,5 +1,6 @@
 use alloc::format;
 use spin::{Lazy, RwLock};
+use x86_64::instructions::interrupts;
 
 use crate::{
     font::FONT_HEIGHT,
@@ -271,29 +272,43 @@ impl InfoProc {
     }
 
     pub fn render_all() {
-        let mut buffer = CPU_FB.write();
-        Self::render_cpu(&mut buffer, &NES_CPU.read());
+        interrupts::without_interrupts(|| {
+            let mut buffer = CPU_FB.write();
+            unsafe {
+                NES_CPU.force_write_unlock();
+            }
+            Self::render_cpu(&mut buffer, &NES_CPU.read());
 
-        buffer.flush_all();
+            buffer.flush_all();
 
-        let mut buffer = PPU_FB.write();
-        Self::render_ppu(&mut buffer, &NES_PPU.read());
+            let mut buffer = PPU_FB.write();
+            unsafe {
+                NES_PPU.force_write_unlock();
+            }
+            Self::render_ppu(&mut buffer, &NES_PPU.read());
 
-        // The background is already drawn.
-        buffer.flush(true);
+            // The background is already drawn.
+            buffer.flush(true);
 
-        let mut buffer = REV_FB.write();
-        let mut cartridge = CARTRIDGE.write();
-        Self::render_reversing(&mut buffer, &NES_CPU.read(), &mut cartridge);
-
-        buffer.flush(true);
-
-        // Render pads
-        for player in 0..2 {
-            let mut buffer = Self::get_pad_frame_buffer(player).write();
-            Self::render_pad(&mut buffer, &PADS.read()[player]);
+            let mut buffer = REV_FB.write();
+            unsafe {
+                CARTRIDGE.force_write_unlock();
+            }
+            let mut cartridge = CARTRIDGE.write();
+            Self::render_reversing(&mut buffer, &NES_CPU.read(), &mut cartridge);
 
             buffer.flush(true);
-        }
+
+            // Render pads
+            for player in 0..2 {
+                let mut buffer = Self::get_pad_frame_buffer(player).write();
+                unsafe {
+                    PADS.force_write_unlock();
+                }
+                Self::render_pad(&mut buffer, &PADS.read()[player]);
+
+                buffer.flush(true);
+            }
+        });
     }
 }

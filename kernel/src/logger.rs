@@ -6,14 +6,13 @@ use x86_64::instructions::interrupts;
 
 use crate::font::{FONT_HEIGHT, FONT_WIDTH};
 use crate::frame_buffer::{FrameBuffer, PixelColor};
-use crate::proc::{Process, ProcessMode};
+use crate::proc::{ProcessMode, PROCESS_SWITCHER};
 
 #[derive(Clone, Copy)]
 pub enum LogLocation {
     SYS,
     CPU,
     PPU,
-    OAM,
     APU,
     CAT,
     BUS,
@@ -27,7 +26,6 @@ impl LogLocation {
             LogLocation::SYS => "SYS",
             LogLocation::CPU => "CPU",
             LogLocation::PPU => "PPU",
-            LogLocation::OAM => "OAM",
             LogLocation::APU => "APU",
             LogLocation::CAT => "CAT",
             LogLocation::BUS => "BUS",
@@ -92,9 +90,11 @@ static LOGGER: Lazy<RwLock<Logger>> = Lazy::new(|| {
     })
 });
 
-static LOG_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
+pub static LOG_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     let (width, height) = FrameBuffer::max_size();
-    RwLock::new(FrameBuffer::new(0, 0, width, height, 1))
+    let mut frame_buffer = FrameBuffer::new(0, 0, width, height, 1);
+    frame_buffer.clear(LoggerColor::bg_color());
+    RwLock::new(frame_buffer)
 });
 
 impl Logger {
@@ -148,7 +148,8 @@ impl Logger {
         self.scroll = self.scroll.max(text_height);
 
         // Rerender the screen.
-        if Process::mode() == ProcessMode::Log || Process::mode() == ProcessMode::Recovery {
+        let switcher = PROCESS_SWITCHER.read();
+        if switcher.mode() == ProcessMode::Log {
             self.render_internal(before, self.scroll);
 
             // Flush the frame buffer.
@@ -286,36 +287,16 @@ impl Logger {
             let before = logger.scroll;
             logger.log_internal(location, level, message);
 
-            if Process::mode() == ProcessMode::Log || Process::mode() == ProcessMode::Recovery {
-                let after = logger.scroll;
-                logger.render_internal(before, after);
+            let after = logger.scroll;
+            logger.render_internal(before, after);
 
+            let switcher = PROCESS_SWITCHER.read();
+            if switcher.mode() == ProcessMode::Log {
                 // Flush the frame buffer.
-                {
-                    let mut buffer = LOG_FB.write();
-                    buffer.flush(false);
-                }
+                let mut buffer = LOG_FB.write();
+                buffer.flush(false);
             }
         });
-    }
-
-    pub fn render_all() {
-        // Clear the frame buffer.
-        {
-            let mut buffer = LOG_FB.write();
-            buffer.clear(LoggerColor::bg_color());
-        }
-
-        // Re-render the log.
-        let mut logger = LOGGER.write();
-        let scroll = logger.scroll;
-        logger.render_internal(0, scroll);
-
-        // Flush the frame buffer.
-        {
-            let mut buffer = LOG_FB.write();
-            buffer.flush_all();
-        }
     }
 }
 
