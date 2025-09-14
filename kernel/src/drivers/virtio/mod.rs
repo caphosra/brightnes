@@ -1,8 +1,8 @@
 use core::ptr::write_volatile;
 
-use crate::{drivers::pci::PCIDevice, log};
+use crate::{drivers::pci::PCIDevice, log, mem::MemoryAllocator};
 
-pub const VIRT_QUEUE_SIZE: usize = 8;
+pub const VIRT_QUEUE_SIZE: usize = 64;
 
 #[repr(C)]
 pub struct VirtQDesc {
@@ -170,6 +170,54 @@ impl VirtIODevice {
                 &mut self.common_config.device_status,
                 self.common_config.device_status | Self::DRIVER,
             );
+        }
+
+        let queue = MemoryAllocator::alloc(size_of::<VirtQ>(), 4096) as *mut VirtQ;
+        let queue = unsafe { queue.as_mut() }.unwrap();
+
+        self.init_queue(0, queue);
+
+        unsafe {
+            write_volatile(
+                &mut self.common_config.device_status,
+                self.common_config.device_status | Self::DRIVER_OK,
+            );
+        }
+    }
+
+    pub fn init_queue(&mut self, queue_idx: u16, queue: &mut VirtQ) {
+        // Select the queue.
+        unsafe {
+            write_volatile(&mut self.common_config.queue_select, queue_idx);
+        }
+
+        // Set the queue size.
+        unsafe {
+            write_volatile(&mut self.common_config.queue_size, VIRT_QUEUE_SIZE as u16);
+        }
+
+        unsafe {
+            write_volatile(
+                &mut self.common_config.queue_desc,
+                queue.desc.as_ptr() as u64,
+            );
+        }
+        unsafe {
+            write_volatile(
+                &mut self.common_config.queue_driver,
+                &mut queue.avail as *mut _ as u64,
+            );
+        }
+        unsafe {
+            write_volatile(
+                &mut self.common_config.queue_device,
+                &mut queue.used as *mut _ as u64,
+            );
+        }
+
+        // Enable the queue.
+        unsafe {
+            write_volatile(&mut self.common_config.queue_enable, 1);
         }
     }
 }
