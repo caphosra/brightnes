@@ -8,6 +8,7 @@ use core::panic::PanicInfo;
 
 use x86_64::instructions::{hlt, interrupts};
 
+use crate::drivers::virtio::block::VirtBlockDevice;
 use crate::drivers::virtio::VirtIODevice;
 use crate::font::FontManager;
 use crate::info::InfoProc;
@@ -39,6 +40,9 @@ pub extern "C" fn kernel_main() -> ! {
 
     log!(SYS, "Hello World from the kernel.");
     info!(SYS, "Enabled logging system.");
+
+    let mut driver = VirtBlockDevice::new().unwrap();
+    driver.init();
 
     InterruptController::init();
     interrupts::enable();

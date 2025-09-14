@@ -93,7 +93,6 @@ impl VirtIODevice {
         let pci_device = PCIDevice::find_device(Self::VIRTIO_VENDOR_ID, device_id)?;
         let common_config_ptr = Self::common_config(&pci_device)?;
         let common_config = unsafe { &mut *common_config_ptr };
-
         Some(Self {
             pci_device: pci_device,
             common_config,
@@ -150,7 +149,7 @@ impl VirtIODevice {
     const DEVICE_NEEDS_RESET: u8 = 64;
     const FAILED: u8 = 128;
 
-    pub fn init_device(&mut self) {
+    pub fn init(&mut self) {
         // Reset the device.
         unsafe {
             write_volatile(&mut self.common_config.device_status, 0);
@@ -169,18 +168,6 @@ impl VirtIODevice {
             write_volatile(
                 &mut self.common_config.device_status,
                 self.common_config.device_status | Self::DRIVER,
-            );
-        }
-
-        let queue = MemoryAllocator::alloc(size_of::<VirtQ>(), 4096) as *mut VirtQ;
-        let queue = unsafe { queue.as_mut() }.unwrap();
-
-        self.init_queue(0, queue);
-
-        unsafe {
-            write_volatile(
-                &mut self.common_config.device_status,
-                self.common_config.device_status | Self::DRIVER_OK,
             );
         }
     }
@@ -218,6 +205,15 @@ impl VirtIODevice {
         // Enable the queue.
         unsafe {
             write_volatile(&mut self.common_config.queue_enable, 1);
+        }
+    }
+
+    pub fn driver_ok(&mut self) {
+        unsafe {
+            write_volatile(
+                &mut self.common_config.device_status,
+                self.common_config.device_status | Self::DRIVER_OK,
+            );
         }
     }
 }
