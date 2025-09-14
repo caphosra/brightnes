@@ -75,4 +75,9 @@ impl MemoryAllocator {
             }
         }
     }
+
+    pub fn alloc(size: usize, align: usize) -> *mut u8 {
+        let size = align * ((size + align - 1) / align);
+        unsafe { MEM_ALLOC.alloc(Layout::from_size_align_unchecked(size, align)) }
+    }
 }
