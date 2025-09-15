@@ -53,10 +53,6 @@ pub fn game_main() -> ! {
     let mut cpu = NES_CPU.write();
     let mut frame_buffer = GAME_FB.write();
 
-    cartridge.load();
-
-    info!(SYS, "Loaded the cartridge.");
-
     NESCPU::interrupt(nes::cpu::InterruptType::RST);
 
     info!(SYS, "Start the game.");

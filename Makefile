@@ -10,6 +10,10 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/kernel.ld \
 	./kernel/src/int/keyboard.rs \
 	./kernel/src/int/mod.rs \
+	./kernel/src/nes/cartridge/mapper0.rs \
+	./kernel/src/nes/cartridge/mapper2.rs \
+	./kernel/src/nes/cartridge/mapper3.rs \
+	./kernel/src/nes/cartridge/mod.rs \
 	./kernel/src/nes/cpu/bus.rs \
 	./kernel/src/nes/cpu/instr.rs \
 	./kernel/src/nes/cpu/mod.rs \
@@ -18,7 +22,6 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/nes/ppu/mod.rs \
 	./kernel/src/nes/ppu/oam.rs \
 	./kernel/src/nes/ppu/vram.rs \
-	./kernel/src/nes/cartridge.rs \
 	./kernel/src/nes/mod.rs \
 	./kernel/src/nes/pad.rs \
 	./kernel/src/nes/ram.rs \
