@@ -435,7 +435,7 @@ impl NESPPU {
                 self.update_vertical_v();
             }
 
-            if self.x == Self::IRQ_CYCLE {
+            if self.x == Self::IRQ_CYCLE && self.y < NES_FRAME_HEIGHT as u16 {
                 // Clock IRQ counter
                 cartridge.irq_clock();
             }
