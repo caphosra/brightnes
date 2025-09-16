@@ -1,7 +1,4 @@
-use crate::nes::{
-    cartridge::Cartridge,
-    cpu::{bus::CPUBus, NESCPU},
-};
+use crate::nes::cpu::NESCPU;
 
 #[derive(Clone, Copy)]
 pub struct Sprite {
@@ -42,7 +39,7 @@ pub const OAM_DMA_CYCLES: u32 = 513;
 
 pub struct OAM {
     pub sprites: [Sprite; 64],
-    dma_request_addr: u16,
+    pub dma_request_addr: u16,
 }
 
 impl OAM {
@@ -72,15 +69,8 @@ impl OAM {
         }
     }
 
-    pub fn request_dma_transfer(&mut self, hi: u8) {
+    pub fn request_dma_transfer(&mut self, hi: u8, cpu: &mut NESCPU) {
         self.dma_request_addr = (hi as u16) << 8;
-        NESCPU::dma_stall();
-    }
-
-    pub fn do_dma_transfer(&mut self, cartridge: &mut Cartridge) {
-        for i in 0..=0xFF {
-            let addr = self.dma_request_addr + i as u16;
-            self.write(i, CPUBus::read(addr, cartridge));
-        }
+        cpu.dma_stall();
     }
 }

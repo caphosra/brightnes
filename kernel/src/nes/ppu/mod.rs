@@ -175,10 +175,10 @@ impl NESPPU {
         }
     }
 
-    pub fn write_reg(&mut self, addr: u16, val: u8, cartridge: &mut Cartridge) {
+    pub fn write_reg(&mut self, addr: u16, val: u8, cpu: &mut NESCPU, cartridge: &mut Cartridge) {
         if addr == OAM_DMA_ADDR {
             // OAM_DMA
-            self.oam.request_dma_transfer(val);
+            self.oam.request_dma_transfer(val, cpu);
             return;
         }
 

@@ -19,4 +19,3 @@ pub mod cartridge;
 pub mod cpu;
 pub mod pad;
 pub mod ppu;
-pub mod ram;

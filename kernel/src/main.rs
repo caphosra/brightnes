@@ -14,6 +14,7 @@ use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
 use crate::logger::LOG_FB;
 use crate::nes::cartridge::CARTRIDGE;
+use crate::nes::cpu::InterruptType;
 use crate::nes::cpu::NESCPU;
 use crate::nes::cpu::NES_CPU;
 use crate::nes::ppu::{GAME_FB, NES_PPU};
@@ -51,9 +52,10 @@ pub extern "C" fn kernel_main() -> ! {
 pub fn game_main() -> ! {
     let mut cartridge = CARTRIDGE.write();
     let mut cpu = NES_CPU.write();
+    let mut ppu = NES_PPU.write();
     let mut frame_buffer = GAME_FB.write();
 
-    NESCPU::interrupt(nes::cpu::InterruptType::RST);
+    NESCPU::interrupt(InterruptType::RST);
 
     info!(SYS, "Start the game.");
 
@@ -62,14 +64,9 @@ pub fn game_main() -> ! {
 
         let mut cycles = 0;
         while cycles < FRAME_CYCLES {
-            let (required, dma_transfer_ends) = cpu.clock(&mut cartridge);
-            {
-                let mut ppu = NES_PPU.write();
-                if dma_transfer_ends {
-                    ppu.oam.do_dma_transfer(&mut cartridge);
-                }
-                ppu.render_bg(required as usize * 3, &mut frame_buffer, &mut cartridge);
-            }
+            let required = cpu.clock(&mut ppu, &mut cartridge);
+            ppu.render_bg(required as usize * 3, &mut frame_buffer, &mut cartridge);
+
             cycles += required as usize;
         }
         frame_buffer.flush(false);
