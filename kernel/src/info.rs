@@ -6,8 +6,6 @@ use crate::{
     font::FONT_HEIGHT,
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
-        cartridge::{Cartridge, CARTRIDGE},
-        cpu::instr::Instruction,
         cpu::{
             BRK_FLAG, CARRY_FLAG, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, NESCPU, NES_CPU, OVERFLOW_FLAG,
             ZERO_FLAG,
@@ -239,7 +237,7 @@ impl InfoProc {
     }
 
     #[allow(unused_assignments)]
-    fn render_reversing(buffer: &mut FrameBuffer, cpu: &NESCPU, cartridge: &mut Cartridge) {
+    fn render_reversing(buffer: &mut FrameBuffer, cpu: &NESCPU) {
         let color = InfoProc::color_text();
         let background = InfoProc::color_background();
 
@@ -259,16 +257,9 @@ impl InfoProc {
             };
         }
 
-        let mut pc = cpu.reg_pc;
-        for idx in 0..REV_LEN {
-            let inst = Instruction::fetch(pc, cartridge);
-            if idx == 0 {
-                draw_field!("--> {:#06X}: {}", pc, inst.to_string());
-            } else {
-                draw_field!("    {:#06X}: {}", pc, inst.to_string());
-            }
-            pc = pc.wrapping_add(inst.addr_mode.size());
-        }
+        cpu.history_summary(|inst| {
+            draw_field!("{}", inst);
+        });
     }
 
     pub fn render_all() {
@@ -291,11 +282,7 @@ impl InfoProc {
             buffer.flush(true);
 
             let mut buffer = REV_FB.write();
-            unsafe {
-                CARTRIDGE.force_write_unlock();
-            }
-            let mut cartridge = CARTRIDGE.write();
-            Self::render_reversing(&mut buffer, &NES_CPU.read(), &mut cartridge);
+            Self::render_reversing(&mut buffer, &NES_CPU.read());
 
             buffer.flush(true);
 

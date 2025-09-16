@@ -1,3 +1,4 @@
+use alloc::format;
 use spin::{Lazy, RwLock};
 use x86_64::instructions::interrupts;
 
@@ -16,6 +17,8 @@ pub struct NESCPU {
     pub reg_p: u8,
     pub cycles: u64,
     pub inst: u64,
+
+    history: [Option<Instruction>; NESCPU::HISTORY_SIZE],
 }
 
 pub const CARRY_FLAG: usize = 0;
@@ -37,6 +40,7 @@ pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
         reg_p: 0x24,
         cycles: 0,
         inst: 0,
+        history: [None; NESCPU::HISTORY_SIZE],
     })
 });
 
@@ -54,6 +58,7 @@ pub enum InterruptType {
 }
 
 impl NESCPU {
+    pub const HISTORY_SIZE: usize = 8;
     const MAX_STALL_CYCLES: u32 = 8;
 
     pub fn dma_stall() {
@@ -189,6 +194,9 @@ impl NESCPU {
 
     pub fn execute(&mut self, cartridge: &mut Cartridge) -> u32 {
         let inst = Instruction::fetch(self.reg_pc, cartridge);
+
+        // Record instruction to history.
+        self.update_history(&inst);
 
         let cycles = match inst.instr_type {
             InstrType::ADC => {
@@ -1018,6 +1026,41 @@ impl NESCPU {
         };
 
         cycles as u32
+    }
+
+    fn update_history(&mut self, inst: &Instruction) {
+        for i in 0..(Self::HISTORY_SIZE - 1) {
+            self.history[i] = self.history[i + 1];
+        }
+
+        self.history[Self::HISTORY_SIZE - 1] = Some(inst.clone());
+    }
+
+    pub fn history_summary<F>(&self, mut handler: F)
+    where
+        F: FnMut(&str),
+    {
+        for i in 0..Self::HISTORY_SIZE {
+            match self.history[i] {
+                Some(inst) => {
+                    if i == Self::HISTORY_SIZE - 1 {
+                        handler(&format!("--> {:#06X}: {}", inst.pc, inst.to_string()));
+                    } else {
+                        handler(&format!("    {:#06X}: {}", inst.pc, inst.to_string()));
+                    }
+                }
+                None => {
+                    handler("    ------: ------");
+                }
+            }
+        }
+    }
+
+    pub fn report_backtrace(&self) {
+        error!(CPU, "Backtrace:");
+        self.history_summary(|line| {
+            error!(CPU, "{}", line);
+        });
     }
 }
 

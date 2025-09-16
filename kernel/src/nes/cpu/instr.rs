@@ -10,6 +10,7 @@ use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::bus::CPUBus;
 use crate::nes::cpu::NESCPU;
 
+#[derive(Clone, Copy)]
 pub enum InstrType {
     // Transfer Instructions
     LDA,
@@ -213,6 +214,7 @@ impl InstrType {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum AddrMode {
     Implied,
     Immediate(u8),
@@ -228,7 +230,9 @@ pub enum AddrMode {
     Relative(i8),
 }
 
+#[derive(Clone, Copy)]
 pub struct Instruction {
+    pub pc: u16,
     pub instr_type: InstrType,
     pub addr_mode: AddrMode,
     pub cycles: u8,
@@ -239,6 +243,7 @@ impl Instruction {
         macro_rules! instr {
             ($inst:tt, Implied, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::Implied,
                     cycles: $cycles,
@@ -246,6 +251,7 @@ impl Instruction {
             };
             ($inst:tt, Immediate, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::Immediate($crate::nes::cpu::bus::CPUBus::read(
                         pc + 1,
@@ -256,6 +262,7 @@ impl Instruction {
             };
             ($inst:tt, Absolute, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::Absolute(u16::from_le_bytes([
                         $crate::nes::cpu::bus::CPUBus::read(pc + 1, cartridge),
@@ -266,6 +273,7 @@ impl Instruction {
             };
             ($inst:tt, ZeroPage, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::ZeroPage($crate::nes::cpu::bus::CPUBus::read(
                         pc + 1,
@@ -276,6 +284,7 @@ impl Instruction {
             };
             ($inst:tt, AbsoluteX, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::AbsoluteX(u16::from_le_bytes([
                         $crate::nes::cpu::bus::CPUBus::read(pc + 1, cartridge),
@@ -286,6 +295,7 @@ impl Instruction {
             };
             ($inst:tt, AbsoluteY, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::AbsoluteY(u16::from_le_bytes([
                         $crate::nes::cpu::bus::CPUBus::read(pc + 1, cartridge),
@@ -296,6 +306,7 @@ impl Instruction {
             };
             ($inst:tt, ZeroPageX, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::ZeroPageX($crate::nes::cpu::bus::CPUBus::read(
                         pc + 1,
@@ -306,6 +317,7 @@ impl Instruction {
             };
             ($inst:tt, ZeroPageY, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::ZeroPageY($crate::nes::cpu::bus::CPUBus::read(
                         pc + 1,
@@ -316,6 +328,7 @@ impl Instruction {
             };
             ($inst:tt, Indirect, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::Indirect(u16::from_le_bytes([
                         $crate::nes::cpu::bus::CPUBus::read(pc + 1, cartridge),
@@ -326,6 +339,7 @@ impl Instruction {
             };
             ($inst:tt, IndirectX, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::IndirectX($crate::nes::cpu::bus::CPUBus::read(
                         pc + 1,
@@ -336,6 +350,7 @@ impl Instruction {
             };
             ($inst:tt, IndirectY, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::IndirectY($crate::nes::cpu::bus::CPUBus::read(
                         pc + 1,
@@ -346,6 +361,7 @@ impl Instruction {
             };
             ($inst:tt, Relative, $cycles:expr) => {
                 Instruction {
+                    pc,
                     instr_type: InstrType::$inst,
                     addr_mode: AddrMode::Relative($crate::nes::cpu::bus::CPUBus::read(
                         pc + 1,

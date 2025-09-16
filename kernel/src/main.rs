@@ -115,6 +115,7 @@ fn panic(info: &PanicInfo) -> ! {
     }
     let cpu = NES_CPU.read();
     error!(CPU, "PC: {:#06X}", cpu.reg_pc);
+    cpu.report_backtrace();
 
     interrupts::enable();
     unsafe {
