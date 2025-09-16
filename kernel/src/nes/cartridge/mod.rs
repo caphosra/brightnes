@@ -5,6 +5,7 @@ use spin::{Lazy, RwLock};
 use crate::nes::cartridge::mapper0::Mapper0;
 use crate::nes::cartridge::mapper2::Mapper2;
 use crate::nes::cartridge::mapper3::Mapper3;
+use crate::nes::cartridge::mapper4::Mapper4;
 use crate::nes::Mirroring;
 use crate::{critical, info};
 
@@ -64,6 +65,7 @@ pub enum CartridgeKind {
     Mapper0(Mapper0),
     Mapper2(Mapper2),
     Mapper3(Mapper3),
+    Mapper4(Mapper4),
 }
 
 pub static CARTRIDGE: Lazy<RwLock<Cartridge>> = Lazy::new(|| {
@@ -96,6 +98,7 @@ impl Cartridge {
             0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
             2 => CartridgeKind::Mapper2(Mapper2::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
             3 => CartridgeKind::Mapper3(Mapper3::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
+            4 => CartridgeKind::Mapper4(Mapper4::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
             _ => {
                 critical!(CAT, "Unsupported mapper: {}", mapper);
             }
@@ -116,6 +119,7 @@ impl Cartridge {
             CartridgeKind::Mapper0(mapper) => mapper.read_cpu_mem(addr),
             CartridgeKind::Mapper2(mapper) => mapper.read_cpu_mem(addr),
             CartridgeKind::Mapper3(mapper) => mapper.read_cpu_mem(addr),
+            CartridgeKind::Mapper4(mapper) => mapper.read_cpu_mem(addr),
         }
     }
 
@@ -124,6 +128,7 @@ impl Cartridge {
             CartridgeKind::Mapper0(mapper) => mapper.write_cpu_mem(addr, data),
             CartridgeKind::Mapper2(mapper) => mapper.write_cpu_mem(addr, data),
             CartridgeKind::Mapper3(mapper) => mapper.write_cpu_mem(addr, data),
+            CartridgeKind::Mapper4(mapper) => mapper.write_cpu_mem(addr, data),
         };
     }
 
@@ -132,6 +137,7 @@ impl Cartridge {
             CartridgeKind::Mapper0(mapper) => mapper.read_ppu_mem(addr),
             CartridgeKind::Mapper2(mapper) => mapper.read_ppu_mem(addr),
             CartridgeKind::Mapper3(mapper) => mapper.read_ppu_mem(addr),
+            CartridgeKind::Mapper4(mapper) => mapper.read_ppu_mem(addr),
         }
     }
 
@@ -140,7 +146,14 @@ impl Cartridge {
             CartridgeKind::Mapper0(mapper) => mapper.write_ppu_mem(addr, data),
             CartridgeKind::Mapper2(mapper) => mapper.write_ppu_mem(addr, data),
             CartridgeKind::Mapper3(mapper) => mapper.write_ppu_mem(addr, data),
+            CartridgeKind::Mapper4(mapper) => mapper.write_ppu_mem(addr, data),
         };
+    }
+
+    pub fn irq_clock(&mut self) {
+        if let CartridgeKind::Mapper4(mapper) = &mut self.kind {
+            mapper.irq_clock();
+        }
     }
 }
 
@@ -154,3 +167,4 @@ trait CartridgeOperations {
 mod mapper0;
 mod mapper2;
 mod mapper3;
+mod mapper4;
