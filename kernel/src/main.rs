@@ -107,7 +107,15 @@ pub fn on_info_switched() {
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    error!(SYS, "Kernel panic: {}", info);
+
+    unsafe {
+        NES_CPU.force_write_unlock();
+    }
+    let cpu = NES_CPU.read();
+    error!(CPU, "PC: {:#06X}", cpu.reg_pc);
+
     interrupts::enable();
     unsafe {
         interrupts::software_interrupt::<PANIC_INT_IDX>();

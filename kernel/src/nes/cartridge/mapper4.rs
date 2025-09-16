@@ -5,11 +5,12 @@
 use core::ptr::slice_from_raw_parts_mut;
 
 use crate::{
-    critical, log,
+    critical, info, log,
     mem::MemoryAllocator,
     nes::{
         cartridge::CartridgeOperations,
         cpu::{InterruptType, NESCPU},
+        Mirroring,
     },
     warn,
 };
@@ -38,6 +39,7 @@ pub struct Mapper4 {
 
 impl Mapper4 {
     const PRG_RAM_SIZE: usize = 0x2000;
+    const CHR_ROM_SIZE: usize = 0x40000;
     const PRG_ROM_BANK_UNIT: usize = 0x2000;
     const CHR_ROM_BANK_UNIT: usize = 0x400;
 
@@ -45,19 +47,32 @@ impl Mapper4 {
         prg_rom_size: usize,
         _chr_rom_size: usize,
         prg_rom: &'static [u8],
-        chr_rom: &'static mut [u8],
+        _chr_rom: &'static mut [u8],
     ) -> Self {
         // Prepare PRG RAM.
         let prg_ram = MemoryAllocator::alloc(Self::PRG_RAM_SIZE, 1);
         let prg_ram =
             unsafe { slice_from_raw_parts_mut(prg_ram, Self::PRG_RAM_SIZE).as_mut() }.unwrap();
 
+        let bank_size = prg_rom_size / Self::PRG_ROM_BANK_UNIT;
+        let prg_rom_banks = [0, 1, bank_size - 2];
+
+        // Prepare CHR RAM.
+
+        let chr_rom_start = MemoryAllocator::alloc(Self::CHR_ROM_SIZE, 1);
+        let chr_rom =
+            unsafe { slice_from_raw_parts_mut(chr_rom_start, Self::CHR_ROM_SIZE).as_mut() }
+                .unwrap();
+
+        let chr_rom_size = Self::CHR_ROM_SIZE;
+        info!(CAT, "Prepared CHR RAM ({:#x} bytes)", chr_rom_size);
+
         Self {
             prg_rom_size,
             prg_ram,
             prg_rom,
             chr_rom,
-            prg_rom_banks: [0; 3],
+            prg_rom_banks,
             chr_rom_banks: [0; 8],
             two_banks_first: true,
             bank_select: 0,
@@ -89,10 +104,14 @@ impl Mapper4 {
                     // 2KB CHR bank at PPU $0000-$07FF
                     self.chr_rom_banks[0] = bank as usize;
                     self.chr_rom_banks[1] = bank as usize + 1;
+
+                    log!(CAT, "Update 2KB CHR bank at $0000: {}", bank);
                 } else {
                     // 2KB CHR bank at PPU $1000-$17FF
                     self.chr_rom_banks[4] = bank as usize;
                     self.chr_rom_banks[5] = bank as usize + 1;
+
+                    log!(CAT, "Update 2KB CHR bank at $1000: {}", bank);
                 }
             }
             1 => {
@@ -104,46 +123,66 @@ impl Mapper4 {
                     // 2KB CHR bank at PPU $0800-$0FFF
                     self.chr_rom_banks[2] = bank as usize;
                     self.chr_rom_banks[3] = bank as usize + 1;
+
+                    log!(CAT, "Update 2KB CHR bank at $0800: {}", bank);
                 } else {
                     // 2KB CHR bank at PPU $1800-$1FFF
                     self.chr_rom_banks[6] = bank as usize;
                     self.chr_rom_banks[7] = bank as usize + 1;
+
+                    log!(CAT, "Update 2KB CHR bank at $1800: {}", bank);
                 }
             }
             2 => {
                 if self.two_banks_first {
                     // 1KB CHR bank at PPU $1000-$13FF
                     self.chr_rom_banks[4] = bank as usize;
+
+                    log!(CAT, "Update 1KB CHR bank at $1000: {}", bank);
                 } else {
                     // 1KB CHR bank at PPU $0000-$03FF
                     self.chr_rom_banks[0] = bank as usize;
+
+                    log!(CAT, "Update 1KB CHR bank at $0000: {}", bank);
                 }
             }
             3 => {
                 if self.two_banks_first {
                     // 1KB CHR bank at PPU $1400-$17FF
                     self.chr_rom_banks[5] = bank as usize;
+
+                    log!(CAT, "Update 1KB CHR bank at $1400: {}", bank);
                 } else {
                     // 1KB CHR bank at PPU $0400-$07FF
                     self.chr_rom_banks[1] = bank as usize;
+
+                    log!(CAT, "Update 1KB CHR bank at $0400: {}", bank);
                 }
             }
             4 => {
                 if self.two_banks_first {
                     // 1KB CHR bank at PPU $1800-$1BFF
                     self.chr_rom_banks[6] = bank as usize;
+
+                    log!(CAT, "Update 1KB CHR bank at $1800: {}", bank);
                 } else {
                     // 1KB CHR bank at PPU $0800-$0BFF
                     self.chr_rom_banks[2] = bank as usize;
+
+                    log!(CAT, "Update 1KB CHR bank at $0800: {}", bank);
                 }
             }
             5 => {
                 if self.two_banks_first {
                     // 1KB CHR bank at PPU $1C00-$1FFF
                     self.chr_rom_banks[7] = bank as usize;
+
+                    log!(CAT, "Update 1KB CHR bank at $1C00: {}", bank);
                 } else {
                     // 1KB CHR bank at PPU $0C00-$0FFF
                     self.chr_rom_banks[3] = bank as usize;
+
+                    log!(CAT, "Update 1KB CHR bank at $0C00: {}", bank);
                 }
             }
             6 => {
@@ -152,16 +191,22 @@ impl Mapper4 {
                     // $C000-$DFFF: switch 8KB PRG bank
                     self.prg_rom_banks[0] = (self.prg_rom_bank_size() - 2) as usize;
                     self.prg_rom_banks[2] = bank as usize;
+
+                    log!(CAT, "Update PRG ROM bank at $C000: {}", bank);
                 } else {
                     // $8000-$9FFF: switch 8KB PRG bank
                     // $C000-$DFFF: fixed to the second last bank
                     self.prg_rom_banks[0] = bank as usize;
                     self.prg_rom_banks[2] = (self.prg_rom_bank_size() - 2) as usize;
+
+                    log!(CAT, "Update PRG ROM bank at $8000: {}", bank);
                 }
             }
             7 => {
                 // 8KB PRG bank at CPU $A000-$BFFF
                 self.prg_rom_banks[1] = bank as usize;
+
+                log!(CAT, "Update PRG ROM bank at $A000: {}", bank);
             }
             _ => {
                 critical!(BUS, "Invalid bank select: {}", selected_bank);
@@ -217,8 +262,16 @@ impl CartridgeOperations for Mapper4 {
     }
 
     fn write_cpu_mem(&mut self, addr: u16, data: u8) {
-        if addr < 0x8000 {
-            critical!(BUS, "Attempt to write to unused area: {:#06X}", addr);
+        if addr < 0x6000 {
+            critical!(BUS, "Attempt to write unused area: {:#06X}", addr);
+        } else if addr < 0x8000 {
+            // PRG RAM: 0x6000-0x7FFF
+            if self.prg_ram_enabled {
+                let addr = addr as usize - 0x6000;
+                self.prg_ram[addr] = data;
+            } else {
+                critical!(BUS, "Attempt to write disabled PRG RAM: {:#06X}", addr);
+            }
         } else if addr < 0xA000 {
             if addr % 2 == 0 {
                 // Bank select
@@ -230,7 +283,15 @@ impl CartridgeOperations for Mapper4 {
         } else if addr < 0xC000 {
             if addr % 2 == 0 {
                 // Mirroring
-                warn!(BUS, "Mirroring change is not supported.");
+                let mirroring: Mirroring = (data & 1).into();
+                match mirroring {
+                    Mirroring::Horizontal => {
+                        warn!(BUS, "Change mirroring to horizontal is not supported.");
+                    }
+                    Mirroring::Vertical => {
+                        warn!(BUS, "Change mirroring to vertical is not supported.")
+                    }
+                }
             } else {
                 // PRG RAM protect
                 self.prg_ram_enabled = data & (1 << 7) != 0;

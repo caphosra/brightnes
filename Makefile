@@ -13,6 +13,7 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/nes/cartridge/mapper0.rs \
 	./kernel/src/nes/cartridge/mapper2.rs \
 	./kernel/src/nes/cartridge/mapper3.rs \
+	./kernel/src/nes/cartridge/mapper4.rs \
 	./kernel/src/nes/cartridge/mod.rs \
 	./kernel/src/nes/cpu/bus.rs \
 	./kernel/src/nes/cpu/instr.rs \

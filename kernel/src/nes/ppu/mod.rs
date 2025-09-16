@@ -86,6 +86,8 @@ impl NESPPU {
     const FINE_Y_MASK: u16 = 0b01110000_00000000;
     const NAME_TABLE_MASK: u16 = 0b00001100_00000000;
 
+    const IRQ_CYCLE: u16 = 260;
+
     #[inline(always)]
     pub fn ctrl_increment(&self) -> u16 {
         if self.reg_ctrl & 0x04 != 0 {
@@ -431,6 +433,11 @@ impl NESPPU {
             if 280 <= self.x && self.x <= 304 && self.y == NES_FRAME_HEIGHT as u16 + PPU_VBLANK - 1
             {
                 self.update_vertical_v();
+            }
+
+            if self.x == Self::IRQ_CYCLE {
+                // Clock IRQ counter
+                cartridge.irq_clock();
             }
 
             if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
