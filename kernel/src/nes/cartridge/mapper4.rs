@@ -7,11 +7,7 @@ use core::ptr::slice_from_raw_parts_mut;
 use crate::{
     critical, info, log,
     mem::MemoryAllocator,
-    nes::{
-        cartridge::CartridgeOperations,
-        cpu::{InterruptType, NESCPU},
-        Mirroring,
-    },
+    nes::{cartridge::CartridgeOperations, Mirroring},
     warn,
 };
 
@@ -214,18 +210,22 @@ impl Mapper4 {
         }
     }
 
-    pub fn irq_clock(&mut self) {
-        if self.irq_enabled && self.irq_counter == 0 {
-            // Trigger IRQ
-            log!(CAT, "Trigger IRQ from the cartridge.");
-            NESCPU::interrupt(InterruptType::IRQ);
-        }
+    pub fn irq_clock(&mut self) -> bool {
+        let irq_value = self.irq_counter;
 
         if self.irq_counter == 0 || self.irq_reload {
             self.irq_counter = self.irq_latch_value;
             self.irq_reload = false;
         } else {
             self.irq_counter -= 1;
+        }
+
+        if self.irq_enabled && irq_value == 0 {
+            // Trigger IRQ
+            log!(CAT, "Trigger IRQ from the cartridge.");
+            true
+        } else {
+            false
         }
     }
 }

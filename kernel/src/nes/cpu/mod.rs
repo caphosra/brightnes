@@ -50,9 +50,6 @@ pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
     })
 });
 
-/// Since interrupt can be invoked outside of the CPU, we need a separate structure to manage it.
-static CPU_INT: Lazy<RwLock<Option<InterruptType>>> = Lazy::new(|| RwLock::new(None));
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum InterruptType {
     NMI,
@@ -80,12 +77,7 @@ impl NESCPU {
         }
     }
 
-    pub fn interrupt(int_type: InterruptType) {
-        let mut dest = CPU_INT.write();
-        *dest = Some(int_type);
-    }
-
-    fn interrupt_internal(
+    pub fn interrupt(
         &mut self,
         int_type: InterruptType,
         ppu: &mut NESPPU,
@@ -146,18 +138,6 @@ impl NESCPU {
     }
 
     pub fn clock(&mut self, ppu: &mut NESPPU, cartridge: &mut Cartridge) -> u32 {
-        {
-            let mut int = CPU_INT.write();
-            if let Some(int_type) = *int {
-                // The CPU is in an interrupt state.
-                self.interrupt_internal(int_type, ppu, cartridge);
-                *int = None;
-
-                // Assume that an interrupt does not consume time.
-                return 0;
-            }
-        }
-
         if self.stall_cycles > Self::MAX_STALL_CYCLES {
             // The CPU is stalling for external reasons.
             self.stall_cycles -= Self::MAX_STALL_CYCLES;
@@ -340,7 +320,7 @@ impl NESCPU {
             }
             InstrType::BRK => {
                 self.set_flag(BRK_FLAG, true);
-                NESCPU::interrupt(InterruptType::BRK);
+                self.interrupt(InterruptType::BRK, ppu, cartridge);
 
                 inst.cycles - 1
             }

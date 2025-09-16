@@ -346,11 +346,12 @@ impl NESPPU {
         &mut self,
         cycles: usize,
         frame_buffer: &mut FrameBuffer,
+        cpu: &mut NESCPU,
         cartridge: &mut Cartridge,
     ) {
         let mut bg_color = None;
 
-        for cycle_num in 0..cycles {
+        for _ in 0..cycles {
             if self.x == 0 {
                 self.relative_x = self.reg_x as u16;
             }
@@ -437,7 +438,7 @@ impl NESPPU {
 
             if self.x == Self::IRQ_CYCLE && self.y < NES_FRAME_HEIGHT as u16 {
                 // Clock IRQ counter
-                cartridge.irq_clock();
+                cartridge.irq_clock(cpu, self);
             }
 
             if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
@@ -445,7 +446,7 @@ impl NESPPU {
                 self.reg_status |= 0x80;
 
                 if self.ctrl_nmi_enable() {
-                    NESCPU::interrupt(InterruptType::NMI);
+                    cpu.interrupt(InterruptType::NMI, self, cartridge);
                 }
             }
 
@@ -467,10 +468,8 @@ impl NESPPU {
                 // One frame is rendered.
                 self.frame_counter += 1;
 
-                // This function assumes that it does not cross one frame.
-                // So, if it reaches here, just restart it.
-                self.render_bg(cycles - cycle_num - 1, frame_buffer, cartridge);
-                return;
+                // Initialize the background color.
+                bg_color = None;
             }
         }
     }
