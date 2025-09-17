@@ -22,7 +22,6 @@ const PAD_HEIGHT: usize = BUTTON_SIZE * 3 + PADDING * 2;
 const BUTTON_SIZE: usize = 10;
 
 const CPU_PPU_HEIGHT: usize = FONT_HEIGHT as usize * 9;
-const REV_LEN: usize = 8;
 
 static PAD1_FB: Lazy<RwLock<FrameBuffer>> =
     Lazy::new(|| RwLock::new(FrameBuffer::new(PADDING, PADDING, PAD_WIDTH, PAD_HEIGHT, 1)));
@@ -73,7 +72,7 @@ static REV_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     let offset_x = PADDING;
     let offset_y = PADDING * 3 + PAD_HEIGHT + CPU_PPU_HEIGHT;
     let width = max_width - PADDING * 2;
-    let height = REV_LEN * FONT_HEIGHT as usize;
+    let height = NESCPU::HISTORY_SIZE * FONT_HEIGHT as usize;
     RwLock::new(FrameBuffer::new(offset_x, offset_y, width, height, 1))
 });
 

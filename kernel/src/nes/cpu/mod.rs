@@ -59,7 +59,7 @@ pub enum InterruptType {
 }
 
 impl NESCPU {
-    pub const HISTORY_SIZE: usize = 8;
+    pub const HISTORY_SIZE: usize = 16;
     const MAX_STALL_CYCLES: u32 = 8;
 
     pub fn dma_stall(&mut self) {

@@ -300,6 +300,11 @@ impl NESPPU {
     }
 
     fn get_bg_color(&self, cartridge: &mut Cartridge) -> Option<PixelColor> {
+        if !self.mask_bg_visible() || (self.x < 8 && !self.mask_bg_visible_left8()) {
+            // The background is not visible.
+            return None;
+        }
+
         let tile_addr = self.tile_addr();
         let attribute_addr = self.attribute_addr();
 
@@ -357,60 +362,68 @@ impl NESPPU {
             }
 
             if self.x < NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
-                if self.mask_bg_visible() && (self.x >= 8 || self.mask_bg_visible_left8()) {
-                    // Get the color of the background.
-                    let color = self.get_bg_color(cartridge);
+                let sprite_req =
+                    &self.sprites_layer[self.y as usize * NES_FRAME_WIDTH + self.x as usize];
 
-                    if let Some(color) = color {
-                        // The background color is not transparent.
+                if let Some(req) = sprite_req {
+                    // A sprite can be visible.
 
-                        let sprite_req = &self.sprites_layer
-                            [self.y as usize * NES_FRAME_WIDTH + self.x as usize];
-                        if let Some(req) = sprite_req {
-                            if !req.background() {
-                                // Sprite has higher priority.
-                                let color =
-                                    PixelColor::from_nes_color(req.color, self.mask_grey_scale());
-                                frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
-                            } else {
-                                // Background has higher priority.
-                                frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
-                            }
-                        } else {
-                            // Background has higher priority.
-                            frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
-                        }
+                    if !req.background() {
+                        // Sprite is over background.
+                        let color = PixelColor::from_nes_color(req.color, self.mask_grey_scale());
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
 
                         if self.sprite0_hit[self.y as usize * NES_FRAME_WIDTH + self.x as usize] {
-                            // Sprite 0 hit is occurred.
-                            self.reg_status |= 0x40;
+                            // Sprite 0 hit can be occurred.
+                            // To check it, we will calculate the background color even though it is not visible.
+
+                            if self.get_bg_color(cartridge).is_some() {
+                                // Sprite 0 hit is occurred.
+                                self.reg_status |= 0x40;
+                            }
                         }
                     } else {
-                        // The background color is transparent.
+                        let color = self.get_bg_color(cartridge);
+                        if let Some(color) = color {
+                            // The background color is not transparent.
+                            // Sprite is hidden.
+                            frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
 
-                        let sprite_req = &self.sprites_layer
-                            [self.y as usize * NES_FRAME_WIDTH + self.x as usize];
-                        if let Some(req) = sprite_req {
+                            if self.sprite0_hit[self.y as usize * NES_FRAME_WIDTH + self.x as usize]
+                            {
+                                // Sprite 0 hit is occurred.
+                                self.reg_status |= 0x40;
+                            }
+                        } else {
+                            // The background color is transparent.
                             // Sprite is visible.
                             let color =
                                 PixelColor::from_nes_color(req.color, self.mask_grey_scale());
                             frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
-                        } else {
-                            // Both background and sprite are transparent or not placed.
-                            let bg_color = match bg_color {
-                                Some(color) => color,
-                                None => {
-                                    // It is not initialized.
-                                    let color = PixelColor::from_nes_color(
-                                        PPUBus::read(PALETTE_BASE_ADDR, &self.vram, cartridge),
-                                        self.mask_grey_scale(),
-                                    );
-                                    bg_color = Some(color);
-                                    color
-                                }
-                            };
-                            frame_buffer.set_chunk(self.x as usize, self.y as usize, bg_color);
                         }
+                    }
+                } else {
+                    // No sprite is visible.
+
+                    let color = self.get_bg_color(cartridge);
+                    if let Some(color) = color {
+                        // The background color is not transparent.
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
+                    } else {
+                        // Both background and sprite are transparent or not placed.
+                        let bg_color = match bg_color {
+                            Some(color) => color,
+                            None => {
+                                // It is not initialized.
+                                let color = PixelColor::from_nes_color(
+                                    PPUBus::read(PALETTE_BASE_ADDR, &self.vram, cartridge),
+                                    self.mask_grey_scale(),
+                                );
+                                bg_color = Some(color);
+                                color
+                            }
+                        };
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, bg_color);
                     }
                 }
 
