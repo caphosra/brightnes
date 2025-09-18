@@ -133,3 +133,4 @@ mod logger;
 mod mem;
 mod nes;
 mod proc;
+mod serial;
