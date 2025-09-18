@@ -1,7 +1,7 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
-    intrinsics::write_bytes,
     ptr::null_mut,
+    ptr::write_bytes,
 };
 
 use spin::{Lazy, Mutex};
