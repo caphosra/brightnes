@@ -1,5 +1,6 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
+    intrinsics::write_bytes,
     ptr::null_mut,
 };
 
@@ -79,5 +80,11 @@ impl MemoryAllocator {
     pub fn alloc(size: usize, align: usize) -> *mut u8 {
         let size = align * ((size + align - 1) / align);
         unsafe { MEM_ALLOC.alloc(Layout::from_size_align_unchecked(size, align)) }
+    }
+
+    pub fn alloc_zeroed(size: usize, align: usize) -> *mut u8 {
+        let ptr = Self::alloc(size, align);
+        unsafe { write_bytes(ptr, 0, size) };
+        ptr
     }
 }
