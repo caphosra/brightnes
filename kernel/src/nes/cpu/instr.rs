@@ -5,13 +5,14 @@
 
 use alloc::format;
 use alloc::string::String;
+use serde::{Deserialize, Serialize};
 
 use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::bus::CPUBus;
 use crate::nes::cpu::NESCPU;
 use crate::nes::ppu::NESPPU;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum InstrType {
     // Transfer Instructions
     LDA,
@@ -215,7 +216,7 @@ impl InstrType {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum AddrMode {
     Implied,
     Immediate(u8),
@@ -231,7 +232,7 @@ pub enum AddrMode {
     Relative(i8),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Instruction {
     pub pc: u16,
     pub instr_type: InstrType,

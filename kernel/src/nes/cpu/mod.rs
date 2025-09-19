@@ -1,4 +1,6 @@
 use alloc::format;
+use heapless::Vec;
+use serde::{Deserialize, Serialize};
 use spin::{Lazy, RwLock};
 
 use crate::nes::cartridge::Cartridge;
@@ -9,6 +11,7 @@ use crate::nes::ppu::oam::OAM_DMA_CYCLES;
 use crate::nes::ppu::NESPPU;
 use crate::{critical, error};
 
+#[derive(Serialize, Deserialize)]
 pub struct NESCPU {
     pub reg_a: u8,
     pub reg_x: u8,
@@ -21,7 +24,7 @@ pub struct NESCPU {
 
     stall_cycles: u32,
     ram: RAM,
-    history: [Option<Instruction>; NESCPU::HISTORY_SIZE],
+    history: Vec<Option<Instruction>, { NESCPU::HISTORY_SIZE }>,
 }
 
 pub const CARRY_FLAG: usize = 0;
@@ -46,7 +49,7 @@ pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
 
         stall_cycles: 0,
         ram: RAM::new(),
-        history: [None; NESCPU::HISTORY_SIZE],
+        history: Vec::from_array([None; NESCPU::HISTORY_SIZE]),
     })
 });
 
