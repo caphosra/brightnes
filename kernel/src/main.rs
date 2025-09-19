@@ -4,6 +4,7 @@
 
 extern crate alloc;
 
+use core::arch::asm;
 use core::panic::PanicInfo;
 
 use x86_64::instructions::{hlt, interrupts};
@@ -18,9 +19,16 @@ use crate::nes::cpu::InterruptType;
 use crate::nes::cpu::NES_CPU;
 use crate::nes::ppu::{GAME_FB, NES_PPU};
 
+const STACK_BOTTOM: usize = 0x40_000_000;
+
 #[no_mangle]
 #[inline(never)]
 pub extern "C" fn kernel_main() -> ! {
+    // Set the stack pointer.
+    unsafe {
+        asm!("mov rsp, {x}", x = const STACK_BOTTOM);
+    }
+
     if interrupts::are_enabled() {
         interrupts::disable();
     }

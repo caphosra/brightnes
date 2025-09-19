@@ -10,5 +10,6 @@
 |0x800_0000|Beginning of the kernel|
 |0x1000_0000|Beginning of the heap|
 |0x3000_0000|End of the heap|
+|0x4000_0000|End of the main stack|
 
 The beginning address of the kernel is controlled by using a linker script named `kernel/kernel.ld`, not by embedding it into the bootloader.
