@@ -1,5 +1,5 @@
-use alloc::vec;
-use alloc::vec::Vec;
+use heapless::Vec;
+use serde::{Deserialize, Serialize};
 use spin::{Lazy, RwLock};
 
 use crate::nes::ppu::color::NESColorConverter;
@@ -15,6 +15,7 @@ use crate::{
 
 const NES_FRAME_WIDTH: usize = 256;
 const NES_FRAME_HEIGHT: usize = 240;
+const NES_FRAME_TOTAL_SIZE: usize = NES_FRAME_WIDTH * NES_FRAME_HEIGHT;
 
 pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     let (width, height) = FrameBuffer::max_size();
@@ -28,6 +29,7 @@ pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     ))
 });
 
+#[derive(Serialize, Deserialize)]
 pub struct NESPPU {
     pub reg_ctrl: u8,
     pub reg_mask: u8,
@@ -53,11 +55,11 @@ pub struct NESPPU {
 
     frame_counter: usize,
 
-    sprite0_hit: Vec<bool>,
-    sprites_layer: Vec<Option<SpriteRequest>>,
+    sprite0_hit: Vec<bool, NES_FRAME_TOTAL_SIZE>,
+    sprites_layer: Vec<Option<SpriteRequest>, NES_FRAME_TOTAL_SIZE>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct SpriteRequest {
     pub priority: usize,
     pub color: u8,
@@ -659,8 +661,8 @@ pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
 
         frame_counter: 0,
 
-        sprite0_hit: vec![false; NES_FRAME_WIDTH * NES_FRAME_HEIGHT],
-        sprites_layer: vec![None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT],
+        sprite0_hit: Vec::from_array([false; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
+        sprites_layer: Vec::from_array([None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
     })
 });
 

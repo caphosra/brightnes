@@ -1,14 +1,18 @@
+use heapless::Vec;
+use serde::{Deserialize, Serialize};
+
 const VRAM_OFFSET: usize = 0x2000;
 const VRAM_SIZE: usize = 0x2000;
 
+#[derive(Serialize, Deserialize)]
 pub struct VRAM {
-    mem: [u8; VRAM_SIZE],
+    mem: Vec<u8, VRAM_SIZE>,
 }
 
 impl VRAM {
     pub fn new() -> Self {
         VRAM {
-            mem: [0; VRAM_SIZE],
+            mem: Vec::from_array([0; VRAM_SIZE]),
         }
     }
 

@@ -2,9 +2,12 @@
 
 OUT_DIR = ./dest
 NES_FILE = ./res/nes/$(GAME)
+SERIAL_PORT = 19837
 
 QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
-	-drive format=raw,file=fat:rw:$(OUT_DIR)
+	-drive format=raw,file=fat:rw:$(OUT_DIR) \
+	-monitor stdio \
+	-serial tcp::$(SERIAL_PORT),server,nowait
 
 KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/kernel.ld \
@@ -32,7 +35,8 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/logger.rs \
 	./kernel/src/main.rs \
 	./kernel/src/mem.rs \
-	./kernel/src/proc.rs
+	./kernel/src/proc.rs \
+	./kernel/src/serial.rs
 BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 	./bootloader/src/elf.rs \
 	./bootloader/src/frame_buffer.rs \

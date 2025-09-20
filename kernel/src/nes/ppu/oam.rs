@@ -1,6 +1,9 @@
+use heapless::Vec;
+use serde::{Deserialize, Serialize};
+
 use crate::nes::cpu::NESCPU;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Sprite {
     pub y: u8,
     pub pattern_index: u8,
@@ -36,16 +39,18 @@ impl Sprite {
 }
 
 pub const OAM_DMA_CYCLES: u32 = 513;
+const OAM_SPRITE_NUM: usize = 64;
 
+#[derive(Serialize, Deserialize)]
 pub struct OAM {
-    pub sprites: [Sprite; 64],
+    pub sprites: Vec<Sprite, OAM_SPRITE_NUM>,
     pub dma_request_addr: u16,
 }
 
 impl OAM {
     pub fn new() -> Self {
         OAM {
-            sprites: [Sprite::new(); 64],
+            sprites: Vec::from_array([Sprite::new(); OAM_SPRITE_NUM]),
             dma_request_addr: 0,
         }
     }

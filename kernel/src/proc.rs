@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use spin::{Lazy, RwLock};
 use x86_64::{
     structures::idt::{InterruptStackFrame, InterruptStackFrameValue},
@@ -8,6 +10,9 @@ use crate::{game_main, info_main, log_main, on_game_switched, on_info_switched, 
 
 const PROC_SIZE: usize = 3;
 
+const MAIN_STACK_BOTTOM: usize = 0x40_000_000;
+
+const GAME_STACK_BOTTOM: *const u8 = 0x50_000_000 as *const u8;
 const INFO_STACK_BOTTOM: *const u8 = 0x680_0000 as *const u8;
 const LOG_STACK_BOTTOM: *const u8 = 0x700_0000 as *const u8;
 
@@ -55,7 +60,11 @@ impl ProcessSwitcher {
     pub fn new() -> Self {
         Self {
             processes: [
-                ProcessInfo::new(VirtAddr::zero(), game_main, on_game_switched),
+                ProcessInfo::new(
+                    VirtAddr::from_ptr(GAME_STACK_BOTTOM),
+                    game_main,
+                    on_game_switched,
+                ),
                 ProcessInfo::new(
                     VirtAddr::from_ptr(INFO_STACK_BOTTOM),
                     info_main,
@@ -72,7 +81,36 @@ impl ProcessSwitcher {
         }
     }
 
-    pub fn switch_proc(&mut self, new_proc: ProcessMode, current_frame: &mut InterruptStackFrame) {
+    #[inline(always)]
+    pub fn reset_main_stack() {
+        unsafe {
+            asm!("mov rsp, {x}", x = const MAIN_STACK_BOTTOM);
+        }
+    }
+
+    pub fn reset_main(&mut self, current_frame: &mut InterruptStackFrame) {
+        let game_id = (ProcessMode::Game as u8) as usize;
+
+        // Overwrite the saved state.
+        self.processes[game_id].saved_state = Some(InterruptStackFrameValue::new(
+            self.processes[game_id].entry_point_addr(),
+            current_frame.code_segment,
+            current_frame.cpu_flags,
+            self.processes[game_id].stack_bottom,
+            current_frame.stack_segment,
+        ));
+
+        // Switch to the game forcefully.
+        // If you do without force, it will not switch if the current process is already the game.
+        self.switch_proc(ProcessMode::Game, current_frame, true);
+    }
+
+    pub fn switch_proc(
+        &mut self,
+        new_proc: ProcessMode,
+        current_frame: &mut InterruptStackFrame,
+        reset_main: bool,
+    ) {
         if self.safe_mode {
             // Do not allow switching processes in safety mode.
             return;
@@ -81,7 +119,7 @@ impl ProcessSwitcher {
         let old_mode_idx: usize = self.current_proc.into();
         let mode_idx: usize = new_proc.into();
 
-        if old_mode_idx == mode_idx {
+        if old_mode_idx == mode_idx && !reset_main {
             // No need to switch.
             return;
         }
@@ -92,6 +130,11 @@ impl ProcessSwitcher {
 
         // Call on_changed handler.
         (self.processes[mode_idx].switched_handler)();
+
+        if reset_main {
+            // Reset the main stack frame.
+            self.processes[mode_idx].saved_state = None;
+        }
 
         // Load the new state.
         let new_state = &mut self.processes[mode_idx].saved_state;
@@ -123,11 +166,11 @@ impl ProcessSwitcher {
 
     pub fn shift_proc(&mut self, current_frame: &mut InterruptStackFrame) {
         let new_proc = self.current_proc.shift();
-        self.switch_proc(new_proc, current_frame);
+        self.switch_proc(new_proc, current_frame, false);
     }
 
     pub fn enter_safe_mode(&mut self, current_frame: &mut InterruptStackFrame) {
-        self.switch_proc(ProcessMode::Log, current_frame);
+        self.switch_proc(ProcessMode::Log, current_frame, false);
         self.safe_mode = true;
     }
 
@@ -136,6 +179,7 @@ impl ProcessSwitcher {
     }
 }
 
+#[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ProcessMode {
     Game,

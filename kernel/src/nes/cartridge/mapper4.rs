@@ -2,23 +2,27 @@
 // Reference: https://www.nesdev.org/wiki/MMC3
 //
 
-use core::ptr::slice_from_raw_parts_mut;
+use heapless::Vec;
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    critical, info, log,
-    mem::MemoryAllocator,
-    nes::{cartridge::CartridgeOperations, Mirroring},
+    critical, log,
+    nes::{
+        cartridge::{Cartridge, CartridgeOperations},
+        Mirroring,
+    },
     warn,
 };
 
+#[derive(Serialize, Deserialize)]
 pub struct Mapper4 {
     prg_rom_size: usize,
-    prg_ram: &'static mut [u8],
-    prg_rom: &'static [u8],
-    chr_rom: &'static mut [u8],
+    prg_ram: Vec<u8, { Mapper4::PRG_RAM_SIZE }>,
+    prg_rom: Vec<u8, { Mapper4::PRG_ROM_SIZE }>,
+    chr: Vec<u8, { Mapper4::CHR_ROM_SIZE }>,
 
     prg_rom_banks: [usize; 3],
-    chr_rom_banks: [usize; 8],
+    chr_banks: [usize; 8],
     /// If true, map two 2KB banks at PPU $0000.
     two_banks_first: bool,
 
@@ -35,41 +39,28 @@ pub struct Mapper4 {
 
 impl Mapper4 {
     const PRG_RAM_SIZE: usize = 0x2000;
-    const CHR_ROM_SIZE: usize = 0x40000;
+
+    const PRG_ROM_SIZE: usize = 512 * 1024;
     const PRG_ROM_BANK_UNIT: usize = 0x2000;
+
+    const CHR_ROM_SIZE: usize = 0x40000;
     const CHR_ROM_BANK_UNIT: usize = 0x400;
 
-    pub fn new(
-        prg_rom_size: usize,
-        _chr_rom_size: usize,
-        prg_rom: &'static [u8],
-        _chr_rom: &'static mut [u8],
-    ) -> Self {
-        // Prepare PRG RAM.
-        let prg_ram = MemoryAllocator::alloc(Self::PRG_RAM_SIZE, 1);
-        let prg_ram =
-            unsafe { slice_from_raw_parts_mut(prg_ram, Self::PRG_RAM_SIZE).as_mut() }.unwrap();
+    pub fn new(prg_rom_size: usize, chr_size: usize) -> Self {
+        let (prg_rom, chr_rom_start) = Cartridge::load_prg_rom(prg_rom_size);
+        let prg_ram = Cartridge::alloc_prg_ram();
+        let chr = Cartridge::load_chr(chr_rom_start, chr_size);
 
         let bank_size = prg_rom_size / Self::PRG_ROM_BANK_UNIT;
         let prg_rom_banks = [0, 1, bank_size - 2];
-
-        // Prepare CHR RAM.
-
-        let chr_rom_start = MemoryAllocator::alloc(Self::CHR_ROM_SIZE, 1);
-        let chr_rom =
-            unsafe { slice_from_raw_parts_mut(chr_rom_start, Self::CHR_ROM_SIZE).as_mut() }
-                .unwrap();
-
-        let chr_rom_size = Self::CHR_ROM_SIZE;
-        info!(CAT, "Prepared CHR RAM ({:#x} bytes)", chr_rom_size);
 
         Self {
             prg_rom_size,
             prg_ram,
             prg_rom,
-            chr_rom,
+            chr,
             prg_rom_banks,
-            chr_rom_banks: [0; 8],
+            chr_banks: [0; 8],
             two_banks_first: true,
             bank_select: 0,
             prg_ram_enabled: true,
@@ -98,14 +89,14 @@ impl Mapper4 {
 
                 if self.two_banks_first {
                     // 2KB CHR bank at PPU $0000-$07FF
-                    self.chr_rom_banks[0] = bank as usize;
-                    self.chr_rom_banks[1] = bank as usize + 1;
+                    self.chr_banks[0] = bank as usize;
+                    self.chr_banks[1] = bank as usize + 1;
 
                     log!(CAT, "Update 2KB CHR bank at $0000: {}", bank);
                 } else {
                     // 2KB CHR bank at PPU $1000-$17FF
-                    self.chr_rom_banks[4] = bank as usize;
-                    self.chr_rom_banks[5] = bank as usize + 1;
+                    self.chr_banks[4] = bank as usize;
+                    self.chr_banks[5] = bank as usize + 1;
 
                     log!(CAT, "Update 2KB CHR bank at $1000: {}", bank);
                 }
@@ -117,14 +108,14 @@ impl Mapper4 {
 
                 if self.two_banks_first {
                     // 2KB CHR bank at PPU $0800-$0FFF
-                    self.chr_rom_banks[2] = bank as usize;
-                    self.chr_rom_banks[3] = bank as usize + 1;
+                    self.chr_banks[2] = bank as usize;
+                    self.chr_banks[3] = bank as usize + 1;
 
                     log!(CAT, "Update 2KB CHR bank at $0800: {}", bank);
                 } else {
                     // 2KB CHR bank at PPU $1800-$1FFF
-                    self.chr_rom_banks[6] = bank as usize;
-                    self.chr_rom_banks[7] = bank as usize + 1;
+                    self.chr_banks[6] = bank as usize;
+                    self.chr_banks[7] = bank as usize + 1;
 
                     log!(CAT, "Update 2KB CHR bank at $1800: {}", bank);
                 }
@@ -132,12 +123,12 @@ impl Mapper4 {
             2 => {
                 if self.two_banks_first {
                     // 1KB CHR bank at PPU $1000-$13FF
-                    self.chr_rom_banks[4] = bank as usize;
+                    self.chr_banks[4] = bank as usize;
 
                     log!(CAT, "Update 1KB CHR bank at $1000: {}", bank);
                 } else {
                     // 1KB CHR bank at PPU $0000-$03FF
-                    self.chr_rom_banks[0] = bank as usize;
+                    self.chr_banks[0] = bank as usize;
 
                     log!(CAT, "Update 1KB CHR bank at $0000: {}", bank);
                 }
@@ -145,12 +136,12 @@ impl Mapper4 {
             3 => {
                 if self.two_banks_first {
                     // 1KB CHR bank at PPU $1400-$17FF
-                    self.chr_rom_banks[5] = bank as usize;
+                    self.chr_banks[5] = bank as usize;
 
                     log!(CAT, "Update 1KB CHR bank at $1400: {}", bank);
                 } else {
                     // 1KB CHR bank at PPU $0400-$07FF
-                    self.chr_rom_banks[1] = bank as usize;
+                    self.chr_banks[1] = bank as usize;
 
                     log!(CAT, "Update 1KB CHR bank at $0400: {}", bank);
                 }
@@ -158,12 +149,12 @@ impl Mapper4 {
             4 => {
                 if self.two_banks_first {
                     // 1KB CHR bank at PPU $1800-$1BFF
-                    self.chr_rom_banks[6] = bank as usize;
+                    self.chr_banks[6] = bank as usize;
 
                     log!(CAT, "Update 1KB CHR bank at $1800: {}", bank);
                 } else {
                     // 1KB CHR bank at PPU $0800-$0BFF
-                    self.chr_rom_banks[2] = bank as usize;
+                    self.chr_banks[2] = bank as usize;
 
                     log!(CAT, "Update 1KB CHR bank at $0800: {}", bank);
                 }
@@ -171,12 +162,12 @@ impl Mapper4 {
             5 => {
                 if self.two_banks_first {
                     // 1KB CHR bank at PPU $1C00-$1FFF
-                    self.chr_rom_banks[7] = bank as usize;
+                    self.chr_banks[7] = bank as usize;
 
                     log!(CAT, "Update 1KB CHR bank at $1C00: {}", bank);
                 } else {
                     // 1KB CHR bank at PPU $0C00-$0FFF
-                    self.chr_rom_banks[3] = bank as usize;
+                    self.chr_banks[3] = bank as usize;
 
                     log!(CAT, "Update 1KB CHR bank at $0C00: {}", bank);
                 }
@@ -319,16 +310,16 @@ impl CartridgeOperations for Mapper4 {
     fn read_ppu_mem(&mut self, addr: u16) -> u8 {
         let section_num = addr as usize / Self::CHR_ROM_BANK_UNIT;
         let section_offset = addr as usize % Self::CHR_ROM_BANK_UNIT;
-        let bank = self.chr_rom_banks[section_num];
+        let bank = self.chr_banks[section_num];
         let addr = bank * Self::CHR_ROM_BANK_UNIT + section_offset;
-        self.chr_rom[addr]
+        self.chr[addr]
     }
 
     fn write_ppu_mem(&mut self, addr: u16, data: u8) {
         let section_num = addr as usize / Self::CHR_ROM_BANK_UNIT;
         let section_offset = addr as usize % Self::CHR_ROM_BANK_UNIT;
-        let bank = self.chr_rom_banks[section_num];
+        let bank = self.chr_banks[section_num];
         let addr = bank * Self::CHR_ROM_BANK_UNIT + section_offset;
-        self.chr_rom[addr] = data;
+        self.chr[addr] = data;
     }
 }
