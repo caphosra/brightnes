@@ -1,28 +1,33 @@
+use heapless::Vec;
+
 use crate::{
     critical, log,
-    nes::cartridge::{CartridgeOperations, CHR_UNIT},
+    nes::cartridge::{Cartridge, CartridgeOperations},
 };
 
 pub struct Mapper3 {
     prg_rom_size: usize,
-    chr_rom_size: usize,
-    prg_rom: &'static [u8],
-    chr_rom: &'static mut [u8],
+    chr_size: usize,
+    prg_rom: Vec<u8, { Self::PRG_ROM_SIZE }>,
+    chr: Vec<u8, { Self::CHR_SIZE }>,
     bank: usize,
 }
 
 impl Mapper3 {
-    pub fn new(
-        prg_rom_size: usize,
-        chr_rom_size: usize,
-        prg_rom: &'static [u8],
-        chr_rom: &'static mut [u8],
-    ) -> Self {
+    const PRG_ROM_SIZE: usize = 32 * 1024;
+
+    const CHR_SIZE: usize = 32 * 1024;
+    const CHR_BANK_UNIT: usize = 8 * 1024;
+
+    pub fn new(prg_rom_size: usize, chr_size: usize) -> Self {
+        let (prg_rom, chr_rom_start) = Cartridge::load_prg_rom(prg_rom_size);
+        let chr = Cartridge::load_chr(chr_rom_start, chr_size);
+
         Self {
             prg_rom_size,
-            chr_rom_size,
+            chr_size,
             prg_rom,
-            chr_rom,
+            chr,
             bank: 0,
         }
     }
@@ -47,18 +52,18 @@ impl CartridgeOperations for Mapper3 {
     }
 
     fn read_ppu_mem(&mut self, addr: u16) -> u8 {
-        let addr = addr as usize + self.bank * CHR_UNIT;
-        if addr >= self.chr_rom_size {
+        let addr = addr as usize + self.bank * Self::CHR_BANK_UNIT;
+        if addr >= self.chr_size {
             critical!(BUS, "Attempt to read unused CHR area: {:#06X}", addr);
         }
-        self.chr_rom[addr]
+        self.chr[addr]
     }
 
     fn write_ppu_mem(&mut self, addr: u16, data: u8) {
-        let addr = addr as usize + self.bank * CHR_UNIT;
-        if addr >= self.chr_rom_size {
+        let addr = addr as usize + self.bank * Self::CHR_BANK_UNIT;
+        if addr >= self.chr_size {
             critical!(BUS, "Attempt to write unused CHR area: {:#06X}", addr);
         }
-        self.chr_rom[addr] = data;
+        self.chr[addr] = data;
     }
 }

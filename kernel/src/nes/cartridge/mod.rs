@@ -83,25 +83,11 @@ impl Cartridge {
         let mapper = header.mapper();
         info!(CAT, "Mapper: {}", mapper);
 
-        // Load the program ROM.
-        let prg_rom_start = unsafe { (NES_FILE_ADDR as *mut u8).add(size_of::<NESHeader>()) };
-        let prg_rom =
-            unsafe { slice_from_raw_parts_mut(prg_rom_start, prg_rom_size).as_mut() }.unwrap();
-
-        info!(CAT, "Loaded PRG ROM ({:#x} bytes)", prg_rom_size);
-
-        // Load the character ROM.
-        let chr_rom_start = unsafe { prg_rom_start.add(prg_rom_size) };
-        let chr_rom =
-            unsafe { slice_from_raw_parts_mut(chr_rom_start, chr_size).as_mut() }.unwrap();
-
-        info!(CAT, "Loaded CHR ROM ({:#x} bytes)", chr_size);
-
         let kind = match mapper {
             0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_size)),
             2 => CartridgeKind::Mapper2(Mapper2::new(prg_rom_size, chr_size)),
-            3 => CartridgeKind::Mapper3(Mapper3::new(prg_rom_size, chr_size, prg_rom, chr_rom)),
-            4 => CartridgeKind::Mapper4(Mapper4::new(prg_rom_size, chr_size, prg_rom, chr_rom)),
+            3 => CartridgeKind::Mapper3(Mapper3::new(prg_rom_size, chr_size)),
+            4 => CartridgeKind::Mapper4(Mapper4::new(prg_rom_size, chr_size)),
             _ => {
                 critical!(CAT, "Unsupported mapper: {}", mapper);
             }
@@ -157,6 +143,11 @@ impl Cartridge {
         let mut chr = Vec::from_slice(chr).unwrap();
         chr.resize(N, 0).unwrap();
         chr
+    }
+
+    pub fn alloc_prg_ram<const N: usize>() -> Vec<u8, N> {
+        info!(CAT, "Allocate PRG RAM ({:#x} bytes)", N);
+        Vec::from_array([0; N])
     }
 
     #[inline(always)]

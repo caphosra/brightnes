@@ -6,6 +6,7 @@ use crate::{
 };
 
 pub struct Mapper2 {
+    prg_rom_size: usize,
     prg_rom: Vec<u8, { Mapper2::PRG_ROM_SIZE }>,
     chr: Vec<u8, { Mapper2::CHR_SIZE }>,
     bank: usize,
@@ -13,7 +14,7 @@ pub struct Mapper2 {
 
 impl Mapper2 {
     const PRG_ROM_SIZE: usize = 256 * 1024;
-    const PRG_ROM_UNIT: usize = 16 * 1024;
+    const PRG_ROM_BANK_UNIT: usize = 16 * 1024;
 
     const CHR_SIZE: usize = 8 * 1024;
 
@@ -22,6 +23,7 @@ impl Mapper2 {
         let chr = Cartridge::load_chr(chr_rom_start, chr_size);
 
         Self {
+            prg_rom_size,
             prg_rom,
             chr,
             bank: 0,
@@ -37,11 +39,11 @@ impl CartridgeOperations for Mapper2 {
             critical!(BUS, "Attempt to read unused area: {:#06X}", addr);
         }
         if addr < 0xC000 {
-            let addr = (addr as usize - 0x8000) + self.bank * Self::PRG_ROM_UNIT;
+            let addr = (addr as usize - 0x8000) + self.bank * Self::PRG_ROM_BANK_UNIT;
             self.prg_rom[addr]
         } else {
-            let bank_len = Self::PRG_ROM_SIZE / Self::PRG_ROM_UNIT;
-            let addr = (addr as usize - 0xC000) + (bank_len - 1) * Self::PRG_ROM_UNIT;
+            let bank_len = self.prg_rom_size / Self::PRG_ROM_BANK_UNIT;
+            let addr = (addr as usize - 0xC000) + (bank_len - 1) * Self::PRG_ROM_BANK_UNIT;
             self.prg_rom[addr]
         }
     }
