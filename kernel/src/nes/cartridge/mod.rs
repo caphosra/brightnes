@@ -16,7 +16,7 @@ use crate::{critical, info};
 pub struct NESHeader {
     magic: [u8; 4],
     prg_rom_size: u8,
-    chr_rom_size: u8,
+    chr_size: u8,
     flag6: u8,
     flag7: u8,
     flag8: u8,
@@ -36,7 +36,7 @@ impl NESHeader {
         NESHeader {
             magic: NES_MAGIC,
             prg_rom_size: nes_header.prg_rom_size,
-            chr_rom_size: nes_header.chr_rom_size,
+            chr_size: nes_header.chr_size,
             flag6: nes_header.flag6,
             flag7: nes_header.flag7,
             flag8: nes_header.flag8,
@@ -57,7 +57,7 @@ const NES_FILE_ADDR: usize = 0x3_000_000;
 const NES_MAGIC: [u8; 4] = *b"NES\x1A";
 
 const PRG_ROM_UNIT: usize = 0x4000;
-const CHR_ROM_UNIT: usize = 0x2000;
+const CHR_UNIT: usize = 0x2000;
 
 pub struct Cartridge {
     header: NESHeader,
@@ -74,12 +74,12 @@ pub enum CartridgeKind {
 pub static CARTRIDGE: Lazy<RwLock<Cartridge>> = Lazy::new(|| {
     let header = NESHeader::new();
     let prg_rom_size = header.prg_rom_size as usize * PRG_ROM_UNIT;
-    let chr_rom_size = header.chr_rom_size as usize * CHR_ROM_UNIT;
-    RwLock::new(Cartridge::new(header, prg_rom_size, chr_rom_size))
+    let chr_size = header.chr_size as usize * CHR_UNIT;
+    RwLock::new(Cartridge::new(header, prg_rom_size, chr_size))
 });
 
 impl Cartridge {
-    pub fn new(header: NESHeader, prg_rom_size: usize, chr_rom_size: usize) -> Self {
+    pub fn new(header: NESHeader, prg_rom_size: usize, chr_size: usize) -> Self {
         let mapper = header.mapper();
         info!(CAT, "Mapper: {}", mapper);
 
@@ -93,15 +93,15 @@ impl Cartridge {
         // Load the character ROM.
         let chr_rom_start = unsafe { prg_rom_start.add(prg_rom_size) };
         let chr_rom =
-            unsafe { slice_from_raw_parts_mut(chr_rom_start, chr_rom_size).as_mut() }.unwrap();
+            unsafe { slice_from_raw_parts_mut(chr_rom_start, chr_size).as_mut() }.unwrap();
 
-        info!(CAT, "Loaded CHR ROM ({:#x} bytes)", chr_rom_size);
+        info!(CAT, "Loaded CHR ROM ({:#x} bytes)", chr_size);
 
         let kind = match mapper {
-            0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_rom_size)),
-            2 => CartridgeKind::Mapper2(Mapper2::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
-            3 => CartridgeKind::Mapper3(Mapper3::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
-            4 => CartridgeKind::Mapper4(Mapper4::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
+            0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_size)),
+            2 => CartridgeKind::Mapper2(Mapper2::new(prg_rom_size, chr_size)),
+            3 => CartridgeKind::Mapper3(Mapper3::new(prg_rom_size, chr_size, prg_rom, chr_rom)),
+            4 => CartridgeKind::Mapper4(Mapper4::new(prg_rom_size, chr_size, prg_rom, chr_rom)),
             _ => {
                 critical!(CAT, "Unsupported mapper: {}", mapper);
             }
@@ -112,7 +112,7 @@ impl Cartridge {
         Cartridge { header, kind }
     }
 
-    pub fn alloc_prg_rom<const N: usize>(prg_rom_size: usize) -> (Vec<u8, N>, *mut u8) {
+    pub fn load_prg_rom<const N: usize>(prg_rom_size: usize) -> (Vec<u8, N>, *mut u8) {
         if prg_rom_size > N {
             critical!(
                 CAT,
@@ -127,34 +127,36 @@ impl Cartridge {
         let prg_rom =
             unsafe { slice_from_raw_parts_mut(prg_rom_start, prg_rom_size).as_mut() }.unwrap();
 
+        info!(CAT, "Allocate PRG ROM ({:#x} bytes)", N);
         info!(CAT, "Loaded PRG ROM ({:#x} bytes)", prg_rom_size);
 
         // Calculate the start address of CHR ROM.
         let chr_rom_start = unsafe { prg_rom_start.add(prg_rom_size) };
 
-        (Vec::from_slice(prg_rom).unwrap(), chr_rom_start)
+        let mut prg_rom = Vec::from_slice(prg_rom).unwrap();
+        prg_rom.resize(N, 0).unwrap();
+        (prg_rom, chr_rom_start)
     }
 
-    pub fn alloc_chr_rom<const N: usize>(
-        chr_rom_start: *mut u8,
-        chr_rom_size: usize,
-    ) -> Vec<u8, N> {
-        if chr_rom_size > N {
+    pub fn load_chr<const N: usize>(chr_rom_start: *mut u8, chr_size: usize) -> Vec<u8, N> {
+        if chr_size > N {
             critical!(
                 CAT,
-                "Expected {:#x} bytes on CHR ROM size but found {:#x} bytes.",
+                "Expected {:#x} bytes on CHR size but found {:#x} bytes.",
                 N,
-                chr_rom_size
+                chr_size
             );
         }
 
-        // Load CHR ROM.
-        let chr_rom =
-            unsafe { slice_from_raw_parts_mut(chr_rom_start, chr_rom_size).as_mut() }.unwrap();
+        // Load CHR.
+        let chr = unsafe { slice_from_raw_parts_mut(chr_rom_start, chr_size).as_mut() }.unwrap();
 
-        info!(CAT, "Loaded CHR ROM ({:#x} bytes)", chr_rom_size);
+        info!(CAT, "Allocate CHR ({:#x} bytes)", N);
+        info!(CAT, "Loaded CHR ({:#x} bytes)", chr_size);
 
-        Vec::from_slice(chr_rom).unwrap()
+        let mut chr = Vec::from_slice(chr).unwrap();
+        chr.resize(N, 0).unwrap();
+        chr
     }
 
     #[inline(always)]

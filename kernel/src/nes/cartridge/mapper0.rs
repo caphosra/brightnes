@@ -3,38 +3,28 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     critical,
-    nes::cartridge::{Cartridge, CartridgeOperations, CHR_ROM_UNIT},
+    nes::cartridge::{Cartridge, CartridgeOperations},
 };
 
 #[derive(Serialize, Deserialize)]
 pub struct Mapper0 {
     prg_rom_size: usize,
-    chr_rom_size: usize,
     prg_rom: Vec<u8, { Mapper0::PRG_ROM_SIZE }>,
-    chr_rom: Vec<u8, { Mapper0::CHR_ROM_SIZE }>,
+    chr: Vec<u8, { Mapper0::CHR_SIZE }>,
 }
 
 impl Mapper0 {
     const PRG_ROM_SIZE: usize = 32 * 1024;
-    const CHR_ROM_SIZE: usize = 8 * 1024;
+    const CHR_SIZE: usize = 8 * 1024;
 
-    pub fn new(prg_rom_size: usize, chr_rom_size: usize) -> Self {
-        if prg_rom_size != Self::PRG_ROM_SIZE && prg_rom_size != Self::PRG_ROM_SIZE / 2 {
-            critical!(CAT, "Unsupported PRG ROM size: {:#x} bytes", prg_rom_size);
-        }
-
-        if chr_rom_size != CHR_ROM_UNIT {
-            critical!(CAT, "Unsupported CHR ROM size: {:#x} bytes", chr_rom_size);
-        }
-
-        let (prg_rom, chr_rom_start) = Cartridge::alloc_prg_rom(prg_rom_size);
-        let chr_rom = Cartridge::alloc_chr_rom(chr_rom_start, chr_rom_size);
+    pub fn new(prg_rom_size: usize, chr_size: usize) -> Self {
+        let (prg_rom, chr_rom_start) = Cartridge::load_prg_rom(prg_rom_size);
+        let chr = Cartridge::load_chr(chr_rom_start, chr_size);
 
         Self {
             prg_rom_size,
-            chr_rom_size,
             prg_rom,
-            chr_rom,
+            chr,
         }
     }
 }
@@ -55,14 +45,10 @@ impl CartridgeOperations for Mapper0 {
     }
 
     fn read_ppu_mem(&mut self, addr: u16) -> u8 {
-        // For 8KB CHR-ROM, mirror it.
-        let addr = addr as usize % self.chr_rom_size;
-        self.chr_rom[addr]
+        self.chr[addr as usize]
     }
 
     fn write_ppu_mem(&mut self, addr: u16, data: u8) {
-        // For 8KB CHR-ROM, mirror it.
-        let addr = addr as usize % self.chr_rom_size;
-        self.chr_rom[addr] = data;
+        self.chr[addr as usize] = data;
     }
 }

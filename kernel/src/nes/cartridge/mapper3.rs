@@ -1,6 +1,6 @@
 use crate::{
     critical, log,
-    nes::cartridge::{CartridgeOperations, CHR_ROM_UNIT},
+    nes::cartridge::{CartridgeOperations, CHR_UNIT},
 };
 
 pub struct Mapper3 {
@@ -47,7 +47,7 @@ impl CartridgeOperations for Mapper3 {
     }
 
     fn read_ppu_mem(&mut self, addr: u16) -> u8 {
-        let addr = addr as usize + self.bank * CHR_ROM_UNIT;
+        let addr = addr as usize + self.bank * CHR_UNIT;
         if addr >= self.chr_rom_size {
             critical!(BUS, "Attempt to read unused CHR area: {:#06X}", addr);
         }
@@ -55,7 +55,7 @@ impl CartridgeOperations for Mapper3 {
     }
 
     fn write_ppu_mem(&mut self, addr: u16, data: u8) {
-        let addr = addr as usize + self.bank * CHR_ROM_UNIT;
+        let addr = addr as usize + self.bank * CHR_UNIT;
         if addr >= self.chr_rom_size {
             critical!(BUS, "Attempt to write unused CHR area: {:#06X}", addr);
         }
