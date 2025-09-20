@@ -1,9 +1,9 @@
 use crate::{
     nes::{
         cartridge::Cartridge,
+        cpu::NESCPU,
         pad::PADS,
-        ppu::{NES_PPU, OAM_DMA_ADDR},
-        ram::NES_RAM,
+        ppu::{NESPPU, OAM_DMA_ADDR},
     },
     warn,
 };
@@ -11,18 +11,15 @@ use crate::{
 pub struct CPUBus;
 
 impl CPUBus {
-    pub fn read(addr: u16, cartridge: &mut Cartridge) -> u8 {
+    pub fn read(addr: u16, cpu: &NESCPU, ppu: &mut NESPPU, cartridge: &mut Cartridge) -> u8 {
         if addr < 0x2000 {
             // RAM
-            let ram = NES_RAM.read();
-            ram.ram[addr as usize & 0x7FF]
+            cpu.ram.read(addr & 0x7FF)
         } else if addr < 0x4000 {
             // PPU
-            let mut ppu = NES_PPU.write();
             ppu.read_reg(addr, cartridge)
         } else if addr == OAM_DMA_ADDR {
             // OAM DMA
-            let mut ppu = NES_PPU.write();
             ppu.read_reg(addr, cartridge)
         } else if addr < 0x4016 {
             // APU
@@ -42,19 +39,22 @@ impl CPUBus {
         }
     }
 
-    pub fn write(addr: u16, data: u8, cartridge: &mut Cartridge) {
+    pub fn write(
+        addr: u16,
+        data: u8,
+        cpu: &mut NESCPU,
+        ppu: &mut NESPPU,
+        cartridge: &mut Cartridge,
+    ) {
         if addr < 0x2000 {
             // RAM
-            let mut ram = NES_RAM.write();
-            ram.ram[addr as usize & 0x7FF] = data;
+            cpu.ram.write(addr & 0x7FF, data);
         } else if addr < 0x4000 {
             // PPU
-            let mut ppu = NES_PPU.write();
-            ppu.write_reg(addr, data, cartridge);
+            ppu.write_reg(addr, data, cpu, cartridge);
         } else if addr == OAM_DMA_ADDR {
             // OAM DMA
-            let mut ppu = NES_PPU.write();
-            ppu.write_reg(addr, data, cartridge);
+            ppu.write_reg(addr, data, cpu, cartridge);
         } else if addr < 0x4016 {
             // APU
             warn!(APU, "Attempt to write to APU: {:#06X}", addr);

@@ -1,10 +1,12 @@
+use alloc::format;
 use spin::{Lazy, RwLock};
-use x86_64::instructions::interrupts;
 
 use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::bus::CPUBus;
 use crate::nes::cpu::instr::{AddrMode, InstrType, Instruction};
+use crate::nes::cpu::ram::RAM;
 use crate::nes::ppu::oam::OAM_DMA_CYCLES;
+use crate::nes::ppu::NESPPU;
 use crate::{critical, error};
 
 pub struct NESCPU {
@@ -16,6 +18,10 @@ pub struct NESCPU {
     pub reg_p: u8,
     pub cycles: u64,
     pub inst: u64,
+
+    stall_cycles: u32,
+    ram: RAM,
+    history: [Option<Instruction>; NESCPU::HISTORY_SIZE],
 }
 
 pub const CARRY_FLAG: usize = 0;
@@ -37,13 +43,12 @@ pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
         reg_p: 0x24,
         cycles: 0,
         inst: 0,
+
+        stall_cycles: 0,
+        ram: RAM::new(),
+        history: [None; NESCPU::HISTORY_SIZE],
     })
 });
-
-// Since stalling cycles can be modified during DMA transfer, we need to split this from the CPU struct.
-static CPU_DMA_STALL: Lazy<RwLock<u32>> = Lazy::new(|| RwLock::new(0));
-
-static CPU_INT: Lazy<RwLock<Option<InterruptType>>> = Lazy::new(|| RwLock::new(None));
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum InterruptType {
@@ -54,19 +59,30 @@ pub enum InterruptType {
 }
 
 impl NESCPU {
+    pub const HISTORY_SIZE: usize = 16;
     const MAX_STALL_CYCLES: u32 = 8;
 
-    pub fn dma_stall() {
-        let mut stall_cycles = CPU_DMA_STALL.write();
-        *stall_cycles += OAM_DMA_CYCLES;
+    pub fn dma_stall(&mut self) {
+        self.stall_cycles += OAM_DMA_CYCLES;
     }
 
-    pub fn interrupt(int_type: InterruptType) {
-        let mut dest = CPU_INT.write();
-        *dest = Some(int_type);
+    fn do_dma_transfer(&mut self, ppu: &mut NESPPU, cartridge: &mut Cartridge) {
+        let mut data = [9; 0x100];
+        for i in 0..=0xFF {
+            let addr = ppu.oam.dma_request_addr + i as u16;
+            data[i] = CPUBus::read(addr, self, ppu, cartridge);
+        }
+        for i in 0..=0xFF {
+            ppu.oam.write(i as u8, data[i]);
+        }
     }
 
-    fn interrupt_internal(&mut self, int_type: InterruptType, cartridge: &mut Cartridge) {
+    pub fn interrupt(
+        &mut self,
+        int_type: InterruptType,
+        ppu: &mut NESPPU,
+        cartridge: &mut Cartridge,
+    ) {
         if self.get_flag(INT_FLAG) != 0
             && (int_type == InterruptType::BRK)
             && (int_type == InterruptType::IRQ)
@@ -80,86 +96,66 @@ impl NESCPU {
         match int_type {
             InterruptType::BRK => {
                 self.reg_pc += 1;
-                self.push_stack((self.reg_pc >> 8) as u8, cartridge);
-                self.push_stack((self.reg_pc & 0x00FF) as u8, cartridge);
-                self.push_stack(self.reg_p | 0b110000, cartridge);
+                self.push_stack((self.reg_pc >> 8) as u8, ppu, cartridge);
+                self.push_stack((self.reg_pc & 0x00FF) as u8, ppu, cartridge);
+                self.push_stack(self.reg_p | 0b110000, ppu, cartridge);
 
-                let lo = CPUBus::read(0xFFFE, cartridge);
-                let hi = CPUBus::read(0xFFFF, cartridge);
+                let lo = CPUBus::read(0xFFFE, self, ppu, cartridge);
+                let hi = CPUBus::read(0xFFFF, self, ppu, cartridge);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
             }
             InterruptType::NMI => {
                 self.set_flag(BRK_FLAG, false);
 
-                self.push_stack((self.reg_pc >> 8) as u8, cartridge);
-                self.push_stack((self.reg_pc & 0x00FF) as u8, cartridge);
+                self.push_stack((self.reg_pc >> 8) as u8, ppu, cartridge);
+                self.push_stack((self.reg_pc & 0x00FF) as u8, ppu, cartridge);
 
-                self.push_stack((self.reg_p & 0b11001111) | 1 << 5, cartridge);
+                self.push_stack((self.reg_p & 0b11001111) | 1 << 5, ppu, cartridge);
 
-                let lo = CPUBus::read(0xFFFA, cartridge);
-                let hi = CPUBus::read(0xFFFB, cartridge);
+                let lo = CPUBus::read(0xFFFA, self, ppu, cartridge);
+                let hi = CPUBus::read(0xFFFB, self, ppu, cartridge);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
             }
             InterruptType::IRQ => {
                 self.set_flag(BRK_FLAG, false);
 
-                self.push_stack((self.reg_pc >> 8) as u8, cartridge);
-                self.push_stack((self.reg_pc & 0x00FF) as u8, cartridge);
+                self.push_stack((self.reg_pc >> 8) as u8, ppu, cartridge);
+                self.push_stack((self.reg_pc & 0x00FF) as u8, ppu, cartridge);
 
-                self.push_stack((self.reg_p & 0b11001111) | 1 << 5, cartridge);
+                self.push_stack((self.reg_p & 0b11001111) | 1 << 5, ppu, cartridge);
 
-                let lo = CPUBus::read(0xFFFE, cartridge);
-                let hi = CPUBus::read(0xFFFF, cartridge);
+                let lo = CPUBus::read(0xFFFE, self, ppu, cartridge);
+                let hi = CPUBus::read(0xFFFF, self, ppu, cartridge);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
             }
             InterruptType::RST => {
-                let lo = CPUBus::read(0xFFFC, cartridge);
-                let hi = CPUBus::read(0xFFFD, cartridge);
+                let lo = CPUBus::read(0xFFFC, self, ppu, cartridge);
+                let hi = CPUBus::read(0xFFFD, self, ppu, cartridge);
                 self.reg_sp = 0xFD;
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
             }
         }
     }
 
-    pub fn clock(&mut self, cartridge: &mut Cartridge) -> (u32, bool) {
-        {
-            let mut int = CPU_INT.write();
-            if let Some(int_type) = *int {
-                // The CPU is in an interrupt state.
-                self.interrupt_internal(int_type, cartridge);
-                *int = None;
-
-                // Assume that an interrupt does not consume time.
-                return (0, false);
-            }
-        }
-
-        let mut dma_transfer_done = false;
-        let stall_cycles = interrupts::without_interrupts(|| {
-            // Acquire a read-write lock of CPU_STALL.
-            let mut stall_cycles = CPU_DMA_STALL.write();
-            if *stall_cycles > Self::MAX_STALL_CYCLES {
-                *stall_cycles -= Self::MAX_STALL_CYCLES;
-                Self::MAX_STALL_CYCLES
-            } else {
-                let cycles = *stall_cycles;
-                *stall_cycles = 0;
-
-                // DMA transfer ends.
-                dma_transfer_done = true;
-
-                cycles
-            }
-        });
-        if stall_cycles > 0 {
+    pub fn clock(&mut self, ppu: &mut NESPPU, cartridge: &mut Cartridge) -> u32 {
+        if self.stall_cycles > Self::MAX_STALL_CYCLES {
             // The CPU is stalling for external reasons.
-            (stall_cycles, dma_transfer_done)
+            self.stall_cycles -= Self::MAX_STALL_CYCLES;
+            Self::MAX_STALL_CYCLES
+        } else if self.stall_cycles > 0 {
+            // DMA transfer ends.
+            let cycles = self.stall_cycles;
+            self.stall_cycles = 0;
+
+            self.do_dma_transfer(ppu, cartridge);
+
+            cycles
         } else {
             // The CPU is not stalling so execute the next instruction.
-            let cycles = self.execute(cartridge);
+            let cycles = self.execute(ppu, cartridge);
             self.inst += 1;
             self.cycles += cycles as u64;
-            (cycles, false)
+            cycles
         }
     }
 
@@ -175,24 +171,27 @@ impl NESCPU {
         }
     }
 
-    pub fn push_stack(&mut self, data: u8, cartridge: &mut Cartridge) {
+    pub fn push_stack(&mut self, data: u8, ppu: &mut NESPPU, cartridge: &mut Cartridge) {
         let addr = 0x0100 | self.reg_sp as u16;
-        CPUBus::write(addr, data, cartridge);
+        CPUBus::write(addr, data, self, ppu, cartridge);
         self.reg_sp = self.reg_sp.wrapping_sub(1);
     }
 
-    pub fn pop_stack(&mut self, cartridge: &mut Cartridge) -> u8 {
+    pub fn pop_stack(&mut self, ppu: &mut NESPPU, cartridge: &mut Cartridge) -> u8 {
         self.reg_sp = self.reg_sp.wrapping_add(1);
         let addr = 0x0100 | self.reg_sp as u16;
-        CPUBus::read(addr, cartridge)
+        CPUBus::read(addr, self, ppu, cartridge)
     }
 
-    pub fn execute(&mut self, cartridge: &mut Cartridge) -> u32 {
-        let inst = Instruction::fetch(self.reg_pc, cartridge);
+    pub fn execute(&mut self, ppu: &mut NESPPU, cartridge: &mut Cartridge) -> u32 {
+        let inst = Instruction::fetch(self.reg_pc, self, ppu, cartridge);
+
+        // Record instruction to history.
+        self.update_history(&inst);
 
         let cycles = match inst.instr_type {
             InstrType::ADC => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let (sum, carry1) = mem.overflowing_add(self.reg_a);
                 let (sum, carry2) = sum.overflowing_add(self.get_flag(CARRY_FLAG));
 
@@ -211,7 +210,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::AND => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 self.reg_a &= mem;
 
                 self.set_flag(ZERO_FLAG, self.reg_a == 0);
@@ -223,7 +222,7 @@ impl NESCPU {
             InstrType::ASL => {
                 let (val, _) = match inst.addr_mode {
                     AddrMode::Implied => (self.reg_a, 0),
-                    _ => inst.addr_mode.resolve(self, cartridge),
+                    _ => inst.addr_mode.resolve(self, ppu, cartridge),
                 };
                 let result = val << 1;
 
@@ -236,7 +235,7 @@ impl NESCPU {
                         self.reg_a = result;
                     }
                     _ => {
-                        inst.addr_mode.write(self, result, cartridge);
+                        inst.addr_mode.write(result, self, ppu, cartridge);
                     }
                 };
 
@@ -245,7 +244,7 @@ impl NESCPU {
             }
             InstrType::BCC => {
                 let (addr, additional_cycle) =
-                    inst.addr_mode.resolve_addr(self, cartridge).unwrap();
+                    inst.addr_mode.resolve_addr(self, ppu, cartridge).unwrap();
                 if self.get_flag(CARRY_FLAG) == 0 {
                     self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
@@ -256,7 +255,7 @@ impl NESCPU {
             }
             InstrType::BCS => {
                 let (addr, additional_cycle) =
-                    inst.addr_mode.resolve_addr(self, cartridge).unwrap();
+                    inst.addr_mode.resolve_addr(self, ppu, cartridge).unwrap();
                 if self.get_flag(CARRY_FLAG) != 0 {
                     self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
@@ -267,7 +266,7 @@ impl NESCPU {
             }
             InstrType::BEQ => {
                 let (addr, additional_cycle) =
-                    inst.addr_mode.resolve_addr(self, cartridge).unwrap();
+                    inst.addr_mode.resolve_addr(self, ppu, cartridge).unwrap();
                 if self.get_flag(ZERO_FLAG) != 0 {
                     self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
@@ -277,7 +276,7 @@ impl NESCPU {
                 }
             }
             InstrType::BIT => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
 
                 self.set_flag(NEG_FLAG, mem & 0x80 != 0);
                 self.set_flag(OVERFLOW_FLAG, mem & 0x40 != 0);
@@ -288,7 +287,7 @@ impl NESCPU {
             }
             InstrType::BMI => {
                 let (addr, additional_cycle) =
-                    inst.addr_mode.resolve_addr(self, cartridge).unwrap();
+                    inst.addr_mode.resolve_addr(self, ppu, cartridge).unwrap();
                 if self.get_flag(NEG_FLAG) != 0 {
                     self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
@@ -299,7 +298,7 @@ impl NESCPU {
             }
             InstrType::BNE => {
                 let (addr, additional_cycle) =
-                    inst.addr_mode.resolve_addr(self, cartridge).unwrap();
+                    inst.addr_mode.resolve_addr(self, ppu, cartridge).unwrap();
                 if self.get_flag(ZERO_FLAG) == 0 {
                     self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
@@ -310,7 +309,7 @@ impl NESCPU {
             }
             InstrType::BPL => {
                 let (addr, additional_cycle) =
-                    inst.addr_mode.resolve_addr(self, cartridge).unwrap();
+                    inst.addr_mode.resolve_addr(self, ppu, cartridge).unwrap();
                 if self.get_flag(NEG_FLAG) == 0 {
                     self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
@@ -321,13 +320,13 @@ impl NESCPU {
             }
             InstrType::BRK => {
                 self.set_flag(BRK_FLAG, true);
-                NESCPU::interrupt(InterruptType::BRK);
+                self.interrupt(InterruptType::BRK, ppu, cartridge);
 
                 inst.cycles - 1
             }
             InstrType::BVC => {
                 let (addr, additional_cycle) =
-                    inst.addr_mode.resolve_addr(self, cartridge).unwrap();
+                    inst.addr_mode.resolve_addr(self, ppu, cartridge).unwrap();
                 if self.get_flag(OVERFLOW_FLAG) == 0 {
                     self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
@@ -338,7 +337,7 @@ impl NESCPU {
             }
             InstrType::BVS => {
                 let (addr, additional_cycle) =
-                    inst.addr_mode.resolve_addr(self, cartridge).unwrap();
+                    inst.addr_mode.resolve_addr(self, ppu, cartridge).unwrap();
                 if self.get_flag(OVERFLOW_FLAG) != 0 {
                     self.reg_pc = addr;
                     inst.cycles + additional_cycle + 1
@@ -372,7 +371,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::CMP => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let (res, borrow) = self.reg_a.overflowing_sub(mem);
 
                 self.set_flag(CARRY_FLAG, !borrow);
@@ -383,7 +382,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::CPX => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let (res, borrow) = self.reg_x.overflowing_sub(mem);
 
                 self.set_flag(CARRY_FLAG, !borrow);
@@ -394,7 +393,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::CPY => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let (res, borrow) = self.reg_y.overflowing_sub(mem);
 
                 self.set_flag(CARRY_FLAG, !borrow);
@@ -405,14 +404,14 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::DEC => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
 
                 let result = mem.wrapping_sub(1);
 
                 self.set_flag(ZERO_FLAG, result == 0);
                 self.set_flag(NEG_FLAG, result & 0x80 != 0);
 
-                inst.addr_mode.write(self, result, cartridge);
+                inst.addr_mode.write(result, self, ppu, cartridge);
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
@@ -436,7 +435,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::EOR => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 self.reg_a ^= mem;
 
                 self.set_flag(ZERO_FLAG, self.reg_a == 0);
@@ -446,13 +445,13 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::INC => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let result = mem.wrapping_add(1);
 
                 self.set_flag(ZERO_FLAG, result == 0);
                 self.set_flag(NEG_FLAG, result & 0x80 != 0);
 
-                inst.addr_mode.write(self, result, cartridge);
+                inst.addr_mode.write(result, self, ppu, cartridge);
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
@@ -481,11 +480,15 @@ impl NESCPU {
                     inst.cycles
                 }
                 AddrMode::Indirect(addr) => {
-                    let lo = CPUBus::read(addr, cartridge);
+                    let lo = CPUBus::read(addr, self, ppu, cartridge);
 
                     // Since NES cannot reflect the carry in cycles, we should calculate it separately.
-                    let hi =
-                        CPUBus::read((addr & 0xFF00) | (addr.wrapping_add(1) & 0x00FF), cartridge);
+                    let hi = CPUBus::read(
+                        (addr & 0xFF00) | (addr.wrapping_add(1) & 0x00FF),
+                        self,
+                        ppu,
+                        cartridge,
+                    );
 
                     self.reg_pc = u16::from_le_bytes([lo, hi]);
                     inst.cycles
@@ -497,8 +500,8 @@ impl NESCPU {
             InstrType::JSR => match inst.addr_mode {
                 AddrMode::Absolute(addr) => {
                     let return_addr = self.reg_pc + 2;
-                    self.push_stack((return_addr >> 8) as u8, cartridge);
-                    self.push_stack((return_addr & 0x00FF) as u8, cartridge);
+                    self.push_stack((return_addr >> 8) as u8, ppu, cartridge);
+                    self.push_stack((return_addr & 0x00FF) as u8, ppu, cartridge);
 
                     self.reg_pc = addr;
                     inst.cycles
@@ -508,7 +511,7 @@ impl NESCPU {
                 }
             },
             InstrType::LDA => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 self.reg_a = mem;
 
                 self.set_flag(ZERO_FLAG, self.reg_a == 0);
@@ -518,7 +521,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::LDX => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 self.reg_x = mem;
 
                 self.set_flag(ZERO_FLAG, self.reg_x == 0);
@@ -528,7 +531,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::LDY => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 self.reg_y = mem;
 
                 self.set_flag(ZERO_FLAG, self.reg_y == 0);
@@ -540,7 +543,7 @@ impl NESCPU {
             InstrType::LSR => {
                 let (val, _) = match inst.addr_mode {
                     AddrMode::Implied => (self.reg_a, 0),
-                    _ => inst.addr_mode.resolve(self, cartridge),
+                    _ => inst.addr_mode.resolve(self, ppu, cartridge),
                 };
                 let result = val >> 1;
 
@@ -553,7 +556,7 @@ impl NESCPU {
                         self.reg_a = result;
                     }
                     _ => {
-                        inst.addr_mode.write(self, result, cartridge);
+                        inst.addr_mode.write(result, self, ppu, cartridge);
                     }
                 };
 
@@ -561,13 +564,13 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::NOP => {
-                let (_, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (_, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles + additional_cycle
             }
             InstrType::ORA => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 self.reg_a |= mem;
 
                 self.set_flag(ZERO_FLAG, self.reg_a == 0);
@@ -577,17 +580,17 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::PHA => {
-                self.push_stack(self.reg_a, cartridge);
+                self.push_stack(self.reg_a, ppu, cartridge);
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
             InstrType::PHP => {
-                self.push_stack(self.reg_p | 0b110000, cartridge);
+                self.push_stack(self.reg_p | 0b110000, ppu, cartridge);
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
             InstrType::PLA => {
-                self.reg_a = self.pop_stack(cartridge);
+                self.reg_a = self.pop_stack(ppu, cartridge);
 
                 self.set_flag(ZERO_FLAG, self.reg_a == 0);
                 self.set_flag(NEG_FLAG, self.reg_a & 0x80 != 0);
@@ -596,7 +599,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::PLP => {
-                self.reg_p = (self.pop_stack(cartridge) & !(1 << BRK_FLAG))
+                self.reg_p = (self.pop_stack(ppu, cartridge) & !(1 << BRK_FLAG))
                     | (self.reg_p & (1 << BRK_FLAG))
                     | (1 << ONE_FLAG);
                 self.reg_pc += inst.addr_mode.size();
@@ -605,7 +608,7 @@ impl NESCPU {
             InstrType::ROL => {
                 let (val, _) = match inst.addr_mode {
                     AddrMode::Implied => (self.reg_a, 0),
-                    _ => inst.addr_mode.resolve(self, cartridge),
+                    _ => inst.addr_mode.resolve(self, ppu, cartridge),
                 };
                 let carry = self.get_flag(CARRY_FLAG);
                 let result = (val << 1) | carry;
@@ -619,7 +622,7 @@ impl NESCPU {
                         self.reg_a = result;
                     }
                     _ => {
-                        inst.addr_mode.write(self, result, cartridge);
+                        inst.addr_mode.write(result, self, ppu, cartridge);
                     }
                 };
 
@@ -629,7 +632,7 @@ impl NESCPU {
             InstrType::ROR => {
                 let (val, _) = match inst.addr_mode {
                     AddrMode::Implied => (self.reg_a, 0),
-                    _ => inst.addr_mode.resolve(self, cartridge),
+                    _ => inst.addr_mode.resolve(self, ppu, cartridge),
                 };
                 let carry = self.get_flag(CARRY_FLAG) << 7;
                 let result = (val >> 1) | carry;
@@ -643,7 +646,7 @@ impl NESCPU {
                         self.reg_a = result;
                     }
                     _ => {
-                        inst.addr_mode.write(self, result, cartridge);
+                        inst.addr_mode.write(result, self, ppu, cartridge);
                     }
                 };
 
@@ -651,25 +654,25 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::RTI => {
-                self.reg_p = (self.pop_stack(cartridge) & !(1 << BRK_FLAG))
+                self.reg_p = (self.pop_stack(ppu, cartridge) & !(1 << BRK_FLAG))
                     | (self.reg_p & (1 << BRK_FLAG))
                     | 1 << ONE_FLAG;
 
-                let lo = self.pop_stack(cartridge);
-                let hi = self.pop_stack(cartridge);
+                let lo = self.pop_stack(ppu, cartridge);
+                let hi = self.pop_stack(ppu, cartridge);
 
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
                 inst.cycles
             }
             InstrType::RTS => {
-                let lo = self.pop_stack(cartridge);
-                let hi = self.pop_stack(cartridge);
+                let lo = self.pop_stack(ppu, cartridge);
+                let hi = self.pop_stack(ppu, cartridge);
 
                 self.reg_pc = u16::from_le_bytes([lo, hi]) + 1;
                 inst.cycles
             }
             InstrType::SBC => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
                 let (diff, borrow2) = diff.overflowing_sub(1 - self.get_flag(CARRY_FLAG));
 
@@ -706,19 +709,19 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::STA => {
-                inst.addr_mode.write(self, self.reg_a, cartridge);
+                inst.addr_mode.write(self.reg_a, self, ppu, cartridge);
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
             InstrType::STX => {
-                inst.addr_mode.write(self, self.reg_x, cartridge);
+                inst.addr_mode.write(self.reg_x, self, ppu, cartridge);
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
             InstrType::STY => {
-                inst.addr_mode.write(self, self.reg_y, cartridge);
+                inst.addr_mode.write(self.reg_y, self, ppu, cartridge);
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
@@ -775,7 +778,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::ALR => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
 
                 let carry = (self.reg_a & mem) & 1;
                 self.reg_a = (self.reg_a & mem) >> 1;
@@ -788,7 +791,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::ANC => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
 
                 let carry = self.reg_a & 0x80;
                 self.reg_a = self.reg_a & mem;
@@ -804,7 +807,7 @@ impl NESCPU {
                 critical!(CPU, "ANE is highly unstable.");
             }
             InstrType::ARR => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
 
                 let ans = (self.reg_a & mem) as i16 + mem as i16;
                 self.set_flag(OVERFLOW_FLAG, ans > 0x7F || ans < -0x80);
@@ -821,9 +824,9 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::DCP => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let mem = mem.wrapping_add_signed(-1);
-                inst.addr_mode.write(self, mem, cartridge);
+                inst.addr_mode.write(mem, self, ppu, cartridge);
 
                 let (res, borrow) = self.reg_a.overflowing_sub(mem);
 
@@ -835,9 +838,9 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::ISC => {
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let mem = mem.wrapping_add(1);
-                inst.addr_mode.write(self, mem, cartridge);
+                inst.addr_mode.write(mem, self, ppu, cartridge);
 
                 let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
                 let (diff, borrow2) = diff.overflowing_sub(1 - self.get_flag(CARRY_FLAG));
@@ -856,7 +859,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::LAS => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 self.reg_a = mem & self.reg_sp;
                 self.reg_x = self.reg_a;
                 self.reg_sp = self.reg_a;
@@ -868,7 +871,7 @@ impl NESCPU {
                 inst.cycles + additional_cycle
             }
             InstrType::LAX => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 self.reg_a = mem;
                 self.reg_x = self.reg_a;
 
@@ -882,11 +885,11 @@ impl NESCPU {
                 critical!(CPU, "LXA is highly unstable.");
             }
             InstrType::RLA => {
-                let (val, _) = inst.addr_mode.resolve(self, cartridge);
+                let (val, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let carry = self.get_flag(CARRY_FLAG);
                 let result = (val << 1) | carry;
 
-                inst.addr_mode.write(self, result, cartridge);
+                inst.addr_mode.write(result, self, ppu, cartridge);
 
                 self.set_flag(CARRY_FLAG, val & 0x80 != 0);
 
@@ -899,11 +902,11 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::RRA => {
-                let (val, _) = inst.addr_mode.resolve(self, cartridge);
+                let (val, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let carry = self.get_flag(CARRY_FLAG);
                 let result = (val >> 1) | (carry << 7);
 
-                inst.addr_mode.write(self, result, cartridge);
+                inst.addr_mode.write(result, self, ppu, cartridge);
 
                 let carry = val & 0x1;
                 let (sum, carry1) = result.overflowing_add(self.reg_a);
@@ -922,14 +925,14 @@ impl NESCPU {
             }
             InstrType::SAX => {
                 let val = self.reg_a & self.reg_x;
-                inst.addr_mode.write(self, val, cartridge);
+                inst.addr_mode.write(val, self, ppu, cartridge);
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
             InstrType::SBX => {
                 let val = self.reg_a & self.reg_x;
-                let (mem, _) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let (res, borrow) = val.overflowing_sub(mem);
 
                 self.reg_x = res;
@@ -957,10 +960,10 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::SLO => {
-                let (val, _) = inst.addr_mode.resolve(self, cartridge);
+                let (val, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let result = val << 1;
 
-                inst.addr_mode.write(self, result, cartridge);
+                inst.addr_mode.write(result, self, ppu, cartridge);
 
                 self.set_flag(CARRY_FLAG, val & 0x80 != 0);
 
@@ -973,10 +976,10 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::SRE => {
-                let (val, _) = inst.addr_mode.resolve(self, cartridge);
+                let (val, _) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let result = val >> 1;
 
-                inst.addr_mode.write(self, result, cartridge);
+                inst.addr_mode.write(result, self, ppu, cartridge);
 
                 self.set_flag(CARRY_FLAG, val & 0x01 != 0);
 
@@ -994,7 +997,7 @@ impl NESCPU {
                 inst.cycles
             }
             InstrType::USBC => {
-                let (mem, additional_cycle) = inst.addr_mode.resolve(self, cartridge);
+                let (mem, additional_cycle) = inst.addr_mode.resolve(self, ppu, cartridge);
                 let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
                 let (diff, borrow2) = diff.overflowing_sub(1 - self.get_flag(CARRY_FLAG));
 
@@ -1019,7 +1022,43 @@ impl NESCPU {
 
         cycles as u32
     }
+
+    fn update_history(&mut self, inst: &Instruction) {
+        for i in 0..(Self::HISTORY_SIZE - 1) {
+            self.history[i] = self.history[i + 1];
+        }
+
+        self.history[Self::HISTORY_SIZE - 1] = Some(inst.clone());
+    }
+
+    pub fn history_summary<F>(&self, mut handler: F)
+    where
+        F: FnMut(&str),
+    {
+        for i in 0..Self::HISTORY_SIZE {
+            match self.history[i] {
+                Some(inst) => {
+                    if i == Self::HISTORY_SIZE - 1 {
+                        handler(&format!("--> {:#06X}: {}", inst.pc, inst.to_string()));
+                    } else {
+                        handler(&format!("    {:#06X}: {}", inst.pc, inst.to_string()));
+                    }
+                }
+                None => {
+                    handler("    ------: ------");
+                }
+            }
+        }
+    }
+
+    pub fn report_backtrace(&self) {
+        error!(CPU, "Backtrace:");
+        self.history_summary(|line| {
+            error!(CPU, "{}", line);
+        });
+    }
 }
 
 pub mod bus;
 pub mod instr;
+pub mod ram;

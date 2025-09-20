@@ -98,7 +98,7 @@ pub static LOG_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
 });
 
 impl Logger {
-    const PREFIX_LEN: usize = 11;
+    const PREFIX_LEN: usize = 15;
 
     fn log_internal(&mut self, location: LogLocation, level: LogLevel, message: String) {
         for line in message.split(|c| c == '\n') {
@@ -197,14 +197,14 @@ impl Logger {
                 buffer.draw_text(
                     0,
                     idx * FONT_HEIGHT as usize,
-                    format!("{:04X} ", idx).as_bytes(),
+                    format!("{:08X} ", idx).as_bytes(),
                     prefix_color,
                     bg_color,
                 );
 
                 // Draw the prefix.
                 buffer.draw_text(
-                    5 * FONT_WIDTH as usize,
+                    9 * FONT_WIDTH as usize,
                     idx * FONT_HEIGHT as usize,
                     format!("[{}] ", entry.location.to_str()).as_bytes(),
                     LoggerColor::level_color(entry.level),
@@ -233,14 +233,14 @@ impl Logger {
                 buffer.draw_text(
                     0,
                     idx * FONT_HEIGHT as usize,
-                    format!("{:04X} ", idx + after - height).as_bytes(),
+                    format!("{:08X} ", idx + after - height).as_bytes(),
                     prefix_color,
                     bg_color,
                 );
 
                 // Draw the prefix.
                 buffer.draw_text(
-                    5 * FONT_WIDTH as usize,
+                    9 * FONT_WIDTH as usize,
                     idx * FONT_HEIGHT as usize,
                     format!("[{}] ", entry.location.to_str()).as_bytes(),
                     LoggerColor::level_color(entry.level),
