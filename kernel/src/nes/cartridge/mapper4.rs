@@ -3,6 +3,7 @@
 //
 
 use heapless::Vec;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     critical, log,
@@ -13,6 +14,7 @@ use crate::{
     warn,
 };
 
+#[derive(Serialize, Deserialize)]
 pub struct Mapper4 {
     prg_rom_size: usize,
     prg_ram: Vec<u8, { Mapper4::PRG_RAM_SIZE }>,

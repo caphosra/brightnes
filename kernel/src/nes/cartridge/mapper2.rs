@@ -1,10 +1,12 @@
 use heapless::Vec;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     critical, log,
     nes::cartridge::{Cartridge, CartridgeOperations},
 };
 
+#[derive(Serialize, Deserialize)]
 pub struct Mapper2 {
     prg_rom_size: usize,
     prg_rom: Vec<u8, { Mapper2::PRG_ROM_SIZE }>,

@@ -1,6 +1,7 @@
 use core::ptr::slice_from_raw_parts_mut;
 
 use heapless::Vec;
+use serde::{Deserialize, Serialize};
 use spin::{Lazy, RwLock};
 
 use crate::nes::cartridge::mapper0::Mapper0;
@@ -13,6 +14,7 @@ use crate::nes::Mirroring;
 use crate::{critical, info};
 
 #[repr(C)]
+#[derive(Serialize, Deserialize)]
 pub struct NESHeader {
     magic: [u8; 4],
     prg_rom_size: u8,
@@ -59,11 +61,13 @@ const NES_MAGIC: [u8; 4] = *b"NES\x1A";
 const PRG_ROM_UNIT: usize = 0x4000;
 const CHR_UNIT: usize = 0x2000;
 
+#[derive(Serialize, Deserialize)]
 pub struct Cartridge {
     header: NESHeader,
     kind: CartridgeKind,
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum CartridgeKind {
     Mapper0(Mapper0),
     Mapper2(Mapper2),
