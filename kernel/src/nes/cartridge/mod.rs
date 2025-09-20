@@ -1,5 +1,6 @@
 use core::ptr::slice_from_raw_parts_mut;
 
+use heapless::Vec;
 use spin::{Lazy, RwLock};
 
 use crate::nes::cartridge::mapper0::Mapper0;
@@ -97,7 +98,7 @@ impl Cartridge {
         info!(CAT, "Loaded CHR ROM ({:#x} bytes)", chr_rom_size);
 
         let kind = match mapper {
-            0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
+            0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_rom_size)),
             2 => CartridgeKind::Mapper2(Mapper2::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
             3 => CartridgeKind::Mapper3(Mapper3::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
             4 => CartridgeKind::Mapper4(Mapper4::new(prg_rom_size, chr_rom_size, prg_rom, chr_rom)),
@@ -109,6 +110,51 @@ impl Cartridge {
         info!(SYS, "Loaded the cartridge.");
 
         Cartridge { header, kind }
+    }
+
+    pub fn alloc_prg_rom<const N: usize>(prg_rom_size: usize) -> (Vec<u8, N>, *mut u8) {
+        if prg_rom_size > N {
+            critical!(
+                CAT,
+                "Expected {:#x} bytes on PRG ROM size but found {:#x} bytes.",
+                N,
+                prg_rom_size
+            );
+        }
+
+        // Load PRG ROM.
+        let prg_rom_start = unsafe { (NES_FILE_ADDR as *mut u8).add(size_of::<NESHeader>()) };
+        let prg_rom =
+            unsafe { slice_from_raw_parts_mut(prg_rom_start, prg_rom_size).as_mut() }.unwrap();
+
+        info!(CAT, "Loaded PRG ROM ({:#x} bytes)", prg_rom_size);
+
+        // Calculate the start address of CHR ROM.
+        let chr_rom_start = unsafe { prg_rom_start.add(prg_rom_size) };
+
+        (Vec::from_slice(prg_rom).unwrap(), chr_rom_start)
+    }
+
+    pub fn alloc_chr_rom<const N: usize>(
+        chr_rom_start: *mut u8,
+        chr_rom_size: usize,
+    ) -> Vec<u8, N> {
+        if chr_rom_size > N {
+            critical!(
+                CAT,
+                "Expected {:#x} bytes on CHR ROM size but found {:#x} bytes.",
+                N,
+                chr_rom_size
+            );
+        }
+
+        // Load CHR ROM.
+        let chr_rom =
+            unsafe { slice_from_raw_parts_mut(chr_rom_start, chr_rom_size).as_mut() }.unwrap();
+
+        info!(CAT, "Loaded CHR ROM ({:#x} bytes)", chr_rom_size);
+
+        Vec::from_slice(chr_rom).unwrap()
     }
 
     #[inline(always)]
