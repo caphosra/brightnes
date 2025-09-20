@@ -3,9 +3,16 @@ use spin::{Lazy, RwLock};
 use x86_64::structures::idt::InterruptStackFrame;
 
 use crate::{
+    error, info,
     logger::Logger,
-    nes::pad::{PadButton, PADS},
+    nes::{
+        cartridge::CARTRIDGE,
+        cpu::NES_CPU,
+        pad::{PadButton, PADS},
+        ppu::NES_PPU,
+    },
     proc::{ProcessMode, PROCESS_SWITCHER},
+    serial::Serial,
 };
 
 pub struct BKeyboard;
@@ -29,15 +36,15 @@ impl BKeyboard {
                 }
                 (KeyState::Down, KeyCode::F1) => {
                     let mut switcher = PROCESS_SWITCHER.write();
-                    switcher.switch_proc(ProcessMode::Game, stack_frame);
+                    switcher.switch_proc(ProcessMode::Game, stack_frame, false);
                 }
                 (KeyState::Down, KeyCode::F2) => {
                     let mut switcher = PROCESS_SWITCHER.write();
-                    switcher.switch_proc(ProcessMode::Info, stack_frame);
+                    switcher.switch_proc(ProcessMode::Info, stack_frame, false);
                 }
                 (KeyState::Down, KeyCode::F3) => {
                     let mut switcher = PROCESS_SWITCHER.write();
-                    switcher.switch_proc(ProcessMode::Log, stack_frame);
+                    switcher.switch_proc(ProcessMode::Log, stack_frame, false);
                 }
                 (state, KeyCode::L) => {
                     BKeyboard::on_pad_button(state, PadButton::A);
@@ -80,6 +87,56 @@ impl BKeyboard {
                 }
                 (KeyState::Down, KeyCode::ArrowRight) => {
                     Logger::reset_scroll();
+                }
+                (KeyState::Down, KeyCode::Backspace) => {
+                    // Get the latest states.
+                    unsafe {
+                        NES_CPU.force_write_unlock();
+                    }
+                    let mut cpu = NES_CPU.write();
+                    unsafe {
+                        NES_PPU.force_write_unlock();
+                    }
+                    let mut ppu = NES_PPU.write();
+                    unsafe {
+                        CARTRIDGE.force_write_unlock();
+                    }
+                    let mut cartridge = CARTRIDGE.write();
+
+                    // Load the latest state if requested.
+                    if let Err(_) = Serial::communicate(|serial| {
+                        serial.load_state(&mut cpu, &mut ppu, &mut cartridge)
+                    }) {
+                        error!(COM, "Failed to load the latest state.");
+                    } else {
+                        info!(COM, "Loaded the latest saved state successfully.");
+                    }
+
+                    let mut switcher = PROCESS_SWITCHER.write();
+                    switcher.reset_main(stack_frame);
+                }
+                (KeyState::Down, KeyCode::Return) => {
+                    // Get the latest states.
+                    unsafe {
+                        NES_CPU.force_write_unlock();
+                    }
+                    let cpu = NES_CPU.read();
+                    unsafe {
+                        NES_PPU.force_write_unlock();
+                    }
+                    let ppu = NES_PPU.read();
+                    unsafe {
+                        CARTRIDGE.force_write_unlock();
+                    }
+                    let cartridge = CARTRIDGE.read();
+
+                    if let Err(_) =
+                        Serial::communicate(|serial| serial.save_state(&cpu, &ppu, &cartridge))
+                    {
+                        error!(COM, "Failed to save the current state.");
+                    } else {
+                        info!(COM, "Saved the current state successfully.");
+                    }
                 }
                 (_, _) => {}
             }

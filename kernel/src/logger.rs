@@ -16,8 +16,7 @@ pub enum LogLocation {
     APU,
     CAT,
     BUS,
-    #[allow(dead_code)]
-    UNK,
+    COM,
 }
 
 impl LogLocation {
@@ -29,7 +28,7 @@ impl LogLocation {
             LogLocation::APU => "APU",
             LogLocation::CAT => "CAT",
             LogLocation::BUS => "BUS",
-            LogLocation::UNK => "UNK",
+            LogLocation::COM => "COM",
         }
     }
 }

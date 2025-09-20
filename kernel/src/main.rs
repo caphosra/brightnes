@@ -4,7 +4,6 @@
 
 extern crate alloc;
 
-use core::arch::asm;
 use core::panic::PanicInfo;
 
 use x86_64::instructions::{hlt, interrupts};
@@ -18,16 +17,13 @@ use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::InterruptType;
 use crate::nes::cpu::NES_CPU;
 use crate::nes::ppu::{GAME_FB, NES_PPU};
-
-const STACK_BOTTOM: usize = 0x40_000_000;
+use crate::proc::ProcessSwitcher;
 
 #[no_mangle]
 #[inline(never)]
 pub extern "C" fn kernel_main() -> ! {
     // Set the stack pointer.
-    unsafe {
-        asm!("mov rsp, {x}", x = const STACK_BOTTOM);
-    }
+    ProcessSwitcher::reset_main_stack();
 
     if interrupts::are_enabled() {
         interrupts::disable();
@@ -53,6 +49,15 @@ pub extern "C" fn kernel_main() -> ! {
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
+    {
+        let mut cartridge = CARTRIDGE.write();
+        let mut cpu = NES_CPU.write();
+        let mut ppu = NES_PPU.write();
+        cpu.interrupt(InterruptType::RST, &mut ppu, &mut cartridge);
+
+        log!(SYS, "Initialized the NES CPU.");
+    }
+
     game_main();
 }
 
@@ -61,8 +66,6 @@ pub fn game_main() -> ! {
     let mut cpu = NES_CPU.write();
     let mut ppu = NES_PPU.write();
     let mut frame_buffer = GAME_FB.write();
-
-    cpu.interrupt(InterruptType::RST, &mut ppu, &mut cartridge);
 
     info!(SYS, "Start the game.");
 
@@ -78,7 +81,6 @@ pub fn game_main() -> ! {
                 &mut cpu,
                 &mut cartridge,
             );
-
             cycles += required as usize;
         }
         frame_buffer.flush(false);
