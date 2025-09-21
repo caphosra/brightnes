@@ -12,6 +12,10 @@ impl APUSquare {
     pub fn new() -> Self {
         Self { active: false }
     }
+
+    pub fn write_reg(&mut self, addr: u16, data: u8) {
+        // TODO
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -23,6 +27,10 @@ impl APUTriangle {
     pub fn new() -> Self {
         Self { active: false }
     }
+
+    pub fn write_reg(&mut self, addr: u16, data: u8) {
+        // TODO
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -33,6 +41,10 @@ pub struct APUNoise {
 impl APUNoise {
     pub fn new() -> Self {
         Self { active: false }
+    }
+
+    pub fn write_reg(&mut self, addr: u16, data: u8) {
+        // TODO
     }
 }
 
@@ -48,6 +60,10 @@ impl DMC {
             active: false,
             irq: false,
         }
+    }
+
+    pub fn write_reg(&mut self, addr: u16, data: u8) {
+        // TODO
     }
 }
 
@@ -116,7 +132,22 @@ impl APU {
     }
 
     pub fn write_reg(&mut self, addr: u16, data: u8) {
-        if addr == 0x4015 {
+        if addr < 0x4004 {
+            // Square 1
+            self.squares[0].write_reg(addr - 0x4000, data);
+        } else if addr < 0x4008 {
+            // Square 2
+            self.squares[1].write_reg(addr - 0x4004, data);
+        } else if addr < 0x400C {
+            // Triangle
+            self.triangle.write_reg(addr - 0x4008, data);
+        } else if addr < 0x4010 {
+            // Noise
+            self.noise.write_reg(addr - 0x400C, data);
+        } else if addr < 0x4014 {
+            // DMC
+            self.dmc.write_reg(addr - 0x4010, data);
+        } else if addr == 0x4015 {
             // ---D NT21
 
             self.squares[0].active = (data & 1) != 0;
@@ -124,8 +155,7 @@ impl APU {
             self.triangle.active = ((data >> 2) & 1) != 0;
             self.noise.active = ((data >> 3) & 1) != 0;
             self.dmc.active = ((data >> 4) & 1) != 0;
-        }
-        if addr == 0x4017 {
+        } else if addr == 0x4017 {
             // SD-- ----
 
             self.frame_counter.mode = if ((data >> 7) & 1) != 0 {
