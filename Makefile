@@ -1,4 +1,7 @@
-.PHONY: build-kernel build-kernel-dbg resources build run run-dbg gdb
+.PHONY: build-kernel \
+	build-kernel-dbg \
+	build-server \
+	resources build run run-dbg gdb
 
 OUT_DIR = ./dest
 NES_FILE = ./res/nes/$(GAME)
@@ -46,6 +49,10 @@ BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 	./bootloader/src/fs.rs \
 	./bootloader/src/main.rs
 
+SERVER_SOURCES = ./server/Cargo.toml \
+	./server/src/fs.rs \
+	./server/src/main.rs
+
 KERNEL_RELEASE = ./target/x86_64-unknown-none/release/brightnes-kernel
 KERNEL_DEBUG = ./target/x86_64-unknown-none/debug/brightnes-kernel
 
@@ -77,8 +84,12 @@ $(OUT_DIR)/efi/boot/bootx64.efi: $(BOOTLOADER_SOURCES)
 	mkdir -p $(OUT_DIR)/efi/boot
 	cp ./target/x86_64-unknown-uefi/debug/brightnes-bootloader.efi $(OUT_DIR)/efi/boot/bootx64.efi
 
+build-server: $(SERVER_SOURCES)
+	cargo build \
+		--package brightnes-server \
+		--release
+
 resources: ./res/font/Tamsyn8x16r.psf.gz
-	mkdir -p $(OUT_DIR)/res/font
 	gzip -d < ./res/font/Tamsyn8x16r.psf.gz > $(OUT_DIR)/system_font.psf
 
 	cp $(NES_FILE) $(OUT_DIR)/game.nes
@@ -92,6 +103,11 @@ run: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 run-dbg: build-kernel-dbg $(OUT_DIR)/efi/boot/bootx64.efi resources
 	qemu-system-x86_64 $(QEMU_FLAGS) \
 		-S -gdb tcp::31415
+
+run-server: $(SERVER_SOURCES)
+	cargo run \
+		--package brightnes-server \
+		--release
 
 gdb:
 	gdb -x ./.gdbinit
