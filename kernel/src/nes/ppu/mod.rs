@@ -452,8 +452,16 @@ impl NESPPU {
             }
 
             if self.x == Self::IRQ_CYCLE && self.y < NES_FRAME_HEIGHT as u16 {
-                // Clock IRQ counter
-                cartridge.irq_clock(cpu);
+                if self.ctrl_bg_pattern_table() != self.ctrl_sprite_pattern_table()
+                    && (self.mask_bg_visible() || self.mask_sprite_visible())
+                {
+                    // https://www.nesdev.org/wiki/MMC3
+
+                    // BG uses $0000, sprite uses $1000 or vice versa.
+
+                    // Clock IRQ counter
+                    cartridge.irq_clock(cpu);
+                }
             }
 
             if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
