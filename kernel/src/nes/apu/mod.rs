@@ -1,20 +1,65 @@
 use serde::{Deserialize, Serialize};
 use spin::{Lazy, RwLock};
 
-use crate::{log, warn};
+use crate::{critical, log};
 
 #[derive(Serialize, Deserialize)]
-pub struct APUSquare {
+pub struct APUPulse {
     pub active: bool,
+    pub volume: u8,
+    pub constant_volume: bool,
+    pub loop_enabled: bool,
+    pub duty_cycle: u8,
+    pub sweep_enabled: bool,
+    pub sweep_period: u8,
+    pub sweep_negate: bool,
+    pub sweep_shift: u8,
+    pub timer: u16,
+    pub length_counter: u8,
 }
 
-impl APUSquare {
+impl APUPulse {
     pub fn new() -> Self {
-        Self { active: false }
+        Self {
+            active: false,
+            volume: 0,
+            constant_volume: false,
+            loop_enabled: false,
+            duty_cycle: 0,
+            sweep_enabled: false,
+            sweep_period: 0,
+            sweep_negate: false,
+            sweep_shift: 0,
+            timer: 0,
+            length_counter: 0,
+        }
     }
 
     pub fn write_reg(&mut self, addr: u16, data: u8) {
-        // TODO
+        match addr {
+            0 => {
+                self.duty_cycle = (data >> 6) & 0b11;
+                self.loop_enabled = ((data >> 5) & 1) != 0;
+                self.constant_volume = ((data >> 4) & 1) != 0;
+                self.volume = data & 0b1111;
+            }
+            1 => {
+                self.sweep_enabled = ((data >> 7) & 1) != 0;
+                self.sweep_period = (data >> 4) & 0b111;
+                self.sweep_negate = ((data >> 3) & 1) != 0;
+                self.sweep_shift = data & 0b111;
+            }
+            2 => {
+                self.timer = (self.timer & 0xFF00) | (data as u16);
+            }
+            3 => {
+                self.timer = (self.timer & 0x00FF) | (((data & 0b111) as u16) << 8);
+                self.length_counter = (data >> 3) & 0b11111;
+            }
+            _ => {
+                critical!(APU, "Pulse does not support such operation: {:#06X}", addr);
+            }
+        }
     }
 }
 
@@ -91,7 +136,7 @@ impl APUFrameCounter {
 
 #[derive(Serialize, Deserialize)]
 pub struct APU {
-    squares: [APUSquare; 2],
+    squares: [APUPulse; 2],
     triangle: APUTriangle,
     noise: APUNoise,
     dmc: DMC,
@@ -103,7 +148,7 @@ pub static NES_APU: Lazy<RwLock<APU>> = Lazy::new(|| RwLock::new(APU::new()));
 impl APU {
     pub fn new() -> Self {
         Self {
-            squares: [APUSquare::new(), APUSquare::new()],
+            squares: [APUPulse::new(), APUPulse::new()],
             triangle: APUTriangle::new(),
             noise: APUNoise::new(),
             dmc: DMC::new(),
@@ -123,11 +168,7 @@ impl APU {
                 | (self.frame_counter.irq as u8) << 6
                 | (self.dmc.irq as u8) << 7
         } else {
-            warn!(
-                APU,
-                "Attempt to read unimplemented APU register: {:#06X}", addr
-            );
-            0
+            critical!(APU, "Attempt to read unused register: {:#06X}", addr);
         }
     }
 
@@ -174,10 +215,7 @@ impl APU {
                 self.frame_counter.irq = frame_counter_irq;
             }
         } else {
-            warn!(
-                APU,
-                "Attempt to write unimplemented APU register: {:#06X}", addr
-            );
+            critical!(APU, "Attempt to write unused register: {:#06X}", addr);
         }
     }
 
