@@ -453,7 +453,7 @@ impl NESPPU {
 
             if self.x == Self::IRQ_CYCLE && self.y < NES_FRAME_HEIGHT as u16 {
                 // Clock IRQ counter
-                cartridge.irq_clock(cpu, self);
+                cartridge.irq_clock(cpu);
             }
 
             if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
@@ -461,7 +461,7 @@ impl NESPPU {
                 self.reg_status |= 0x80;
 
                 if self.ctrl_nmi_enable() {
-                    cpu.interrupt(InterruptType::NMI, self, cartridge);
+                    cpu.interrupt(InterruptType::NMI);
                 }
             }
 

@@ -13,6 +13,7 @@ use crate::info::InfoProc;
 use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
 use crate::logger::LOG_FB;
+use crate::nes::apu::NES_APU;
 use crate::nes::cartridge::CARTRIDGE;
 use crate::nes::cpu::InterruptType;
 use crate::nes::cpu::NES_CPU;
@@ -50,10 +51,11 @@ pub extern "C" fn kernel_main() -> ! {
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
     {
-        let mut cartridge = CARTRIDGE.write();
+        let _ = CARTRIDGE.write();
         let mut cpu = NES_CPU.write();
-        let mut ppu = NES_PPU.write();
-        cpu.interrupt(InterruptType::RST, &mut ppu, &mut cartridge);
+        let _ = NES_PPU.write();
+        let _ = NES_APU.write();
+        cpu.interrupt(InterruptType::RST);
 
         log!(SYS, "Initialized the NES CPU.");
     }
@@ -65,6 +67,7 @@ pub fn game_main() -> ! {
     let mut cartridge = CARTRIDGE.write();
     let mut cpu = NES_CPU.write();
     let mut ppu = NES_PPU.write();
+    let mut apu = NES_APU.write();
     let mut frame_buffer = GAME_FB.write();
 
     info!(SYS, "Start the game.");
@@ -74,13 +77,14 @@ pub fn game_main() -> ! {
 
         let mut cycles = 0;
         while cycles < FRAME_CYCLES {
-            let required = cpu.clock(&mut ppu, &mut cartridge);
+            let required = cpu.clock(&mut ppu, &mut apu, &mut cartridge);
             ppu.render_bg(
                 required as usize * 3,
                 &mut frame_buffer,
                 &mut cpu,
                 &mut cartridge,
             );
+            apu.clock(cycles);
             cycles += required as usize;
         }
         frame_buffer.flush(false);

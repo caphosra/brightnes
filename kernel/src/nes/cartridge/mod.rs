@@ -9,7 +9,6 @@ use crate::nes::cartridge::mapper2::Mapper2;
 use crate::nes::cartridge::mapper3::Mapper3;
 use crate::nes::cartridge::mapper4::Mapper4;
 use crate::nes::cpu::{InterruptType, NESCPU};
-use crate::nes::ppu::NESPPU;
 use crate::nes::Mirroring;
 use crate::{critical, info};
 
@@ -195,10 +194,10 @@ impl Cartridge {
         };
     }
 
-    pub fn irq_clock(&mut self, cpu: &mut NESCPU, ppu: &mut NESPPU) {
+    pub fn irq_clock(&mut self, cpu: &mut NESCPU) {
         if let CartridgeKind::Mapper4(mapper) = &mut self.kind {
             if mapper.irq_clock() {
-                cpu.interrupt(InterruptType::IRQ, ppu, self);
+                cpu.interrupt(InterruptType::IRQ);
             }
         }
     }
