@@ -84,7 +84,7 @@ pub fn game_main() -> ! {
                 &mut cpu,
                 &mut cartridge,
             );
-            apu.clock(cycles);
+            apu.clock(cycles, &mut cpu);
             cycles += required as usize;
         }
         frame_buffer.flush(false);

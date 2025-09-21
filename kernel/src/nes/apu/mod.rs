@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use spin::{Lazy, RwLock};
 
-use crate::{critical, log};
+use crate::{
+    critical, log,
+    nes::cpu::{InterruptType, NESCPU},
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct APUPulse {
@@ -73,7 +76,7 @@ impl APUTriangle {
         Self { active: false }
     }
 
-    pub fn write_reg(&mut self, addr: u16, data: u8) {
+    pub fn write_reg(&mut self, _addr: u16, _data: u8) {
         // TODO
     }
 }
@@ -88,7 +91,7 @@ impl APUNoise {
         Self { active: false }
     }
 
-    pub fn write_reg(&mut self, addr: u16, data: u8) {
+    pub fn write_reg(&mut self, _addr: u16, _data: u8) {
         // TODO
     }
 }
@@ -107,7 +110,7 @@ impl DMC {
         }
     }
 
-    pub fn write_reg(&mut self, addr: u16, data: u8) {
+    pub fn write_reg(&mut self, _addr: u16, _data: u8) {
         // TODO
     }
 }
@@ -123,14 +126,68 @@ pub enum APUFrameCounterMode {
 pub struct APUFrameCounter {
     pub irq: bool,
     pub mode: APUFrameCounterMode,
+    step: usize,
+    frame: u8,
 }
 
 impl APUFrameCounter {
+    const CLOCK_PER_FRAME: usize = 7457;
+
     pub fn new() -> Self {
         Self {
             irq: false,
             mode: APUFrameCounterMode::FourStep,
+            step: 0,
+            frame: 0,
         }
+    }
+
+    pub fn clock(&mut self, cycles: usize, cpu: &mut NESCPU) {
+        self.step += cycles;
+        if self.step >= Self::CLOCK_PER_FRAME {
+            self.step -= Self::CLOCK_PER_FRAME;
+            self.frame += 1;
+            match self.mode {
+                APUFrameCounterMode::FourStep => {
+                    if self.frame == 5 {
+                        self.frame = 0;
+                    }
+
+                    if self.frame == 0 && self.irq {
+                        // Trigger IRQ
+                        cpu.interrupt(InterruptType::IRQ);
+                    }
+                }
+                APUFrameCounterMode::FiveStep => {
+                    if self.frame == 6 {
+                        self.frame = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn write_reg(&mut self, data: u8) {
+        // SD-- ----
+
+        self.mode = if ((data >> 7) & 1) != 0 {
+            APUFrameCounterMode::FiveStep
+        } else {
+            APUFrameCounterMode::FourStep
+        };
+
+        let frame_counter_irq = ((data >> 6) & 1) == 0;
+        if frame_counter_irq != self.irq {
+            if frame_counter_irq {
+                log!(APU, "APU Frame Counter IRQ enabled.");
+            } else {
+                log!(APU, "APU Frame Counter IRQ disabled.");
+            }
+            self.irq = frame_counter_irq;
+        }
+
+        self.step = 0;
+        self.frame = 0;
     }
 }
 
@@ -197,32 +254,15 @@ impl APU {
             self.noise.active = ((data >> 3) & 1) != 0;
             self.dmc.active = ((data >> 4) & 1) != 0;
         } else if addr == 0x4017 {
-            // SD-- ----
-
-            self.frame_counter.mode = if ((data >> 7) & 1) != 0 {
-                APUFrameCounterMode::FiveStep
-            } else {
-                APUFrameCounterMode::FourStep
-            };
-
-            let frame_counter_irq = ((data >> 6) & 1) == 0;
-            if frame_counter_irq != self.frame_counter.irq {
-                if frame_counter_irq {
-                    log!(APU, "APU Frame Counter IRQ enabled.");
-                } else {
-                    log!(APU, "APU Frame Counter IRQ disabled.");
-                }
-                self.frame_counter.irq = frame_counter_irq;
-            }
+            // Frame Counter
+            self.frame_counter.write_reg(data);
         } else {
             critical!(APU, "Attempt to write unused register: {:#06X}", addr);
         }
     }
 
-    pub fn clock(&mut self, cycles: usize) {
-        for _ in 0..cycles {
-            // TODO
-        }
+    pub fn clock(&mut self, cycles: usize, cpu: &mut NESCPU) {
+        self.frame_counter.clock(cycles, cpu);
     }
 }
 
