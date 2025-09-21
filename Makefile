@@ -4,6 +4,7 @@ OUT_DIR = ./dest
 NES_FILE = ./res/nes/$(GAME)
 SERIAL_PORT = 19837
 
+CARGO_FLAGS =
 QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
 	-drive format=raw,file=fat:rw:$(OUT_DIR) \
 	-monitor stdio \
@@ -52,7 +53,8 @@ $(KERNEL_RELEASE): $(KERNEL_SOURCES)
 	cargo build \
 		--package brightnes-kernel \
 		--target x86_64-unknown-none \
-		--release
+		--release \
+		$(CARGO_FLAGS)
 
 build-kernel: $(KERNEL_RELEASE)
 	mkdir -p $(OUT_DIR)
@@ -61,7 +63,8 @@ build-kernel: $(KERNEL_RELEASE)
 $(KERNEL_DEBUG): $(KERNEL_SOURCES)
 	cargo build \
 		--package brightnes-kernel \
-		--target x86_64-unknown-none
+		--target x86_64-unknown-none \
+		$(CARGO_FLAGS)
 
 build-kernel-dbg: $(KERNEL_DEBUG)
 	mkdir -p $(OUT_DIR)

@@ -1,3 +1,5 @@
+use alloc::string::ToString;
+
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum Mirroring {
@@ -11,6 +13,15 @@ impl From<u8> for Mirroring {
             Mirroring::Horizontal
         } else {
             Mirroring::Vertical
+        }
+    }
+}
+
+impl ToString for Mirroring {
+    fn to_string(&self) -> alloc::string::String {
+        match self {
+            Mirroring::Horizontal => "Horizontal".to_string(),
+            Mirroring::Vertical => "Vertical".to_string(),
         }
     }
 }

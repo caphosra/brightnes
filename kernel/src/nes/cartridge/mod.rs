@@ -1,5 +1,6 @@
 use core::ptr::slice_from_raw_parts_mut;
 
+use alloc::string::ToString;
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
 use spin::{Lazy, RwLock};
@@ -51,6 +52,11 @@ impl NESHeader {
     pub fn mapper(&self) -> u8 {
         (self.flag6 >> 4) | (self.flag7 & 0xF0)
     }
+
+    #[inline(always)]
+    pub fn mirroring(&self) -> Mirroring {
+        (self.flag6 & 1).into()
+    }
 }
 
 const NES_FILE_ADDR: usize = 0x3_000_000;
@@ -85,6 +91,9 @@ impl Cartridge {
     pub fn new(header: NESHeader, prg_rom_size: usize, chr_size: usize) -> Self {
         let mapper = header.mapper();
         info!(CAT, "Mapper: {}", mapper);
+
+        let mirroring = header.mirroring();
+        info!(CAT, "Mirroring: {}", mirroring.to_string());
 
         let kind = match mapper {
             0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_size)),

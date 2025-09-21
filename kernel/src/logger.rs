@@ -54,9 +54,16 @@ pub struct Logger {
 
 struct LoggerColor;
 
+#[cfg(feature = "logging")]
 #[macro_export]
 macro_rules! log {
     ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Log, alloc::format!($($arg)*)));
+}
+
+#[cfg(not(feature = "logging"))]
+#[macro_export]
+macro_rules! log {
+    ($loc:tt, $($arg:tt)*) => {};
 }
 
 #[macro_export]
