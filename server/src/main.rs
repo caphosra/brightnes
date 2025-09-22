@@ -15,10 +15,11 @@ const SPECIAL_CTRL_CHAR: u8 = 0x93;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum SerialRequest {
-    #[allow(dead_code)]
     Active = 1,
     SaveState = 2,
     LoadState = 3,
+    SaveRAM = 4,
+    LoadRAM = 5,
 }
 
 fn main() {
@@ -79,6 +80,17 @@ fn handle_req(stream: &mut TcpStream) -> std::io::Result<()> {
             println!("[-] Request: {:?}", SerialRequest::LoadState);
 
             FileSystem::load_state(stream)?;
+        }
+        x if x == SerialRequest::SaveRAM as u8 => {
+            println!("[-] Request: {:?}", SerialRequest::SaveRAM);
+
+            let file_name = FileSystem::save_ram(stream)?;
+            println!("[ ]  Saved RAM to file: {}", file_name);
+        }
+        x if x == SerialRequest::LoadRAM as u8 => {
+            println!("[-] Request: {:?}", SerialRequest::LoadRAM);
+
+            FileSystem::load_ram(stream)?;
         }
         _ => {
             println!("[!] Unknown request: {}", buf[0]);

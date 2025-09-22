@@ -22,6 +22,8 @@ pub enum SerialRequest {
     Active = 1,
     SaveState = 2,
     LoadState = 3,
+    SaveRAM = 4,
+    LoadRAM = 5,
 }
 
 impl SerialRequest {
@@ -145,6 +147,29 @@ impl Serial {
         })?;
 
         Ok(())
+    }
+
+    pub fn save_ram(&mut self, data: &[u8]) {
+        SerialRequest::SaveRAM.send(self);
+
+        self.write_u32(data.len() as u32);
+        self.write(data);
+    }
+
+    pub fn load_ram(&mut self, buffer: &mut [u8]) {
+        SerialRequest::LoadRAM.send(self);
+
+        let size = self.read_u32() as usize;
+        if size != buffer.len() {
+            error!(
+                COM,
+                "RAM size mismatch: expected {}, got {}",
+                buffer.len(),
+                size
+            );
+        } else {
+            self.read(buffer);
+        }
     }
 
     pub fn write(&mut self, data: &[u8]) {
