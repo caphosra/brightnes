@@ -5,6 +5,8 @@ use std::{
     time::Duration,
 };
 
+use crate::fs::FileSystem;
+
 const SERVER_ADDR: &str = "127.0.0.1:19837";
 const RETRY_DELAY_MS: u64 = 5000;
 
@@ -61,23 +63,22 @@ fn handle_req(stream: &mut TcpStream) -> std::io::Result<()> {
     stream.read_exact(&mut buf)?;
     match buf[0] {
         x if x == SerialRequest::Active as u8 => {
-            println!("[-] Received {:?}", SerialRequest::Active);
+            println!("[-] Request: {:?}", SerialRequest::Active);
 
             stream.write_all(&[1])?;
 
-            println!("[-] Sent active response.");
+            println!("[ ]  Sent active response.");
         }
         x if x == SerialRequest::SaveState as u8 => {
-            println!("[-] Received {:?}", SerialRequest::SaveState);
+            println!("[-] Request: {:?}", SerialRequest::SaveState);
 
-            let mut size_buf = [0; 4];
-            stream.read_exact(&mut size_buf)?;
-            let size = u32::from_le_bytes(size_buf) as usize;
+            let file_name = FileSystem::save_state(stream)?;
+            println!("[ ]  Saved state to file: {}", file_name);
+        }
+        x if x == SerialRequest::LoadState as u8 => {
+            println!("[-] Request: {:?}", SerialRequest::LoadState);
 
-            let mut cpu_state = vec![0; size];
-            stream.read_exact(&mut cpu_state)?;
-
-            println!("[-] Received CPU state. ({} bytes)", size);
+            FileSystem::load_state(stream)?;
         }
         _ => {
             println!("[!] Unknown request: {}", buf[0]);
@@ -85,3 +86,5 @@ fn handle_req(stream: &mut TcpStream) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+pub mod fs;
