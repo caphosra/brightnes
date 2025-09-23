@@ -77,16 +77,15 @@ impl MemoryAllocator {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn alloc(size: usize, align: usize) -> *mut u8 {
-        let size = align * ((size + align - 1) / align);
-        unsafe { MEM_ALLOC.alloc(Layout::from_size_align_unchecked(size, align)) }
+    pub fn alloc<T>() -> *mut T {
+        let allocated = unsafe { MEM_ALLOC.alloc(Layout::new::<T>()) };
+        allocated as *mut T
     }
 
     #[allow(dead_code)]
-    pub fn alloc_zeroed(size: usize, align: usize) -> *mut u8 {
-        let ptr = Self::alloc(size, align);
-        unsafe { write_bytes(ptr, 0, size) };
+    pub fn alloc_zeroed<T>() -> *mut T {
+        let ptr = Self::alloc::<T>();
+        unsafe { write_bytes(ptr, 0, size_of::<T>()) };
         ptr
     }
 }
