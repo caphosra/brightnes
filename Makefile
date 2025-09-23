@@ -18,7 +18,11 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/int/keyboard.rs \
 	./kernel/src/int/mod.rs \
 	./kernel/src/nes/apu/bus.rs \
+	./kernel/src/nes/apu/dmc.rs \
 	./kernel/src/nes/apu/mod.rs \
+	./kernel/src/nes/apu/noise.rs \
+	./kernel/src/nes/apu/pulse.rs \
+	./kernel/src/nes/apu/triangle.rs \
 	./kernel/src/nes/cartridge/mapper0.rs \
 	./kernel/src/nes/cartridge/mapper2.rs \
 	./kernel/src/nes/cartridge/mapper3.rs \
