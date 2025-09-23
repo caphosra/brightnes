@@ -220,6 +220,10 @@ impl Mapper4 {
             false
         }
     }
+
+    pub fn working_ram(&mut self) -> &mut [u8] {
+        &mut self.prg_ram
+    }
 }
 
 impl CartridgeOperations for Mapper4 {

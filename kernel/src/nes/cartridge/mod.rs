@@ -220,6 +220,13 @@ impl Cartridge {
             }
         }
     }
+
+    pub fn working_ram(&mut self) -> Option<&mut [u8]> {
+        match &mut self.kind {
+            CartridgeKind::Mapper4(mapper) => Some(mapper.working_ram()),
+            _ => None,
+        }
+    }
 }
 
 trait CartridgeOperations {

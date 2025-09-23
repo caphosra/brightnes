@@ -82,12 +82,19 @@ pub fn game_main() -> ! {
         const FRAME_CYCLES: usize = 29780;
 
         let mut cycles = 0;
+
         while cycles < FRAME_CYCLES {
+            interrupts::disable();
+
             let required = cpu.clock(ppu, apu, cartridge);
             ppu.render_bg(required as usize * 3, &mut frame_buffer, cpu, cartridge);
             apu.clock(cycles, cpu);
+
+            interrupts::enable();
+
             cycles += required as usize;
         }
+
         frame_buffer.flush(false);
     }
 }

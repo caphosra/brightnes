@@ -144,14 +144,16 @@ impl Serial {
         Ok(())
     }
 
-    pub fn save_ram(&mut self, data: &[u8]) {
+    pub fn save_ram(&mut self, data: &[u8]) -> Result<(), ()> {
         SerialRequest::SaveRAM.send(self);
 
         self.write_u32(data.len() as u32);
         self.write(data);
+
+        Ok(())
     }
 
-    pub fn load_ram(&mut self, buffer: &mut [u8]) {
+    pub fn load_ram(&mut self, buffer: &mut [u8]) -> Result<(), ()> {
         SerialRequest::LoadRAM.send(self);
 
         let size = self.read_u32() as usize;
@@ -162,8 +164,12 @@ impl Serial {
                 buffer.len(),
                 size
             );
+
+            Err(())
         } else {
             self.read(buffer);
+
+            Ok(())
         }
     }
 
