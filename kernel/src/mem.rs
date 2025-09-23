@@ -85,7 +85,7 @@ impl MemoryAllocator {
     #[allow(dead_code)]
     pub fn alloc_zeroed<T>() -> *mut T {
         let ptr = Self::alloc::<T>();
-        unsafe { write_bytes(ptr, 0, size_of::<T>()) };
+        unsafe { write_bytes(ptr, 0, 1) };
         ptr
     }
 }
