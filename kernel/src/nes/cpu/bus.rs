@@ -1,9 +1,9 @@
 use crate::nes::{
     apu::APU,
     cartridge::Cartridge,
-    cpu::NESCPU,
+    cpu::CPU,
     pad::PADS,
-    ppu::{NESPPU, OAM_DMA_ADDR},
+    ppu::{PPU, OAM_DMA_ADDR},
 };
 
 pub struct CPUBus;
@@ -11,8 +11,8 @@ pub struct CPUBus;
 impl CPUBus {
     pub fn read(
         addr: u16,
-        cpu: &NESCPU,
-        ppu: &mut NESPPU,
+        cpu: &CPU,
+        ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
     ) -> u8 {
@@ -45,8 +45,8 @@ impl CPUBus {
     pub fn write(
         addr: u16,
         data: u8,
-        cpu: &mut NESCPU,
-        ppu: &mut NESPPU,
+        cpu: &mut CPU,
+        ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
     ) {

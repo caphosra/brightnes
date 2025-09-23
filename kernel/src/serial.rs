@@ -6,7 +6,7 @@ use uart_16550::SerialPort;
 
 use crate::{
     error, info,
-    nes::{cartridge::Cartridge, cpu::NESCPU, ppu::NESPPU},
+    nes::{cartridge::Cartridge, cpu::CPU, ppu::PPU},
 };
 
 static SERIAL: Lazy<Mutex<Serial>> = Lazy::new(|| {
@@ -50,12 +50,7 @@ impl Serial {
         handler(&mut port)
     }
 
-    pub fn save_state(
-        &mut self,
-        cpu: &NESCPU,
-        ppu: &NESPPU,
-        cartridge: &Cartridge,
-    ) -> Result<(), ()> {
+    pub fn save_state(&mut self, cpu: &CPU, ppu: &PPU, cartridge: &Cartridge) -> Result<(), ()> {
         let crc = Crc::<u32>::new(&CRC_32_ISCSI);
 
         SerialRequest::SaveState.send(self);
@@ -103,8 +98,8 @@ impl Serial {
 
     pub fn load_state(
         &mut self,
-        cpu: &mut NESCPU,
-        ppu: &mut NESPPU,
+        cpu: &mut CPU,
+        ppu: &mut PPU,
         cartridge: &mut Cartridge,
     ) -> Result<(), ()> {
         let crc = Crc::<u32>::new(&CRC_32_ISCSI);

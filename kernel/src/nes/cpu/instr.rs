@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::nes::apu::APU;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::bus::CPUBus;
-use crate::nes::cpu::NESCPU;
-use crate::nes::ppu::NESPPU;
+use crate::nes::cpu::CPU;
+use crate::nes::ppu::PPU;
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum InstrType {
@@ -244,8 +244,8 @@ pub struct Instruction {
 impl Instruction {
     pub fn fetch(
         pc: u16,
-        cpu: &NESCPU,
-        ppu: &mut NESPPU,
+        cpu: &CPU,
+        ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
     ) -> Self {
@@ -718,8 +718,8 @@ impl AddrMode {
 
     pub fn resolve(
         &self,
-        cpu: &NESCPU,
-        ppu: &mut NESPPU,
+        cpu: &CPU,
+        ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
     ) -> (u8, u8) {
@@ -799,8 +799,8 @@ impl AddrMode {
 
     pub fn resolve_addr(
         &self,
-        cpu: &NESCPU,
-        ppu: &mut NESPPU,
+        cpu: &CPU,
+        ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
     ) -> Option<(u16, u8)> {
@@ -829,8 +829,8 @@ impl AddrMode {
     pub fn write(
         &self,
         value: u8,
-        cpu: &mut NESCPU,
-        ppu: &mut NESPPU,
+        cpu: &mut CPU,
+        ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
     ) {

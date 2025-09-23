@@ -6,10 +6,10 @@ use crate::{
     error, info,
     logger::Logger,
     nes::{
-        cartridge::CARTRIDGE,
-        cpu::NES_CPU,
+        cartridge::Cartridge,
+        cpu::CPU,
         pad::{PadButton, PADS},
-        ppu::NES_PPU,
+        ppu::PPU,
     },
     proc::{ProcessMode, PROCESS_SWITCHER},
     serial::Serial,
@@ -89,23 +89,13 @@ impl BKeyboard {
                     Logger::reset_scroll();
                 }
                 (KeyState::Down, KeyCode::Backspace) => {
-                    // Get the latest states.
-                    unsafe {
-                        NES_CPU.force_write_unlock();
-                    }
-                    let mut cpu = NES_CPU.write();
-                    unsafe {
-                        NES_PPU.force_write_unlock();
-                    }
-                    let mut ppu = NES_PPU.write();
-                    unsafe {
-                        CARTRIDGE.force_write_unlock();
-                    }
-                    let mut cartridge = CARTRIDGE.write();
-
                     // Load the latest state if requested.
                     if let Err(_) = Serial::communicate(|serial| {
-                        serial.load_state(&mut cpu, &mut ppu, &mut cartridge)
+                        let cpu = CPU::get();
+                        let ppu = PPU::get();
+                        let cartridge = Cartridge::get();
+
+                        serial.load_state(cpu, ppu, cartridge)
                     }) {
                         error!(COM, "Failed to load the latest state.");
                     } else {
@@ -116,23 +106,13 @@ impl BKeyboard {
                     switcher.reset_main(stack_frame);
                 }
                 (KeyState::Down, KeyCode::Return) => {
-                    // Get the latest states.
-                    unsafe {
-                        NES_CPU.force_write_unlock();
-                    }
-                    let cpu = NES_CPU.read();
-                    unsafe {
-                        NES_PPU.force_write_unlock();
-                    }
-                    let ppu = NES_PPU.read();
-                    unsafe {
-                        CARTRIDGE.force_write_unlock();
-                    }
-                    let cartridge = CARTRIDGE.read();
+                    if let Err(_) = Serial::communicate(|serial| {
+                        let cpu = CPU::get();
+                        let ppu = PPU::get();
+                        let cartridge = Cartridge::get();
 
-                    if let Err(_) =
-                        Serial::communicate(|serial| serial.save_state(&cpu, &ppu, &cartridge))
-                    {
+                        serial.save_state(cpu, ppu, cartridge)
+                    }) {
                         error!(COM, "Failed to save the current state.");
                     } else {
                         info!(COM, "Saved the current state successfully.");

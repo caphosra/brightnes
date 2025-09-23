@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
-use spin::{Lazy, RwLock};
+use spin::{Lazy, Once};
 
 use crate::{
     critical, log,
-    nes::cpu::{InterruptType, NESCPU},
+    mem::MemoryAllocator,
+    nes::cpu::{InterruptType, CPU},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -142,7 +143,7 @@ impl APUFrameCounter {
         }
     }
 
-    pub fn clock(&mut self, cycles: usize, cpu: &mut NESCPU) {
+    pub fn clock(&mut self, cycles: usize, cpu: &mut CPU) {
         self.step += cycles;
         if self.step >= Self::CLOCK_PER_FRAME {
             self.step -= Self::CLOCK_PER_FRAME;
@@ -200,17 +201,26 @@ pub struct APU {
     frame_counter: APUFrameCounter,
 }
 
-pub static NES_APU: Lazy<RwLock<APU>> = Lazy::new(|| RwLock::new(APU::new()));
+static APU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 
 impl APU {
-    pub fn new() -> Self {
-        Self {
+    pub fn get() -> &'static mut Self {
+        let ptr = *APU_PTR.call_once(|| {
+            // Allocate memory for the APU.
+            let apu_raw_ptr = MemoryAllocator::alloc_zeroed::<APU>();
+            apu_raw_ptr as usize
+        }) as *mut APU;
+        unsafe { ptr.as_mut() }.unwrap()
+    }
+
+    pub fn init(&mut self) {
+        *self = Self {
             squares: [APUPulse::new(), APUPulse::new()],
             triangle: APUTriangle::new(),
             noise: APUNoise::new(),
             dmc: DMC::new(),
             frame_counter: APUFrameCounter::new(),
-        }
+        };
     }
 
     pub fn read_reg(&self, addr: u16) -> u8 {
@@ -261,7 +271,7 @@ impl APU {
         }
     }
 
-    pub fn clock(&mut self, cycles: usize, cpu: &mut NESCPU) {
+    pub fn clock(&mut self, cycles: usize, cpu: &mut CPU) {
         self.frame_counter.clock(cycles, cpu);
     }
 }

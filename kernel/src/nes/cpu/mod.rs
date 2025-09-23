@@ -2,19 +2,20 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
-use spin::{Lazy, RwLock};
+use spin::{Lazy, Once};
 
+use crate::mem::MemoryAllocator;
 use crate::nes::apu::APU;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::bus::CPUBus;
 use crate::nes::cpu::instr::{AddrMode, InstrType, Instruction};
 use crate::nes::cpu::ram::RAM;
 use crate::nes::ppu::oam::OAM_DMA_CYCLES;
-use crate::nes::ppu::NESPPU;
+use crate::nes::ppu::PPU;
 use crate::{critical, error};
 
 #[derive(Serialize, Deserialize)]
-pub struct NESCPU {
+pub struct CPU {
     pub reg_a: u8,
     pub reg_x: u8,
     pub reg_y: u8,
@@ -27,7 +28,7 @@ pub struct NESCPU {
     interrupt: Option<InterruptType>,
     stall_cycles: u32,
     ram: RAM,
-    history: Vec<Option<Instruction>, { NESCPU::HISTORY_SIZE }>,
+    history: Vec<Option<Instruction>, { CPU::HISTORY_SIZE }>,
 }
 
 pub const CARRY_FLAG: usize = 0;
@@ -38,25 +39,6 @@ pub const BRK_FLAG: usize = 4;
 pub const ONE_FLAG: usize = 5;
 pub const OVERFLOW_FLAG: usize = 6;
 pub const NEG_FLAG: usize = 7;
-
-pub static NES_CPU: Lazy<RwLock<NESCPU>> = Lazy::new(|| {
-    RwLock::new(NESCPU {
-        reg_a: 0,
-        reg_x: 0,
-        reg_y: 0,
-        reg_pc: 0xFFFC,
-        reg_sp: 0xFD,
-        reg_p: 0x24,
-        cycles: 0,
-        inst: 0,
-
-        interrupt: None,
-
-        stall_cycles: 0,
-        ram: RAM::new(),
-        history: Vec::from_array([None; NESCPU::HISTORY_SIZE]),
-    })
-});
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InterruptType {
@@ -77,16 +59,35 @@ impl ToString for InterruptType {
     }
 }
 
-impl NESCPU {
+static CPU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
+
+impl CPU {
     pub const HISTORY_SIZE: usize = 16;
     const MAX_STALL_CYCLES: u32 = 8;
     const INTERRUPT_CYCLES: u32 = 7;
+
+    pub fn get() -> &'static mut CPU {
+        let cpu_raw_ptr = *CPU_PTR.call_once(|| {
+            // Allocate memory for CPU.
+            let cpu_raw_ptr = MemoryAllocator::alloc_zeroed::<CPU>();
+            cpu_raw_ptr as usize
+        }) as *mut CPU;
+
+        unsafe { cpu_raw_ptr.as_mut() }.unwrap()
+    }
+
+    pub fn init(&mut self) {
+        self.reg_p = 0x24;
+        self.interrupt = None;
+        self.ram = RAM::new();
+        self.history = Vec::from_array([None; CPU::HISTORY_SIZE]);
+    }
 
     pub fn dma_stall(&mut self) {
         self.stall_cycles += OAM_DMA_CYCLES;
     }
 
-    fn do_dma_transfer(&mut self, ppu: &mut NESPPU, apu: &mut APU, cartridge: &mut Cartridge) {
+    fn do_dma_transfer(&mut self, ppu: &mut PPU, apu: &mut APU, cartridge: &mut Cartridge) {
         let mut data = [9; 0x100];
         for i in 0..=0xFF {
             let addr = ppu.oam.dma_request_addr + i as u16;
@@ -115,7 +116,7 @@ impl NESCPU {
     fn exec_interrupt(
         &mut self,
         int_type: InterruptType,
-        ppu: &mut NESPPU,
+        ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
     ) {
@@ -185,7 +186,7 @@ impl NESCPU {
         }
     }
 
-    pub fn clock(&mut self, ppu: &mut NESPPU, apu: &mut APU, cartridge: &mut Cartridge) -> u32 {
+    pub fn clock(&mut self, ppu: &mut PPU, apu: &mut APU, cartridge: &mut Cartridge) -> u32 {
         if self.stall_cycles > Self::MAX_STALL_CYCLES {
             // The CPU is stalling for external reasons.
             self.stall_cycles -= Self::MAX_STALL_CYCLES;
@@ -232,7 +233,7 @@ impl NESCPU {
     pub fn push_stack(
         &mut self,
         data: u8,
-        ppu: &mut NESPPU,
+        ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
     ) {
@@ -241,13 +242,13 @@ impl NESCPU {
         self.reg_sp = self.reg_sp.wrapping_sub(1);
     }
 
-    pub fn pop_stack(&mut self, ppu: &mut NESPPU, apu: &mut APU, cartridge: &mut Cartridge) -> u8 {
+    pub fn pop_stack(&mut self, ppu: &mut PPU, apu: &mut APU, cartridge: &mut Cartridge) -> u8 {
         self.reg_sp = self.reg_sp.wrapping_add(1);
         let addr = 0x0100 | self.reg_sp as u16;
         CPUBus::read(addr, self, ppu, apu, cartridge)
     }
 
-    pub fn execute(&mut self, ppu: &mut NESPPU, apu: &mut APU, cartridge: &mut Cartridge) -> u32 {
+    pub fn execute(&mut self, ppu: &mut PPU, apu: &mut APU, cartridge: &mut Cartridge) -> u32 {
         let inst = Instruction::fetch(self.reg_pc, self, ppu, apu, cartridge);
 
         // Record instruction to history.

@@ -1,7 +1,7 @@
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
 
-use crate::nes::cpu::NESCPU;
+use crate::nes::cpu::CPU;
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Sprite {
@@ -74,7 +74,7 @@ impl OAM {
         }
     }
 
-    pub fn request_dma_transfer(&mut self, hi: u8, cpu: &mut NESCPU) {
+    pub fn request_dma_transfer(&mut self, hi: u8, cpu: &mut CPU) {
         self.dma_request_addr = (hi as u16) << 8;
         cpu.dma_stall();
     }
