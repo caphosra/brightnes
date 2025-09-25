@@ -128,7 +128,20 @@ impl Sound {
                                     * envelope(move |t| if t < end { 1.0 } else { 0.0 });
                             Box::new(wave)
                         }
-                        Volume::Decreasing(_decreasing_time) => Box::new(zero()),
+                        Volume::Decreasing(decreasing_time) => {
+                            let start = self.start_time.elapsed().as_secs_f64();
+                            let end = self.start_time.elapsed().as_secs_f64() + req.length;
+
+                            let wave = constant((req.frequency as f32, req.duty_rate as f32))
+                                >> pulse()
+                                    * Self::MASTER_VOLUME
+                                    * envelope(move |t| {
+                                        (15 - ((t - start) / decreasing_time) as u32).max(0) as f64
+                                            / 15.0
+                                    })
+                                    * envelope(move |t| if t < end { 1.0 } else { 0.0 });
+                            Box::new(wave)
+                        }
                     }
                 } else {
                     Box::new(zero())
