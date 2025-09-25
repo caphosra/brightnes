@@ -1,12 +1,12 @@
 use alloc::vec;
 use crc::{Crc, CRC_32_ISCSI};
-use postcard::{from_bytes_crc32, to_allocvec_crc32};
+use postcard::{from_bytes_crc32, to_allocvec, to_allocvec_crc32};
 use spin::{lazy::Lazy, mutex::Mutex};
 use uart_16550::SerialPort;
 
 use crate::{
-    error, info,
-    nes::{cartridge::Cartridge, cpu::CPU, ppu::PPU},
+    error, info, log,
+    nes::{apu::APURequest, cartridge::Cartridge, cpu::CPU, ppu::PPU},
 };
 
 static SERIAL: Lazy<Mutex<Serial>> = Lazy::new(|| {
@@ -24,6 +24,7 @@ pub enum SerialRequest {
     LoadState = 3,
     SaveRAM = 4,
     LoadRAM = 5,
+    Sound = 6,
 }
 
 impl SerialRequest {
@@ -171,6 +172,23 @@ impl Serial {
 
             Ok(())
         }
+    }
+
+    pub fn request_sound(&mut self, req: APURequest) -> Result<(), ()> {
+        SerialRequest::Sound.send(self);
+
+        let serialized_req = to_allocvec(&req);
+        let serialized_req = serialized_req.map_err(|_| {
+            error!(COM, "Failed to serialize APU request");
+            ()
+        })?;
+
+        self.write_u32(serialized_req.len() as u32);
+        self.write(&serialized_req);
+
+        log!(COM, "Sent APU request ({} bytes)", serialized_req.len());
+
+        Ok(())
     }
 
     pub fn write(&mut self, data: &[u8]) {

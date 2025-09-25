@@ -55,7 +55,8 @@ BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 
 SERVER_SOURCES = ./server/Cargo.toml \
 	./server/src/fs.rs \
-	./server/src/main.rs
+	./server/src/main.rs \
+	./server/src/sound.rs \
 
 KERNEL_RELEASE = ./target/x86_64-unknown-none/release/brightnes-kernel
 KERNEL_DEBUG = ./target/x86_64-unknown-none/debug/brightnes-kernel

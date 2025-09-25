@@ -5,9 +5,15 @@ use crate::{
     critical, log,
     mem::MemoryAllocator,
     nes::{
-        apu::{dmc::DMC, noise::APUNoise, pulse::APUPulse, triangle::APUTriangle},
+        apu::{
+            dmc::DMC,
+            noise::APUNoise,
+            pulse::{APUPulse, PulseRequest},
+            triangle::APUTriangle,
+        },
         cpu::{InterruptType, CPU},
     },
+    serial::Serial,
 };
 
 #[repr(u8)]
@@ -87,6 +93,11 @@ impl APUFrameCounter {
 }
 
 #[derive(Serialize, Deserialize)]
+pub enum APURequest {
+    Pulse(usize, PulseRequest),
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct APU {
     squares: [APUPulse; 2],
     triangle: APUTriangle,
@@ -98,6 +109,9 @@ pub struct APU {
 static APU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 
 impl APU {
+    pub const CPU_CLOCK_FREQUENCY: usize = 1789773;
+    pub const QUARTER_FRAME_INTERVAL: f64 = 1.0 / 60.0 / 4.0;
+
     pub fn get() -> &'static mut Self {
         let ptr = *APU_PTR.call_once(|| {
             // Allocate memory for the APU.
@@ -136,10 +150,12 @@ impl APU {
     pub fn write_reg(&mut self, addr: u16, data: u8) {
         if addr < 0x4004 {
             // Square 1
-            self.squares[0].write_reg(addr - 0x4000, data);
+            let req = self.squares[0].write_reg(addr - 0x4000, data);
+            Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(0, req)));
         } else if addr < 0x4008 {
             // Square 2
-            self.squares[1].write_reg(addr - 0x4004, data);
+            let req = self.squares[1].write_reg(addr - 0x4004, data);
+            Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(1, req)));
         } else if addr < 0x400C {
             // Triangle
             self.triangle.write_reg(addr - 0x4008, data);

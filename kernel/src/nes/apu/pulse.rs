@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::critical;
+use crate::{critical, nes::apu::APU};
 
 #[derive(Serialize, Deserialize)]
 pub struct APUPulse {
@@ -34,7 +34,7 @@ impl APUPulse {
         }
     }
 
-    pub fn write_reg(&mut self, addr: u16, data: u8) {
+    pub fn write_reg(&mut self, addr: u16, data: u8) -> PulseRequest {
         match addr {
             0 => {
                 self.duty_cycle = (data >> 6) & 0b11;
@@ -59,5 +59,61 @@ impl APUPulse {
                 critical!(APU, "Pulse does not support such operation: {:#06X}", addr);
             }
         }
+        self.generate_request()
     }
+
+    fn generate_request(&self) -> PulseRequest {
+        let active = self.active;
+        let frequency = APU::CPU_CLOCK_FREQUENCY as f64 / (16.0 * (self.timer as f64 + 1.0));
+        let volume = if self.constant_volume {
+            // Constant volume
+            Volume::Constant(self.volume as f64 / 15.0)
+        } else {
+            // Decreasing volume over time
+            if self.volume == 0 {
+                Volume::Decreasing(f64::INFINITY)
+            } else {
+                Volume::Decreasing(self.volume as f64 * APU::QUARTER_FRAME_INTERVAL)
+            }
+        };
+        let length = if self.loop_enabled {
+            f64::INFINITY
+        } else {
+            (self.length_counter as f64) * APU::QUARTER_FRAME_INTERVAL
+        };
+        let duty_rate = match self.duty_cycle {
+            0 => 0.125,
+            1 => 0.25,
+            2 => 0.5,
+            3 => 0.75,
+            _ => {
+                critical!(APU, "Invalid duty cycle: {}", self.duty_cycle);
+            }
+        };
+        let loop_enabled = self.loop_enabled;
+        PulseRequest {
+            active,
+            frequency,
+            volume,
+            length,
+            loop_enabled,
+            duty_rate,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PulseRequest {
+    pub active: bool,
+    pub frequency: f64,
+    pub volume: Volume,
+    pub length: f64,
+    pub duty_rate: f64,
+    pub loop_enabled: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum Volume {
+    Constant(f64),
+    Decreasing(f64),
 }

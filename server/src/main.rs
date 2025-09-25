@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use crate::fs::FileSystem;
+use crate::{fs::FileSystem, sound::Sound};
 
 const SERVER_ADDR: &str = "127.0.0.1:19837";
 const RETRY_DELAY_MS: u64 = 5000;
@@ -20,17 +20,20 @@ pub enum SerialRequest {
     LoadState = 3,
     SaveRAM = 4,
     LoadRAM = 5,
+    Sound = 6,
 }
 
 fn main() {
     println!("====< BrightNES Server >====\n");
+
+    let mut sound = Sound::new();
 
     loop {
         let mut stream = connect_to_server();
 
         println!("[-] Connected to server at {}", SERVER_ADDR);
 
-        if let Err(e) = req_loop(&mut stream) {
+        if let Err(e) = req_loop(&mut stream, &mut sound) {
             println!("[!] Connection error: {}", e);
         }
     }
@@ -49,48 +52,41 @@ fn connect_to_server() -> TcpStream {
     }
 }
 
-fn req_loop(stream: &mut TcpStream) -> std::io::Result<()> {
+fn req_loop(stream: &mut TcpStream, sound: &mut Sound) -> std::io::Result<()> {
     let mut buf = [0; 1];
     loop {
         stream.read_exact(&mut buf)?;
         if buf[0] == SPECIAL_CTRL_CHAR {
-            handle_req(stream)?;
+            handle_req(stream, sound)?;
         }
     }
 }
 
-fn handle_req(stream: &mut TcpStream) -> std::io::Result<()> {
+fn handle_req(stream: &mut TcpStream, sound: &mut Sound) -> std::io::Result<()> {
     let mut buf = [0; 1];
     stream.read_exact(&mut buf)?;
     match buf[0] {
         x if x == SerialRequest::Active as u8 => {
-            println!("[-] Request: {:?}", SerialRequest::Active);
-
             stream.write_all(&[1])?;
 
             println!("[ ]  Sent active response.");
         }
         x if x == SerialRequest::SaveState as u8 => {
-            println!("[-] Request: {:?}", SerialRequest::SaveState);
-
             let file_name = FileSystem::save_state(stream)?;
             println!("[ ]  Saved state to file: {}", file_name);
         }
         x if x == SerialRequest::LoadState as u8 => {
-            println!("[-] Request: {:?}", SerialRequest::LoadState);
-
             FileSystem::load_state(stream)?;
         }
         x if x == SerialRequest::SaveRAM as u8 => {
-            println!("[-] Request: {:?}", SerialRequest::SaveRAM);
-
             let file_name = FileSystem::save_ram(stream)?;
             println!("[ ]  Saved RAM to file: {}", file_name);
         }
         x if x == SerialRequest::LoadRAM as u8 => {
-            println!("[-] Request: {:?}", SerialRequest::LoadRAM);
-
             FileSystem::load_ram(stream)?;
+        }
+        x if x == SerialRequest::Sound as u8 => {
+            sound.receive_request(stream)?;
         }
         _ => {
             println!("[!] Unknown request: {}", buf[0]);
@@ -100,3 +96,4 @@ fn handle_req(stream: &mut TcpStream) -> std::io::Result<()> {
 }
 
 pub mod fs;
+pub mod sound;
