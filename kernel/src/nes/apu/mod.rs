@@ -1,3 +1,4 @@
+use brightnes_common::serial::APURequest;
 use serde::{Deserialize, Serialize};
 use spin::{Lazy, Once};
 
@@ -5,12 +6,7 @@ use crate::{
     critical, log,
     mem::MemoryAllocator,
     nes::{
-        apu::{
-            dmc::DMC,
-            noise::APUNoise,
-            pulse::{APUPulse, PulseRequest},
-            triangle::APUTriangle,
-        },
+        apu::{dmc::DMC, noise::APUNoise, pulse::APUPulse, triangle::APUTriangle},
         cpu::{InterruptType, CPU},
     },
     serial::Serial,
@@ -90,11 +86,6 @@ impl APUFrameCounter {
         self.step = 0;
         self.frame = 0;
     }
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum APURequest {
-    Pulse(usize, PulseRequest),
 }
 
 #[derive(Serialize, Deserialize)]

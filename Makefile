@@ -13,6 +13,10 @@ QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
 	-monitor stdio \
 	-serial tcp::$(SERIAL_PORT),server,nowait
 
+COMMON_SOURCES = ./common/Cargo.toml \
+	./common/src/lib.rs \
+	./common/src/serial.rs
+
 KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/kernel.ld \
 	./kernel/src/int/keyboard.rs \
@@ -56,12 +60,12 @@ BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 SERVER_SOURCES = ./server/Cargo.toml \
 	./server/src/fs.rs \
 	./server/src/main.rs \
-	./server/src/sound.rs \
+	./server/src/sound.rs
 
 KERNEL_RELEASE = ./target/x86_64-unknown-none/release/brightnes-kernel
 KERNEL_DEBUG = ./target/x86_64-unknown-none/debug/brightnes-kernel
 
-$(KERNEL_RELEASE): $(KERNEL_SOURCES)
+$(KERNEL_RELEASE): $(KERNEL_SOURCES) $(COMMON_SOURCES)
 	cargo build \
 		--package brightnes-kernel \
 		--target x86_64-unknown-none \
@@ -72,7 +76,7 @@ build-kernel: $(KERNEL_RELEASE)
 	mkdir -p $(OUT_DIR)
 	cp $(KERNEL_RELEASE) $(OUT_DIR)/kernel
 
-$(KERNEL_DEBUG): $(KERNEL_SOURCES)
+$(KERNEL_DEBUG): $(KERNEL_SOURCES) $(COMMON_SOURCES)
 	cargo build \
 		--package brightnes-kernel \
 		--target x86_64-unknown-none \
@@ -109,7 +113,7 @@ run-dbg: build-kernel-dbg $(OUT_DIR)/efi/boot/bootx64.efi resources
 	qemu-system-x86_64 $(QEMU_FLAGS) \
 		-S -gdb tcp::31415
 
-run-server: $(SERVER_SOURCES)
+run-server: $(SERVER_SOURCES) $(COMMON_SOURCES)
 	cargo run \
 		--package brightnes-server \
 		--release

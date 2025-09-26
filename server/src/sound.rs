@@ -1,5 +1,6 @@
 use std::{io::Read, net::TcpStream, time::Instant};
 
+use brightnes_common::serial::{APURequest, Volume};
 use cpal::{
     Device, Stream, SupportedStreamConfig, default_host,
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -9,28 +10,6 @@ use fundsp::{
     net::{Net, NodeId},
 };
 use postcard::from_bytes;
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize)]
-pub struct PulseRequest {
-    pub active: bool,
-    pub frequency: f64,
-    pub volume: Volume,
-    pub length: f64,
-    pub duty_rate: f64,
-    pub loop_enabled: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum Volume {
-    Constant(f64),
-    Decreasing(f64),
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum APURequest {
-    Pulse(usize, PulseRequest),
-}
 
 pub struct Sound {
     _device: Device,

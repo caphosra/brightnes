@@ -5,23 +5,14 @@ use std::{
     time::Duration,
 };
 
+use brightnes_common::serial::SerialRequest;
+
 use crate::{fs::FileSystem, sound::Sound};
 
 const SERVER_ADDR: &str = "127.0.0.1:19837";
 const RETRY_DELAY_MS: u64 = 5000;
 
 const SPECIAL_CTRL_CHAR: u8 = 0x93;
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy)]
-pub enum SerialRequest {
-    Active = 1,
-    SaveState = 2,
-    LoadState = 3,
-    SaveRAM = 4,
-    LoadRAM = 5,
-    Sound = 6,
-}
 
 fn main() {
     println!("====< BrightNES Server >====\n");

@@ -99,9 +99,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "brightnes-common"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "brightnes-kernel"
 version = "0.1.0"
 dependencies = [
+ "brightnes-common",
  "crc",
  "heapless 0.9.1",
  "pc-keyboard",
@@ -117,6 +125,7 @@ dependencies = [
 name = "brightnes-server"
 version = "0.1.0"
 dependencies = [
+ "brightnes-common",
  "chrono",
  "cpal",
  "fundsp",

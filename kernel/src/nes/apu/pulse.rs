@@ -1,3 +1,4 @@
+use brightnes_common::serial::{PulseRequest, Volume};
 use serde::{Deserialize, Serialize};
 
 use crate::{critical, nes::apu::APU};
@@ -100,20 +101,4 @@ impl APUPulse {
             duty_rate,
         }
     }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct PulseRequest {
-    pub active: bool,
-    pub frequency: f64,
-    pub volume: Volume,
-    pub length: f64,
-    pub duty_rate: f64,
-    pub loop_enabled: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum Volume {
-    Constant(f64),
-    Decreasing(f64),
 }

@@ -1,4 +1,5 @@
 use alloc::vec;
+use brightnes_common::serial::{APURequest, SerialRequest};
 use crc::{Crc, CRC_32_ISCSI};
 use postcard::{from_bytes_crc32, to_allocvec, to_allocvec_crc32};
 use spin::{lazy::Lazy, mutex::Mutex};
@@ -6,7 +7,7 @@ use uart_16550::SerialPort;
 
 use crate::{
     error, info, log,
-    nes::{apu::APURequest, cartridge::Cartridge, cpu::CPU, ppu::PPU},
+    nes::{cartridge::Cartridge, cpu::CPU, ppu::PPU},
 };
 
 static SERIAL: Lazy<Mutex<Serial>> = Lazy::new(|| {
@@ -15,20 +16,12 @@ static SERIAL: Lazy<Mutex<Serial>> = Lazy::new(|| {
     Mutex::new(Serial { serial_port })
 });
 
-#[repr(u8)]
-#[derive(Clone, Copy)]
-pub enum SerialRequest {
-    #[allow(dead_code)]
-    Active = 1,
-    SaveState = 2,
-    LoadState = 3,
-    SaveRAM = 4,
-    LoadRAM = 5,
-    Sound = 6,
+trait SerialSend {
+    fn send(&self, serial: &mut Serial);
 }
 
-impl SerialRequest {
-    pub fn send(&self, serial: &mut Serial) {
+impl SerialSend for SerialRequest {
+    fn send(&self, serial: &mut Serial) {
         serial.write_u8(*self as u8);
     }
 }
