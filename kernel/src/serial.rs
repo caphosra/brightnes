@@ -168,7 +168,7 @@ impl Serial {
     }
 
     pub fn request_sound(&mut self, req: APURequest) -> Result<(), ()> {
-        SerialRequest::Sound.send(self);
+        SerialRequest::PlaySound.send(self);
 
         let serialized_req = to_allocvec(&req);
         let serialized_req = serialized_req.map_err(|_| {

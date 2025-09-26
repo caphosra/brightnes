@@ -159,11 +159,27 @@ impl APU {
         } else if addr == 0x4015 {
             // ---D NT21
 
-            self.squares[0].active = (data & 1) != 0;
-            self.squares[1].active = ((data >> 1) & 1) != 0;
+            let square1_active = (data & 1) != 0;
+            let square2_active = ((data >> 1) & 1) != 0;
             self.triangle.active = ((data >> 2) & 1) != 0;
             self.noise.active = ((data >> 3) & 1) != 0;
             self.dmc.active = ((data >> 4) & 1) != 0;
+
+            if square1_active != self.squares[0].active {
+                // Change active state
+                self.squares[0].active = square1_active;
+
+                let req = self.squares[0].generate_request();
+                Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(0, req)));
+            }
+
+            if square2_active != self.squares[1].active {
+                // Change active state
+                self.squares[1].active = square2_active;
+
+                let req = self.squares[1].generate_request();
+                Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(1, req)));
+            }
         } else if addr == 0x4017 {
             // Frame Counter
             self.frame_counter.write_reg(data);

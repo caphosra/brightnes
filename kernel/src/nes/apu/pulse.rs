@@ -63,7 +63,7 @@ impl APUPulse {
         self.generate_request()
     }
 
-    fn generate_request(&self) -> PulseRequest {
+    pub fn generate_request(&self) -> PulseRequest {
         let active = self.active;
         let frequency = APU::CPU_CLOCK_FREQUENCY as f64 / (16.0 * (self.timer as f64 + 1.0));
         let volume = if self.constant_volume {

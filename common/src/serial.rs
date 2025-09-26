@@ -8,7 +8,7 @@ pub enum SerialRequest {
     LoadState = 3,
     SaveRAM = 4,
     LoadRAM = 5,
-    Sound = 6,
+    PlaySound = 7,
 }
 
 #[derive(Serialize, Deserialize)]

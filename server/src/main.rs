@@ -27,6 +27,8 @@ fn main() {
         if let Err(e) = req_loop(&mut stream, &mut sound) {
             println!("[!] Connection error: {}", e);
         }
+
+        sound.disable_all();
     }
 }
 
@@ -76,7 +78,7 @@ fn handle_req(stream: &mut TcpStream, sound: &mut Sound) -> std::io::Result<()> 
         x if x == SerialRequest::LoadRAM as u8 => {
             FileSystem::load_ram(stream)?;
         }
-        x if x == SerialRequest::Sound as u8 => {
+        x if x == SerialRequest::PlaySound as u8 => {
             sound.receive_request(stream)?;
         }
         _ => {

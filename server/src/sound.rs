@@ -132,4 +132,11 @@ impl Sound {
 
         Ok(())
     }
+
+    pub fn disable_all(&mut self) {
+        for &pulse in &self.pulses {
+            self.net.replace(pulse, Box::new(zero()));
+        }
+        self.net.commit();
+    }
 }
