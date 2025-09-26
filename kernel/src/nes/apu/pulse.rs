@@ -80,7 +80,7 @@ impl APUPulse {
         let length = if self.loop_enabled {
             f64::INFINITY
         } else {
-            (self.length_counter as f64) * APU::QUARTER_FRAME_INTERVAL
+            APU::convert_length_counter(self.length_counter) as f64 * APU::QUARTER_FRAME_INTERVAL
         };
         let duty_rate = match self.duty_cycle {
             0 => 0.125,
