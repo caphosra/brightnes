@@ -6,7 +6,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use fundsp::{
-    hacker::{AudioUnit, envelope, lfo, pulse, zero},
+    hacker::{AudioUnit, Fade, envelope, lfo, pulse, zero},
     hacker32::{constant, triangle},
     net::{Net, NodeId},
 };
@@ -24,6 +24,7 @@ pub struct Sound {
 
 impl Sound {
     const MASTER_VOLUME: f32 = 0.1;
+    const FADE_TIME: f32 = 0.005;
 
     pub const CPU_CLOCK_FREQUENCY: f64 = 1789773.0;
     pub const TRIANGLE_FREQUENCY_LIMIT: f64 = Self::CPU_CLOCK_FREQUENCY / 32.0 / 2.0;
@@ -167,7 +168,8 @@ impl Sound {
                 } else {
                     Box::new(zero())
                 };
-                self.net.replace(self.pulses[id], unit);
+                self.net
+                    .crossfade(self.pulses[id], Fade::Smooth, Self::FADE_TIME, unit);
                 self.net.commit();
             }
             APURequest::Triangle(req) => {
@@ -181,7 +183,8 @@ impl Sound {
                     } else {
                         Box::new(zero())
                     };
-                self.net.replace(self.triangle, unit);
+                self.net
+                    .crossfade(self.triangle, Fade::Smooth, Self::FADE_TIME, unit);
                 self.net.commit();
             }
         }
@@ -191,9 +194,15 @@ impl Sound {
 
     pub fn disable_all(&mut self) {
         for &pulse in &self.pulses {
-            self.net.replace(pulse, Box::new(zero()));
+            self.net
+                .crossfade(pulse, Fade::Smooth, Self::FADE_TIME, Box::new(zero()));
         }
-        self.net.replace(self.triangle, Box::new(zero()));
+        self.net.crossfade(
+            self.triangle,
+            Fade::Smooth,
+            Self::FADE_TIME,
+            Box::new(zero()),
+        );
         self.net.commit();
     }
 }
