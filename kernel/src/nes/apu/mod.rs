@@ -102,6 +102,7 @@ static APU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 impl APU {
     pub const CPU_CLOCK_FREQUENCY: usize = 1789773;
     pub const QUARTER_FRAME_INTERVAL: f64 = 1.0 / 60.0 / 4.0;
+    pub const HALF_FRAME_INTERVAL: f64 = 1.0 / 60.0 / 2.0;
 
     pub fn get() -> &'static mut Self {
         let ptr = *APU_PTR.call_once(|| {

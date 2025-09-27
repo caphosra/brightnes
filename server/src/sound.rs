@@ -6,7 +6,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use fundsp::{
-    hacker::{AudioUnit, constant, envelope, pulse, zero},
+    hacker::{AudioUnit, envelope, lfo, pulse, zero},
     net::{Net, NodeId},
 };
 use postcard::from_bytes;
@@ -96,11 +96,27 @@ impl Sound {
         match request {
             APURequest::Pulse(id, req) => {
                 let unit: Box<dyn AudioUnit> = if req.active {
+                    let start = self.start_time.elapsed().as_secs_f64();
+                    let end = start + req.length;
+
+                    let pulse_state = lfo(move |t| {
+                        let freq = req.frequency;
+                        let freq = if req.sweep_enabled {
+                            let sweep_phase = ((t - start) / req.sweep_interval).floor() as u32;
+                            if req.sweep_negate {
+                                freq - (freq / (1 << req.sweep_shift) as f64) * sweep_phase as f64
+                            } else {
+                                freq + (freq / (1 << req.sweep_shift) as f64) * sweep_phase as f64
+                            }
+                        } else {
+                            freq
+                        };
+                        (freq, req.duty_rate)
+                    });
+
                     match req.volume {
                         Volume::Constant(volume) => {
-                            let end = self.start_time.elapsed().as_secs_f64() + req.length;
-
-                            let wave = constant((req.frequency as f32, req.duty_rate as f32))
+                            let wave = pulse_state
                                 >> pulse()
                                     * Self::MASTER_VOLUME
                                     * (volume as f32)
@@ -108,17 +124,19 @@ impl Sound {
                             Box::new(wave)
                         }
                         Volume::Decreasing(decreasing_time) => {
-                            let start = self.start_time.elapsed().as_secs_f64();
-                            let end = self.start_time.elapsed().as_secs_f64() + req.length;
-
-                            let wave = constant((req.frequency as f32, req.duty_rate as f32))
+                            let wave = pulse_state
                                 >> pulse()
                                     * Self::MASTER_VOLUME
                                     * envelope(move |t| {
-                                        (15 - ((t - start) / decreasing_time) as u32).max(0) as f64
-                                            / 15.0
-                                    })
-                                    * envelope(move |t| if t < end { 1.0 } else { 0.0 });
+                                        if t < end {
+                                            (15 - ((t - start) / decreasing_time).floor() as u32
+                                                % 15)
+                                                as f64
+                                                / 15.0
+                                        } else {
+                                            0.0
+                                        }
+                                    });
                             Box::new(wave)
                         }
                     }

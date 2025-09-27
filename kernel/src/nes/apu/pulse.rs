@@ -64,7 +64,6 @@ impl APUPulse {
     }
 
     pub fn generate_request(&self) -> PulseRequest {
-        let active = self.active;
         let frequency = APU::CPU_CLOCK_FREQUENCY as f64 / (16.0 * (self.timer as f64 + 1.0));
         let volume = if self.constant_volume {
             // Constant volume
@@ -91,14 +90,22 @@ impl APUPulse {
                 critical!(APU, "Invalid duty cycle: {}", self.duty_cycle);
             }
         };
-        let loop_enabled = self.loop_enabled;
+        let sweep_interval = if self.sweep_enabled {
+            self.sweep_period as f64 * APU::HALF_FRAME_INTERVAL
+        } else {
+            f64::INFINITY
+        };
         PulseRequest {
-            active,
+            active: self.active,
             frequency,
             volume,
             length,
-            loop_enabled,
+            loop_enabled: self.loop_enabled,
             duty_rate,
+            sweep_enabled: self.sweep_enabled,
+            sweep_interval,
+            sweep_negate: self.sweep_negate,
+            sweep_shift: self.sweep_shift,
         }
     }
 }

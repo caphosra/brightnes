@@ -19,6 +19,11 @@ pub struct PulseRequest {
     pub length: f64,
     pub duty_rate: f64,
     pub loop_enabled: bool,
+
+    pub sweep_enabled: bool,
+    pub sweep_interval: f64,
+    pub sweep_negate: bool,
+    pub sweep_shift: u8,
 }
 
 #[derive(Serialize, Deserialize)]
