@@ -7,6 +7,7 @@ use cpal::{
 };
 use fundsp::{
     hacker::{AudioUnit, envelope, lfo, pulse, zero},
+    hacker32::{constant, triangle},
     net::{Net, NodeId},
 };
 use postcard::from_bytes;
@@ -16,6 +17,7 @@ pub struct Sound {
     _config: SupportedStreamConfig,
 
     pulses: [NodeId; 2],
+    triangle: NodeId,
     net: Net,
     _stream: Stream,
 }
@@ -24,8 +26,7 @@ impl Sound {
     const MASTER_VOLUME: f32 = 0.1;
 
     pub const CPU_CLOCK_FREQUENCY: f64 = 1789773.0;
-    pub const MAX_FREQUENCY: f64 = Self::CPU_CLOCK_FREQUENCY / 16.0 / (0x8 as f64);
-    pub const MIN_FREQUENCY: f64 = Self::CPU_CLOCK_FREQUENCY / 16.0 / (0x800 as f64);
+    pub const TRIANGLE_FREQUENCY_LIMIT: f64 = Self::CPU_CLOCK_FREQUENCY / 32.0 / 2.0;
 
     pub fn new() -> Self {
         let device = default_host().default_output_device().unwrap();
@@ -37,6 +38,7 @@ impl Sound {
 
         let mut pulse1_net = Net::new(0, 2);
         let mut pulse2_net = Net::new(0, 2);
+        let mut triangle_net = Net::new(0, 2);
 
         let pulse1 = pulse1_net.push(Box::new(zero()));
         pulse1_net.pipe_output(pulse1);
@@ -44,7 +46,11 @@ impl Sound {
         let pulse2 = pulse2_net.push(Box::new(zero()));
         pulse2_net.pipe_output(pulse2);
 
-        let mut net = Net::sum(pulse1_net, pulse2_net);
+        let triangle = triangle_net.push(Box::new(zero()));
+        triangle_net.pipe_output(triangle);
+
+        let net0 = Net::sum(pulse1_net, pulse2_net);
+        let mut net = Net::sum(net0, triangle_net);
         net.set_sample_rate(config.sample_rate().0 as f64);
 
         let mut backend = net.backend();
@@ -75,6 +81,7 @@ impl Sound {
             _device: device,
             _config: config,
             pulses: [pulse1, pulse2],
+            triangle,
             net,
             _stream: stream,
         }
@@ -163,6 +170,20 @@ impl Sound {
                 self.net.replace(self.pulses[id], unit);
                 self.net.commit();
             }
+            APURequest::Triangle(req) => {
+                let unit: Box<dyn AudioUnit> =
+                    if req.active && req.frequency < Self::TRIANGLE_FREQUENCY_LIMIT {
+                        let wave = constant(req.frequency as f32)
+                            >> triangle()
+                                * Self::MASTER_VOLUME
+                                * envelope(move |t| if t < req.length { 1.0 } else { 0.0 });
+                        Box::new(wave)
+                    } else {
+                        Box::new(zero())
+                    };
+                self.net.replace(self.triangle, unit);
+                self.net.commit();
+            }
         }
 
         Ok(())
@@ -172,6 +193,7 @@ impl Sound {
         for &pulse in &self.pulses {
             self.net.replace(pulse, Box::new(zero()));
         }
+        self.net.replace(self.triangle, Box::new(zero()));
         self.net.commit();
     }
 }

@@ -33,6 +33,14 @@ pub enum Volume {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct TriangleRequest {
+    pub active: bool,
+    pub frequency: f64,
+    pub length: f64,
+}
+
+#[derive(Serialize, Deserialize)]
 pub enum APURequest {
     Pulse(usize, PulseRequest),
+    Triangle(TriangleRequest),
 }

@@ -150,7 +150,8 @@ impl APU {
             Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(1, req)));
         } else if addr < 0x400C {
             // Triangle
-            self.triangle.write_reg(addr - 0x4008, data);
+            let req = self.triangle.write_reg(addr - 0x4008, data);
+            Serial::communicate(|handler| handler.request_sound(APURequest::Triangle(req)));
         } else if addr < 0x4010 {
             // Noise
             self.noise.write_reg(addr - 0x400C, data);
@@ -162,7 +163,7 @@ impl APU {
 
             let square1_active = (data & 1) != 0;
             let square2_active = ((data >> 1) & 1) != 0;
-            self.triangle.active = ((data >> 2) & 1) != 0;
+            let triangle_active = ((data >> 2) & 1) != 0;
             self.noise.active = ((data >> 3) & 1) != 0;
             self.dmc.active = ((data >> 4) & 1) != 0;
 
@@ -180,6 +181,14 @@ impl APU {
 
                 let req = self.squares[1].generate_request();
                 Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(1, req)));
+            }
+
+            if triangle_active != self.triangle.active {
+                // Change active state
+                self.triangle.active = triangle_active;
+
+                let req = self.triangle.generate_request();
+                Serial::communicate(|handler| handler.request_sound(APURequest::Triangle(req)));
             }
         } else if addr == 0x4017 {
             // Frame Counter
