@@ -1,4 +1,4 @@
-use std::{io::Read, net::TcpStream, time::Instant};
+use std::{io::Read, net::TcpStream};
 
 use brightnes_common::serial::{APURequest, Volume};
 use cpal::{
@@ -18,7 +18,6 @@ pub struct Sound {
     pulses: [NodeId; 2],
     net: Net,
     _stream: Stream,
-    start_time: Instant,
 }
 
 impl Sound {
@@ -68,15 +67,12 @@ impl Sound {
             .unwrap();
         stream.play().unwrap();
 
-        let start_time = Instant::now();
-
         Self {
             _device: device,
             _config: config,
             pulses: [pulse1, pulse2],
             net,
             _stream: stream,
-            start_time,
         }
     }
 
@@ -96,17 +92,16 @@ impl Sound {
         match request {
             APURequest::Pulse(id, req) => {
                 let unit: Box<dyn AudioUnit> = if req.active {
-                    let start = self.start_time.elapsed().as_secs_f64();
-                    let end = start + req.length;
-
                     let pulse_state = lfo(move |t| {
                         let freq = req.frequency;
                         let freq = if req.sweep_enabled {
-                            let sweep_phase = ((t - start) / req.sweep_interval).floor() as u32;
+                            // f / 16(t + 1) is approximately f / 16t.
+
+                            let sweep_phase = (t / req.sweep_interval).floor();
                             if req.sweep_negate {
-                                freq - (freq / (1 << req.sweep_shift) as f64) * sweep_phase as f64
+                                freq * (1.0 - sweep_phase / ((1 << req.sweep_shift) as f64))
                             } else {
-                                freq + (freq / (1 << req.sweep_shift) as f64) * sweep_phase as f64
+                                freq * (1.0 + sweep_phase / ((1 << req.sweep_shift) as f64))
                             }
                         } else {
                             freq
@@ -120,7 +115,7 @@ impl Sound {
                                 >> pulse()
                                     * Self::MASTER_VOLUME
                                     * (volume as f32)
-                                    * envelope(move |t| if t < end { 1.0 } else { 0.0 });
+                                    * envelope(move |t| if t < req.length { 1.0 } else { 0.0 });
                             Box::new(wave)
                         }
                         Volume::Decreasing(decreasing_time) => {
@@ -128,11 +123,9 @@ impl Sound {
                                 >> pulse()
                                     * Self::MASTER_VOLUME
                                     * envelope(move |t| {
-                                        if t < end {
-                                            (15 - ((t - start) / decreasing_time).floor() as u32
-                                                % 15)
-                                                as f64
-                                                / 15.0
+                                        if t < req.length {
+                                            let step = (t / decreasing_time).floor() as u32 % 16;
+                                            (15 - step) as f64 / 15.0
                                         } else {
                                             0.0
                                         }
