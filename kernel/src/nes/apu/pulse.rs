@@ -91,7 +91,7 @@ impl APUPulse {
             }
         };
         let sweep_interval = if self.sweep_enabled {
-            self.sweep_period as f64 * APU::HALF_FRAME_INTERVAL
+            (self.sweep_period + 1) as f64 * APU::HALF_FRAME_INTERVAL
         } else {
             f64::INFINITY
         };

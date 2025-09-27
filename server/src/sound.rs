@@ -23,6 +23,10 @@ pub struct Sound {
 impl Sound {
     const MASTER_VOLUME: f32 = 0.1;
 
+    pub const CPU_CLOCK_FREQUENCY: f64 = 1789773.0;
+    pub const MAX_FREQUENCY: f64 = Self::CPU_CLOCK_FREQUENCY / 16.0 / (0x8 as f64);
+    pub const MIN_FREQUENCY: f64 = Self::CPU_CLOCK_FREQUENCY / 16.0 / (0x800 as f64);
+
     pub fn new() -> Self {
         let device = default_host().default_output_device().unwrap();
         println!("[-] Using audio output device: {}", device.name().unwrap());
@@ -93,20 +97,36 @@ impl Sound {
             APURequest::Pulse(id, req) => {
                 let unit: Box<dyn AudioUnit> = if req.active {
                     let pulse_state = lfo(move |t| {
-                        let freq = req.frequency;
-                        let freq = if req.sweep_enabled {
-                            // f / 16(t + 1) is approximately f / 16t.
+                        if req.sweep_enabled {
+                            let sweep_phase = (t / req.sweep_interval).floor() as u32;
+                            let mut timer = (Self::CPU_CLOCK_FREQUENCY / 16.0 / req.frequency - 1.0)
+                                .floor() as u32;
 
-                            let sweep_phase = (t / req.sweep_interval).floor();
-                            if req.sweep_negate {
-                                freq * (1.0 - sweep_phase / ((1 << req.sweep_shift) as f64))
+                            for _ in 0..sweep_phase {
+                                if req.sweep_negate {
+                                    timer -= timer >> req.sweep_shift;
+                                } else {
+                                    timer += timer >> req.sweep_shift;
+                                };
+                                if timer <= 0x8 || timer >= 0x800 {
+                                    // Stop sweeping.
+                                    break;
+                                };
+                            }
+
+                            if timer <= 0x8 || timer >= 0x800 {
+                                // Mute the channel.
+                                (0.0, 0.0)
                             } else {
-                                freq * (1.0 + sweep_phase / ((1 << req.sweep_shift) as f64))
+                                // Recalculate frequency.
+                                (
+                                    Self::CPU_CLOCK_FREQUENCY / 16.0 / ((timer + 1) as f64),
+                                    req.duty_rate,
+                                )
                             }
                         } else {
-                            freq
-                        };
-                        (freq, req.duty_rate)
+                            (req.frequency, req.duty_rate)
+                        }
                     });
 
                     match req.volume {
@@ -124,7 +144,11 @@ impl Sound {
                                     * Self::MASTER_VOLUME
                                     * envelope(move |t| {
                                         if t < req.length {
-                                            let step = (t / decreasing_time).floor() as u32 % 16;
+                                            let step = if req.loop_enabled {
+                                                (t / decreasing_time).floor() as u32 % 16
+                                            } else {
+                                                ((t / decreasing_time).floor() as u32).min(15)
+                                            };
                                             (15 - step) as f64 / 15.0
                                         } else {
                                             0.0
