@@ -64,22 +64,17 @@ impl APUPulse {
     }
 
     pub fn generate_request(&self) -> PulseRequest {
-        let frequency = APU::CPU_CLOCK_FREQUENCY as f64 / (16.0 * (self.timer as f64 + 1.0));
         let volume = if self.constant_volume {
             // Constant volume
             Volume::Constant(self.volume as f64 / 15.0)
         } else {
             // Decreasing volume over time
-            if self.volume == 0 {
-                Volume::Decreasing(f64::INFINITY)
-            } else {
-                Volume::Decreasing(self.volume as f64 * APU::QUARTER_FRAME_INTERVAL)
-            }
+            Volume::Decreasing(self.volume.max(1) as f64 * APU::QUARTER_FRAME_INTERVAL)
         };
         let length = if self.loop_enabled {
             f64::INFINITY
         } else {
-            APU::convert_length_counter(self.length_counter) as f64 * APU::QUARTER_FRAME_INTERVAL
+            APU::convert_length_counter(self.length_counter) as f64 * APU::HALF_FRAME_INTERVAL
         };
         let duty_rate = match self.duty_cycle {
             0 => 0.125,
@@ -97,7 +92,7 @@ impl APUPulse {
         };
         PulseRequest {
             active: self.active,
-            frequency,
+            timer: self.timer,
             volume,
             length,
             loop_enabled: self.loop_enabled,

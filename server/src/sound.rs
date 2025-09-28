@@ -24,7 +24,7 @@ pub struct Sound {
 
 impl Sound {
     const MASTER_VOLUME: f32 = 0.1;
-    const FADE_TIME: f32 = 0.005;
+    const FADE_TIME: f32 = 0.00001;
 
     pub const CPU_CLOCK_FREQUENCY: f64 = 1789773.0;
     pub const TRIANGLE_FREQUENCY_LIMIT: f64 = Self::CPU_CLOCK_FREQUENCY / 32.0 / 2.0;
@@ -43,15 +43,18 @@ impl Sound {
 
         let pulse1 = pulse1_net.push(Box::new(zero()));
         pulse1_net.pipe_output(pulse1);
+        println!("[-] Pulse 1 node ID: {}", pulse1.value());
 
         let pulse2 = pulse2_net.push(Box::new(zero()));
         pulse2_net.pipe_output(pulse2);
+        println!("[-] Pulse 2 node ID: {}", pulse2.value());
 
         let triangle = triangle_net.push(Box::new(zero()));
         triangle_net.pipe_output(triangle);
+        println!("[-] Triangle node ID: {}", triangle.value());
 
-        let net0 = Net::sum(pulse1_net, pulse2_net);
-        let mut net = Net::sum(net0, triangle_net);
+        let pulse_nets = Net::sum(pulse1_net, pulse2_net);
+        let mut net = Net::sum(pulse_nets, triangle_net);
         net.set_sample_rate(config.sample_rate().0 as f64);
 
         let mut backend = net.backend();
@@ -107,33 +110,32 @@ impl Sound {
                     let pulse_state = lfo(move |t| {
                         if req.sweep_enabled {
                             let sweep_phase = (t / req.sweep_interval).floor() as u32;
-                            let mut timer = (Self::CPU_CLOCK_FREQUENCY / 16.0 / req.frequency - 1.0)
-                                .floor() as u32;
+                            let mut timer = req.timer as u32;
 
                             for _ in 0..sweep_phase {
                                 if req.sweep_negate {
-                                    timer -= timer >> req.sweep_shift;
+                                    timer =
+                                        timer.checked_sub(timer >> req.sweep_shift).unwrap_or(0);
                                 } else {
                                     timer += timer >> req.sweep_shift;
                                 };
-                                if timer <= 0x8 || timer >= 0x800 {
-                                    // Stop sweeping.
-                                    break;
-                                };
                             }
 
-                            if timer <= 0x8 || timer >= 0x800 {
+                            if timer <= 0x8 {
                                 // Mute the channel.
                                 (0.0, 0.0)
                             } else {
                                 // Recalculate frequency.
                                 (
-                                    Self::CPU_CLOCK_FREQUENCY / 16.0 / ((timer + 1) as f64),
+                                    Self::CPU_CLOCK_FREQUENCY / (16 * (timer + 1) as u32) as f64,
                                     req.duty_rate,
                                 )
                             }
                         } else {
-                            (req.frequency, req.duty_rate)
+                            (
+                                Self::CPU_CLOCK_FREQUENCY / (16 * (req.timer + 1) as u32) as f64,
+                                req.duty_rate,
+                            )
                         }
                     });
 
