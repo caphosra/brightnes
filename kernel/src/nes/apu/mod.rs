@@ -23,8 +23,8 @@ pub enum APUFrameCounterMode {
 pub struct APUFrameCounter {
     pub irq: bool,
     pub mode: APUFrameCounterMode,
-    step: usize,
-    frame: u8,
+    pub step: usize,
+    pub frame: u8,
 }
 
 impl APUFrameCounter {
@@ -36,31 +36,6 @@ impl APUFrameCounter {
             mode: APUFrameCounterMode::FourStep,
             step: 0,
             frame: 0,
-        }
-    }
-
-    pub fn clock(&mut self, cycles: usize, cpu: &mut CPU) {
-        self.step += cycles;
-        if self.step >= Self::CLOCK_PER_FRAME {
-            self.step -= Self::CLOCK_PER_FRAME;
-            self.frame += 1;
-            match self.mode {
-                APUFrameCounterMode::FourStep => {
-                    if self.frame == 5 {
-                        self.frame = 0;
-                    }
-
-                    if self.frame == 0 && self.irq {
-                        // Trigger IRQ
-                        cpu.interrupt(InterruptType::IRQ);
-                    }
-                }
-                APUFrameCounterMode::FiveStep => {
-                    if self.frame == 6 {
-                        self.frame = 0;
-                    }
-                }
-            }
         }
     }
 
@@ -88,6 +63,13 @@ impl APUFrameCounter {
     }
 }
 
+trait APUComponent {
+    fn write_reg(&mut self, addr: u16, data: u8);
+    fn quarter_frame(&mut self);
+    fn half_frame(&mut self);
+    fn mark_as_changed(&mut self);
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct APU {
     squares: [APUPulse; 2],
@@ -100,9 +82,11 @@ pub struct APU {
 static APU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 
 impl APU {
-    pub const CPU_CLOCK_FREQUENCY: usize = 1789773;
     pub const QUARTER_FRAME_INTERVAL: f64 = 1.0 / 60.0 / 4.0;
     pub const HALF_FRAME_INTERVAL: f64 = 1.0 / 60.0 / 2.0;
+
+    pub const QUARTER_FRAME_CLOCKS: usize = CPU::CLOCK_FREQ / 240;
+    pub const HALF_FRAME_CLOCKS: usize = CPU::CLOCK_FREQ / 120;
 
     pub fn get() -> &'static mut Self {
         let ptr = *APU_PTR.call_once(|| {
@@ -115,7 +99,7 @@ impl APU {
 
     pub fn init(&mut self) {
         *self = Self {
-            squares: [APUPulse::new(), APUPulse::new()],
+            squares: [APUPulse::new(0), APUPulse::new(1)],
             triangle: APUTriangle::new(),
             noise: APUNoise::new(),
             dmc: DMC::new(),
@@ -142,12 +126,10 @@ impl APU {
     pub fn write_reg(&mut self, addr: u16, data: u8) {
         if addr < 0x4004 {
             // Square 1
-            let req = self.squares[0].write_reg(addr - 0x4000, data);
-            Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(0, req)));
+            self.squares[0].write_reg(addr - 0x4000, data);
         } else if addr < 0x4008 {
             // Square 2
-            let req = self.squares[1].write_reg(addr - 0x4004, data);
-            Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(1, req)));
+            self.squares[1].write_reg(addr - 0x4004, data);
         } else if addr < 0x400C {
             // Triangle
             let req = self.triangle.write_reg(addr - 0x4008, data);
@@ -170,17 +152,13 @@ impl APU {
             if square1_active != self.squares[0].active {
                 // Change active state
                 self.squares[0].active = square1_active;
-
-                let req = self.squares[0].generate_request();
-                Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(0, req)));
+                self.squares[0].mark_as_changed();
             }
 
             if square2_active != self.squares[1].active {
                 // Change active state
                 self.squares[1].active = square2_active;
-
-                let req = self.squares[1].generate_request();
-                Serial::communicate(|handler| handler.request_sound(APURequest::Pulse(1, req)));
+                self.squares[1].mark_as_changed();
             }
 
             if triangle_active != self.triangle.active {
@@ -199,7 +177,48 @@ impl APU {
     }
 
     pub fn clock(&mut self, cycles: usize, cpu: &mut CPU) {
-        self.frame_counter.clock(cycles, cpu);
+        self.frame_counter.step += cycles;
+        if self.frame_counter.step >= Self::QUARTER_FRAME_CLOCKS {
+            self.frame_counter.step -= Self::QUARTER_FRAME_CLOCKS;
+            self.frame_counter.frame += 1;
+            match self.frame_counter.mode {
+                APUFrameCounterMode::FourStep => {
+                    if self.frame_counter.frame == 5 {
+                        self.frame_counter.frame = 0;
+                    }
+
+                    if self.frame_counter.frame % 2 == 1 {
+                        self.half_frame();
+                    }
+                    self.quarter_frame();
+
+                    if self.frame_counter.frame == 0 && self.frame_counter.irq {
+                        // Trigger IRQ
+                        cpu.interrupt(InterruptType::IRQ);
+                    }
+                }
+                APUFrameCounterMode::FiveStep => {
+                    if self.frame_counter.frame == 6 {
+                        self.frame_counter.frame = 0;
+                    }
+
+                    if self.frame_counter.frame == 1 || self.frame_counter.frame == 4 {
+                        self.half_frame();
+                    }
+                    self.quarter_frame();
+                }
+            }
+        }
+    }
+
+    fn quarter_frame(&mut self) {
+        self.squares[0].quarter_frame();
+        self.squares[1].quarter_frame();
+    }
+
+    fn half_frame(&mut self) {
+        self.squares[0].half_frame();
+        self.squares[1].half_frame();
     }
 
     pub fn convert_length_counter(length: u8) -> u8 {

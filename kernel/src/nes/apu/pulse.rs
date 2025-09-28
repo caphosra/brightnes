@@ -1,10 +1,19 @@
-use brightnes_common::serial::{PulseRequest, Volume};
+use brightnes_common::serial::{APURequest, PulseRequest};
 use serde::{Deserialize, Serialize};
 
-use crate::{critical, nes::apu::APU};
+use crate::{
+    critical,
+    nes::{
+        apu::{APUComponent, APU},
+        cpu::CPU,
+    },
+    serial::Serial,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct APUPulse {
+    id: usize,
+
     pub active: bool,
     pub volume: u8,
     pub constant_volume: bool,
@@ -16,11 +25,134 @@ pub struct APUPulse {
     pub sweep_shift: u8,
     pub timer: u16,
     pub length_counter: u8,
+
+    volume_period: u8,
+    volume_counter: u8,
+
+    sweep_counter: u8,
+
+    changed: bool,
+}
+
+impl APUComponent for APUPulse {
+    fn write_reg(&mut self, addr: u16, data: u8) {
+        match addr {
+            0 => {
+                self.duty_cycle = (data >> 6) & 0b11;
+                self.loop_enabled = ((data >> 5) & 1) != 0;
+                self.constant_volume = ((data >> 4) & 1) != 0;
+
+                if self.constant_volume {
+                    self.volume = data & 0b1111;
+                } else {
+                    self.volume = Self::MAX_VOLUME;
+                    self.volume_period = data & 0b1111;
+                    self.volume_counter = self.volume_period;
+                }
+            }
+            1 => {
+                self.sweep_enabled = ((data >> 7) & 1) != 0;
+                self.sweep_period = (data >> 4) & 0b111;
+                self.sweep_negate = ((data >> 3) & 1) != 0;
+                self.sweep_shift = data & 0b111;
+
+                self.sweep_counter = self.sweep_period;
+            }
+            2 => {
+                self.timer = (self.timer & 0xFF00) | (data as u16);
+            }
+            3 => {
+                self.timer = (self.timer & 0x00FF) | (((data & 0b111) as u16) << 8);
+                self.length_counter = APU::convert_length_counter((data >> 3) & 0b11111);
+            }
+            _ => {
+                critical!(APU, "Pulse does not support such operation: {:#06X}", addr);
+            }
+        };
+
+        self.changed = true;
+    }
+
+    fn quarter_frame(&mut self) {
+        if !self.active || (!self.loop_enabled && self.length_counter == 0) {
+            return;
+        }
+
+        // Envelope
+        if !self.constant_volume {
+            if self.volume_counter > 0 {
+                self.volume_counter -= 1;
+            } else {
+                self.volume_counter = self.volume_period;
+                if self.volume > 0 {
+                    self.volume -= 1;
+
+                    self.mark_as_changed();
+                } else {
+                    if self.loop_enabled {
+                        // Reset the volume if looping is enabled.
+                        self.volume = Self::MAX_VOLUME;
+
+                        self.mark_as_changed();
+                    } else {
+                        self.volume = 0;
+                    }
+                }
+            }
+        }
+
+        // Length counter
+        if !self.loop_enabled {
+            if self.length_counter > 0 {
+                self.length_counter -= 1;
+                if self.length_counter == 0 {
+                    // The requested sound is completed.
+                    self.mark_as_changed();
+                }
+            }
+        }
+
+        self.send_request();
+    }
+
+    fn half_frame(&mut self) {
+        if !self.active || (!self.loop_enabled && self.length_counter == 0) {
+            return;
+        }
+
+        // Sweep
+        if self.sweep_counter > 0 {
+            self.sweep_counter -= 1;
+        } else {
+            self.sweep_counter = self.sweep_period;
+            if self.sweep_enabled && self.sweep_shift > 0 {
+                let timer = self.timer;
+                let change = self.timer >> self.sweep_shift;
+                if self.sweep_negate {
+                    self.timer = self.timer.checked_sub(change).unwrap_or(0);
+                } else {
+                    self.timer = self.timer.wrapping_add(change);
+                }
+
+                if timer != self.timer {
+                    self.mark_as_changed();
+                }
+            }
+        }
+    }
+
+    fn mark_as_changed(&mut self) {
+        self.changed = true;
+    }
 }
 
 impl APUPulse {
-    pub fn new() -> Self {
+    const MAX_VOLUME: u8 = 0x0F;
+
+    pub fn new(id: usize) -> Self {
         Self {
+            id,
+
             active: false,
             volume: 0,
             constant_volume: false,
@@ -32,51 +164,17 @@ impl APUPulse {
             sweep_shift: 0,
             timer: 0,
             length_counter: 0,
+
+            sweep_counter: 0,
+            volume_period: 0,
+            volume_counter: 0,
+
+            changed: false,
         }
     }
 
-    pub fn write_reg(&mut self, addr: u16, data: u8) -> PulseRequest {
-        match addr {
-            0 => {
-                self.duty_cycle = (data >> 6) & 0b11;
-                self.loop_enabled = ((data >> 5) & 1) != 0;
-                self.constant_volume = ((data >> 4) & 1) != 0;
-                self.volume = data & 0b1111;
-            }
-            1 => {
-                self.sweep_enabled = ((data >> 7) & 1) != 0;
-                self.sweep_period = (data >> 4) & 0b111;
-                self.sweep_negate = ((data >> 3) & 1) != 0;
-                self.sweep_shift = data & 0b111;
-            }
-            2 => {
-                self.timer = (self.timer & 0xFF00) | (data as u16);
-            }
-            3 => {
-                self.timer = (self.timer & 0x00FF) | (((data & 0b111) as u16) << 8);
-                self.length_counter = (data >> 3) & 0b11111;
-            }
-            _ => {
-                critical!(APU, "Pulse does not support such operation: {:#06X}", addr);
-            }
-        }
-        self.generate_request()
-    }
-
-    pub fn generate_request(&self) -> PulseRequest {
-        let volume = if self.constant_volume {
-            // Constant volume
-            Volume::Constant(self.volume as f64 / 15.0)
-        } else {
-            // Decreasing volume over time
-            Volume::Decreasing(self.volume.max(1) as f64 * APU::QUARTER_FRAME_INTERVAL)
-        };
-        let length = if self.loop_enabled {
-            f64::INFINITY
-        } else {
-            APU::convert_length_counter(self.length_counter) as f64 * APU::HALF_FRAME_INTERVAL
-        };
-        let duty_rate = match self.duty_cycle {
+    pub fn duty_rate(&self) -> f64 {
+        match self.duty_cycle {
             0 => 0.125,
             1 => 0.25,
             2 => 0.5,
@@ -84,23 +182,30 @@ impl APUPulse {
             _ => {
                 critical!(APU, "Invalid duty cycle: {}", self.duty_cycle);
             }
-        };
-        let sweep_interval = if self.sweep_enabled {
-            (self.sweep_period + 1) as f64 * APU::HALF_FRAME_INTERVAL
-        } else {
-            f64::INFINITY
-        };
-        PulseRequest {
-            active: self.active,
-            timer: self.timer,
-            volume,
-            length,
-            loop_enabled: self.loop_enabled,
-            duty_rate,
-            sweep_enabled: self.sweep_enabled,
-            sweep_interval,
-            sweep_negate: self.sweep_negate,
-            sweep_shift: self.sweep_shift,
+        }
+    }
+
+    pub fn send_request(&mut self) {
+        if self.changed {
+            let frequency = if self.timer == 0 {
+                0.0
+            } else {
+                CPU::CLOCK_FREQ as f64 / (16 * (self.timer + 1)) as f64
+            };
+            let volume = (self.volume as f64) / (Self::MAX_VOLUME as f64);
+
+            self.changed = false;
+
+            let request = PulseRequest {
+                active: self.active && self.length_counter > 0 && self.timer >= 8,
+                frequency,
+                volume,
+                duty_rate: self.duty_rate(),
+            };
+
+            Serial::communicate(|handler| {
+                handler.request_sound(APURequest::Pulse(self.id, request))
+            });
         }
     }
 }

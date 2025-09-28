@@ -14,22 +14,9 @@ pub enum SerialRequest {
 #[derive(Serialize, Deserialize)]
 pub struct PulseRequest {
     pub active: bool,
-    pub timer: u16,
-    pub volume: Volume,
-    pub length: f64,
+    pub frequency: f64,
+    pub volume: f64,
     pub duty_rate: f64,
-    pub loop_enabled: bool,
-
-    pub sweep_enabled: bool,
-    pub sweep_interval: f64,
-    pub sweep_negate: bool,
-    pub sweep_shift: u8,
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum Volume {
-    Constant(f64),
-    Decreasing(f64),
 }
 
 #[derive(Serialize, Deserialize)]

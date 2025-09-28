@@ -1,7 +1,10 @@
 use brightnes_common::serial::TriangleRequest;
 use serde::{Deserialize, Serialize};
 
-use crate::{error, nes::apu::APU};
+use crate::{
+    error,
+    nes::{apu::APU, cpu::CPU},
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct APUTriangle {
@@ -47,7 +50,7 @@ impl APUTriangle {
     }
 
     pub fn generate_request(&self) -> TriangleRequest {
-        let frequency = APU::CPU_CLOCK_FREQUENCY as f64 / 32.0 / ((self.timer + 1) as f64);
+        let frequency = CPU::CLOCK_FREQ as f64 / 32.0 / ((self.timer + 1) as f64);
         let length = if self.linear_counter_control {
             self.linear_counter as f64 * APU::QUARTER_FRAME_INTERVAL
         } else {

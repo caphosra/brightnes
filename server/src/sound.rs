@@ -1,12 +1,12 @@
 use std::{io::Read, net::TcpStream};
 
-use brightnes_common::serial::{APURequest, Volume};
+use brightnes_common::serial::APURequest;
 use cpal::{
     Device, Stream, SupportedStreamConfig, default_host,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use fundsp::{
-    hacker::{AudioUnit, Fade, envelope, lfo, pulse, zero},
+    hacker::{AudioUnit, Fade, envelope, pulse, zero},
     hacker32::{constant, triangle},
     net::{Net, NodeId},
 };
@@ -106,72 +106,18 @@ impl Sound {
 
         match request {
             APURequest::Pulse(id, req) => {
+                println!(
+                    "[-] Pulse request: active={}, frequency={}, volume={}, duty_rate={}",
+                    req.active, req.frequency as f32, req.volume as f32, req.duty_rate as f32
+                );
                 let unit: Box<dyn AudioUnit> = if req.active {
-                    let pulse_state = lfo(move |t| {
-                        if req.sweep_enabled {
-                            let sweep_phase = (t / req.sweep_interval).floor() as u32;
-                            let mut timer = req.timer as u32;
-
-                            for _ in 0..sweep_phase {
-                                if req.sweep_negate {
-                                    timer =
-                                        timer.checked_sub(timer >> req.sweep_shift).unwrap_or(0);
-                                } else {
-                                    timer += timer >> req.sweep_shift;
-                                };
-                            }
-
-                            if timer <= 0x8 {
-                                // Mute the channel.
-                                (0.0, 0.0)
-                            } else {
-                                // Recalculate frequency.
-                                (
-                                    Self::CPU_CLOCK_FREQUENCY / (16 * (timer + 1) as u32) as f64,
-                                    req.duty_rate,
-                                )
-                            }
-                        } else {
-                            (
-                                Self::CPU_CLOCK_FREQUENCY / (16 * (req.timer + 1) as u32) as f64,
-                                req.duty_rate,
-                            )
-                        }
-                    });
-
-                    match req.volume {
-                        Volume::Constant(volume) => {
-                            let wave = pulse_state
-                                >> pulse()
-                                    * Self::MASTER_VOLUME
-                                    * (volume as f32)
-                                    * envelope(move |t| if t < req.length { 1.0 } else { 0.0 });
-                            Box::new(wave)
-                        }
-                        Volume::Decreasing(decreasing_time) => {
-                            let wave = pulse_state
-                                >> pulse()
-                                    * Self::MASTER_VOLUME
-                                    * envelope(move |t| {
-                                        if t < req.length {
-                                            let step = if req.loop_enabled {
-                                                (t / decreasing_time).floor() as u32 % 16
-                                            } else {
-                                                ((t / decreasing_time).floor() as u32).min(15)
-                                            };
-                                            (15 - step) as f64 / 15.0
-                                        } else {
-                                            0.0
-                                        }
-                                    });
-                            Box::new(wave)
-                        }
-                    }
+                    let wave = constant((req.frequency as f32, req.duty_rate as f32))
+                        >> pulse() * Self::MASTER_VOLUME * (req.volume as f32);
+                    Box::new(wave)
                 } else {
                     Box::new(zero())
                 };
-                self.net
-                    .crossfade(self.pulses[id], Fade::Smooth, Self::FADE_TIME, unit);
+                self.net.replace(self.pulses[id], unit);
                 self.net.commit();
             }
             APURequest::Triangle(req) => {
