@@ -31,7 +31,10 @@ pub struct APUPulse {
 
     sweep_counter: u8,
 
-    changed: bool,
+    last_active: bool,
+    last_volume: u8,
+    last_time: u16,
+    last_duty_cycle: u8,
 }
 
 impl APUComponent for APUPulse {
@@ -69,12 +72,10 @@ impl APUComponent for APUPulse {
                 critical!(APU, "Pulse does not support such operation: {:#06X}", addr);
             }
         };
-
-        self.changed = true;
     }
 
     fn quarter_frame(&mut self) {
-        if !self.active || (!self.loop_enabled && self.length_counter == 0) {
+        if !self.active {
             return;
         }
 
@@ -86,28 +87,11 @@ impl APUComponent for APUPulse {
                 self.volume_counter = self.volume_period;
                 if self.volume > 0 {
                     self.volume -= 1;
-
-                    self.mark_as_changed();
                 } else {
                     if self.loop_enabled {
                         // Reset the volume if looping is enabled.
                         self.volume = Self::MAX_VOLUME;
-
-                        self.mark_as_changed();
-                    } else {
-                        self.volume = 0;
                     }
-                }
-            }
-        }
-
-        // Length counter
-        if !self.loop_enabled {
-            if self.length_counter > 0 {
-                self.length_counter -= 1;
-                if self.length_counter == 0 {
-                    // The requested sound is completed.
-                    self.mark_as_changed();
                 }
             }
         }
@@ -116,7 +100,7 @@ impl APUComponent for APUPulse {
     }
 
     fn half_frame(&mut self) {
-        if !self.active || (!self.loop_enabled && self.length_counter == 0) {
+        if !self.active {
             return;
         }
 
@@ -126,23 +110,21 @@ impl APUComponent for APUPulse {
         } else {
             self.sweep_counter = self.sweep_period;
             if self.sweep_enabled && self.sweep_shift > 0 {
-                let timer = self.timer;
                 let change = self.timer >> self.sweep_shift;
                 if self.sweep_negate {
                     self.timer = self.timer.checked_sub(change).unwrap_or(0);
                 } else {
                     self.timer = self.timer.wrapping_add(change);
                 }
-
-                if timer != self.timer {
-                    self.mark_as_changed();
-                }
             }
         }
-    }
 
-    fn mark_as_changed(&mut self) {
-        self.changed = true;
+        // Length counter
+        if !self.loop_enabled {
+            if self.length_counter > 0 {
+                self.length_counter -= 1;
+            }
+        }
     }
 }
 
@@ -169,7 +151,10 @@ impl APUPulse {
             volume_period: 0,
             volume_counter: 0,
 
-            changed: false,
+            last_active: false,
+            last_volume: 0,
+            last_time: 0,
+            last_duty_cycle: 0,
         }
     }
 
@@ -186,7 +171,16 @@ impl APUPulse {
     }
 
     pub fn send_request(&mut self) {
-        if self.changed {
+        let active = self.active && self.length_counter > 0 && self.timer >= 8;
+
+        if self.last_active != active
+            || (active
+                && (self.last_volume != self.volume
+                    || self.last_time != self.timer
+                    || self.last_duty_cycle != self.duty_cycle))
+        {
+            // There are some changes, send a request.
+
             let frequency = if self.timer == 0 {
                 0.0
             } else {
@@ -194,10 +188,8 @@ impl APUPulse {
             };
             let volume = (self.volume as f64) / (Self::MAX_VOLUME as f64);
 
-            self.changed = false;
-
             let request = PulseRequest {
-                active: self.active && self.length_counter > 0 && self.timer >= 8,
+                active,
                 frequency,
                 volume,
                 duty_rate: self.duty_rate(),
@@ -206,6 +198,11 @@ impl APUPulse {
             Serial::communicate(|handler| {
                 handler.request_sound(APURequest::Pulse(self.id, request))
             });
+
+            self.last_active = active;
+            self.last_volume = self.volume;
+            self.last_time = self.timer;
+            self.last_duty_cycle = self.duty_cycle;
         }
     }
 }

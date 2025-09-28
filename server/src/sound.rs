@@ -6,7 +6,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use fundsp::{
-    hacker::{AudioUnit, Fade, envelope, pulse, zero},
+    hacker::{AudioUnit, Fade, envelope, lfo, pulse, zero},
     hacker32::{constant, triangle},
     net::{Net, NodeId},
 };
@@ -107,11 +107,11 @@ impl Sound {
         match request {
             APURequest::Pulse(id, req) => {
                 println!(
-                    "[-] Pulse request: active={}, frequency={}, volume={}, duty_rate={}",
-                    req.active, req.frequency as f32, req.volume as f32, req.duty_rate as f32
+                    "[-] Pulse request: id={} active={}, frequency={}, volume={}, duty_rate={}",
+                    id, req.active, req.frequency as f32, req.volume as f32, req.duty_rate as f32
                 );
                 let unit: Box<dyn AudioUnit> = if req.active {
-                    let wave = constant((req.frequency as f32, req.duty_rate as f32))
+                    let wave = lfo(move |_t| (req.frequency, req.duty_rate))
                         >> pulse() * Self::MASTER_VOLUME * (req.volume as f32);
                     Box::new(wave)
                 } else {
