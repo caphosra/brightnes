@@ -82,6 +82,10 @@ impl APUComponent for APUPulse {
 
     fn set_active(&mut self, active: bool) {
         if self.active != active {
+            if !active {
+                // Reset length counter to stop playing the sound.
+                self.length_counter = 0;
+            }
             self.active = active;
             self.send_request();
         }
