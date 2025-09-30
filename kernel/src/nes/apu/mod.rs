@@ -23,7 +23,7 @@ pub enum APUFrameCounterMode {
 pub struct APUFrameCounter {
     pub irq: bool,
     pub mode: APUFrameCounterMode,
-    pub step: usize,
+    pub step: u32,
     pub frame: u8,
 }
 
@@ -65,6 +65,7 @@ impl APUFrameCounter {
 
 trait APUComponent {
     fn write_reg(&mut self, addr: u16, data: u8);
+    fn set_active(&mut self, active: bool);
     fn quarter_frame(&mut self);
     fn half_frame(&mut self);
 }
@@ -84,8 +85,8 @@ impl APU {
     pub const QUARTER_FRAME_INTERVAL: f64 = 1.0 / 60.0 / 4.0;
     pub const HALF_FRAME_INTERVAL: f64 = 1.0 / 60.0 / 2.0;
 
-    pub const QUARTER_FRAME_CLOCKS: usize = CPU::CLOCK_FREQ / 240;
-    pub const HALF_FRAME_CLOCKS: usize = CPU::CLOCK_FREQ / 120;
+    pub const QUARTER_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 240;
+    pub const HALF_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 120;
 
     pub fn get() -> &'static mut Self {
         let ptr = *APU_PTR.call_once(|| {
@@ -142,8 +143,8 @@ impl APU {
         } else if addr == 0x4015 {
             // ---D NT21
 
-            self.squares[0].active = (data & 1) != 0;
-            self.squares[1].active = ((data >> 1) & 1) != 0;
+            self.squares[0].set_active((data & 1) != 0);
+            self.squares[1].set_active(((data >> 1) & 1) != 0);
             let triangle_active = ((data >> 2) & 1) != 0;
             self.noise.active = ((data >> 3) & 1) != 0;
             self.dmc.active = ((data >> 4) & 1) != 0;
@@ -163,7 +164,7 @@ impl APU {
         }
     }
 
-    pub fn clock(&mut self, cycles: usize, cpu: &mut CPU) {
+    pub fn clock(&mut self, cycles: u32, cpu: &mut CPU) {
         self.frame_counter.step += cycles;
         if self.frame_counter.step >= Self::QUARTER_FRAME_CLOCKS {
             self.frame_counter.step -= Self::QUARTER_FRAME_CLOCKS;
@@ -192,7 +193,9 @@ impl APU {
                     if self.frame_counter.frame == 1 || self.frame_counter.frame == 4 {
                         self.half_frame();
                     }
-                    self.quarter_frame();
+                    if self.frame_counter.frame != 3 {
+                        self.quarter_frame();
+                    }
                 }
             }
         }

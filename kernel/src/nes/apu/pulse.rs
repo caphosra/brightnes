@@ -67,6 +67,12 @@ impl APUComponent for APUPulse {
             3 => {
                 self.timer = (self.timer & 0x00FF) | (((data & 0b111) as u16) << 8);
                 self.length_counter = APU::convert_length_counter((data >> 3) & 0b11111);
+
+                // Reset the volume envelope
+                if !self.constant_volume {
+                    self.volume = Self::MAX_VOLUME;
+                    self.volume_counter = self.volume_period;
+                }
             }
             _ => {
                 critical!(APU, "Pulse does not support such operation: {:#06X}", addr);
@@ -74,11 +80,14 @@ impl APUComponent for APUPulse {
         };
     }
 
-    fn quarter_frame(&mut self) {
-        if !self.active {
-            return;
+    fn set_active(&mut self, active: bool) {
+        if self.active != active {
+            self.active = active;
+            self.send_request();
         }
+    }
 
+    fn quarter_frame(&mut self) {
         // Envelope
         if !self.constant_volume {
             if self.volume_counter > 0 {
@@ -100,10 +109,6 @@ impl APUComponent for APUPulse {
     }
 
     fn half_frame(&mut self) {
-        if !self.active {
-            return;
-        }
-
         // Sweep
         if self.sweep_counter > 0 {
             self.sweep_counter -= 1;
@@ -115,6 +120,10 @@ impl APUComponent for APUPulse {
                     self.timer = self.timer.checked_sub(change).unwrap_or(0);
                 } else {
                     self.timer = self.timer.wrapping_add(change);
+                }
+                if self.timer > 0x7FF {
+                    // Mute the channel
+                    self.timer = 0;
                 }
             }
         }

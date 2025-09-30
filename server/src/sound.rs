@@ -1,6 +1,7 @@
 use std::{io::Read, net::TcpStream};
 
 use brightnes_common::serial::APURequest;
+use chrono::Local;
 use cpal::{
     Device, Stream, SupportedStreamConfig, default_host,
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -107,8 +108,13 @@ impl Sound {
         match request {
             APURequest::Pulse(id, req) => {
                 println!(
-                    "[-] Pulse request: id={} active={}, frequency={}, volume={}, duty_rate={}",
-                    id, req.active, req.frequency as f32, req.volume as f32, req.duty_rate as f32
+                    "[-] Pulse request: time={}, id={} active={}, frequency={}, volume={}, duty_rate={}",
+                    Local::now(),
+                    id,
+                    req.active,
+                    req.frequency as f32,
+                    req.volume as f32,
+                    req.duty_rate as f32
                 );
                 let unit: Box<dyn AudioUnit> = if req.active {
                     let wave = lfo(move |_t| (req.frequency, req.duty_rate))
@@ -117,7 +123,8 @@ impl Sound {
                 } else {
                     Box::new(zero())
                 };
-                self.net.replace(self.pulses[id], unit);
+                self.net
+                    .crossfade(self.pulses[id], Fade::Smooth, Self::FADE_TIME, unit);
                 self.net.commit();
             }
             APURequest::Triangle(req) => {
