@@ -1,17 +1,21 @@
-use crate::{
-    nes::{
-        cartridge::Cartridge,
-        cpu::NESCPU,
-        pad::PADS,
-        ppu::{NESPPU, OAM_DMA_ADDR},
-    },
-    warn,
+use crate::nes::{
+    apu::APU,
+    cartridge::Cartridge,
+    cpu::CPU,
+    pad::PADS,
+    ppu::{PPU, OAM_DMA_ADDR},
 };
 
 pub struct CPUBus;
 
 impl CPUBus {
-    pub fn read(addr: u16, cpu: &NESCPU, ppu: &mut NESPPU, cartridge: &mut Cartridge) -> u8 {
+    pub fn read(
+        addr: u16,
+        cpu: &CPU,
+        ppu: &mut PPU,
+        apu: &mut APU,
+        cartridge: &mut Cartridge,
+    ) -> u8 {
         if addr < 0x2000 {
             // RAM
             cpu.ram.read(addr & 0x7FF)
@@ -23,8 +27,7 @@ impl CPUBus {
             ppu.read_reg(addr, cartridge)
         } else if addr < 0x4016 {
             // APU
-            warn!(APU, "Attempt to read from APU: {:#06X}", addr);
-            0
+            apu.read_reg(addr)
         } else if addr == 0x4016 {
             // Pad 1
             let mut pad = PADS.write();
@@ -42,8 +45,9 @@ impl CPUBus {
     pub fn write(
         addr: u16,
         data: u8,
-        cpu: &mut NESCPU,
-        ppu: &mut NESPPU,
+        cpu: &mut CPU,
+        ppu: &mut PPU,
+        apu: &mut APU,
         cartridge: &mut Cartridge,
     ) {
         if addr < 0x2000 {
@@ -57,7 +61,7 @@ impl CPUBus {
             ppu.write_reg(addr, data, cpu, cartridge);
         } else if addr < 0x4016 {
             // APU
-            warn!(APU, "Attempt to write to APU: {:#06X}", addr);
+            apu.write_reg(addr, data);
         } else if addr == 0x4016 {
             // Pad 1
             let mut pad = PADS.write();

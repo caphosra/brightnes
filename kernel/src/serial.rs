@@ -1,12 +1,13 @@
 use alloc::vec;
+use brightnes_common::serial::{APURequest, SerialRequest};
 use crc::{Crc, CRC_32_ISCSI};
-use postcard::{from_bytes_crc32, to_allocvec_crc32};
+use postcard::{from_bytes_crc32, to_allocvec, to_allocvec_crc32};
 use spin::{lazy::Lazy, mutex::Mutex};
 use uart_16550::SerialPort;
 
 use crate::{
-    error, info,
-    nes::{cartridge::Cartridge, cpu::NESCPU, ppu::NESPPU},
+    error, info, log,
+    nes::{cartridge::Cartridge, cpu::CPU, ppu::PPU},
 };
 
 static SERIAL: Lazy<Mutex<Serial>> = Lazy::new(|| {
@@ -15,17 +16,12 @@ static SERIAL: Lazy<Mutex<Serial>> = Lazy::new(|| {
     Mutex::new(Serial { serial_port })
 });
 
-#[repr(u8)]
-#[derive(Clone, Copy)]
-pub enum SerialRequest {
-    #[allow(dead_code)]
-    Active = 1,
-    SaveState = 2,
-    LoadState = 3,
+trait SerialSend {
+    fn send(&self, serial: &mut Serial);
 }
 
-impl SerialRequest {
-    pub fn send(&self, serial: &mut Serial) {
+impl SerialSend for SerialRequest {
+    fn send(&self, serial: &mut Serial) {
         serial.write_u8(*self as u8);
     }
 }
@@ -48,12 +44,7 @@ impl Serial {
         handler(&mut port)
     }
 
-    pub fn save_state(
-        &mut self,
-        cpu: &NESCPU,
-        ppu: &NESPPU,
-        cartridge: &Cartridge,
-    ) -> Result<(), ()> {
+    pub fn save_state(&mut self, cpu: &CPU, ppu: &PPU, cartridge: &Cartridge) -> Result<(), ()> {
         let crc = Crc::<u32>::new(&CRC_32_ISCSI);
 
         SerialRequest::SaveState.send(self);
@@ -101,8 +92,8 @@ impl Serial {
 
     pub fn load_state(
         &mut self,
-        cpu: &mut NESCPU,
-        ppu: &mut NESPPU,
+        cpu: &mut CPU,
+        ppu: &mut PPU,
         cartridge: &mut Cartridge,
     ) -> Result<(), ()> {
         let crc = Crc::<u32>::new(&CRC_32_ISCSI);
@@ -143,6 +134,52 @@ impl Serial {
             error!(SYS, "Failed to deserialize cartridge state");
             ()
         })?;
+
+        Ok(())
+    }
+
+    pub fn save_ram(&mut self, data: &[u8]) -> Result<(), ()> {
+        SerialRequest::SaveRAM.send(self);
+
+        self.write_u32(data.len() as u32);
+        self.write(data);
+
+        Ok(())
+    }
+
+    pub fn load_ram(&mut self, buffer: &mut [u8]) -> Result<(), ()> {
+        SerialRequest::LoadRAM.send(self);
+
+        let size = self.read_u32() as usize;
+        if size != buffer.len() {
+            error!(
+                COM,
+                "RAM size mismatch: expected {}, got {}",
+                buffer.len(),
+                size
+            );
+
+            Err(())
+        } else {
+            self.read(buffer);
+
+            Ok(())
+        }
+    }
+
+    pub fn request_sound(&mut self, req: APURequest) -> Result<(), ()> {
+        SerialRequest::PlaySound.send(self);
+
+        let serialized_req = to_allocvec(&req);
+        let serialized_req = serialized_req.map_err(|_| {
+            error!(COM, "Failed to serialize APU request");
+            ()
+        })?;
+
+        self.write_u32(serialized_req.len() as u32);
+        self.write(&serialized_req);
+
+        log!(COM, "Sent APU request ({} bytes)", serialized_req.len());
 
         Ok(())
     }

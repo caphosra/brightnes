@@ -7,11 +7,10 @@ use crate::{
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
         cpu::{
-            BRK_FLAG, CARRY_FLAG, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, NESCPU, NES_CPU, OVERFLOW_FLAG,
-            ZERO_FLAG,
+            BRK_FLAG, CARRY_FLAG, CPU, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, OVERFLOW_FLAG, ZERO_FLAG,
         },
         pad::{Pad, PadButton, PADS},
-        ppu::{NESPPU, NES_PPU},
+        ppu::PPU,
     },
 };
 
@@ -72,7 +71,7 @@ static REV_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     let offset_x = PADDING;
     let offset_y = PADDING * 3 + PAD_HEIGHT + CPU_PPU_HEIGHT;
     let width = max_width - PADDING * 2;
-    let height = NESCPU::HISTORY_SIZE * FONT_HEIGHT as usize;
+    let height = CPU::HISTORY_SIZE * FONT_HEIGHT as usize;
     RwLock::new(FrameBuffer::new(offset_x, offset_y, width, height, 1))
 });
 
@@ -161,7 +160,7 @@ impl InfoProc {
     }
 
     #[allow(unused_assignments)]
-    fn render_cpu(buffer: &mut FrameBuffer, cpu: &NESCPU) {
+    fn render_cpu(buffer: &mut FrameBuffer, cpu: &CPU) {
         let color = InfoProc::color_text();
         let background = InfoProc::color_background();
 
@@ -204,7 +203,7 @@ impl InfoProc {
     }
 
     #[allow(unused_assignments)]
-    fn render_ppu(buffer: &mut FrameBuffer, ppu: &NESPPU) {
+    fn render_ppu(buffer: &mut FrameBuffer, ppu: &PPU) {
         let color = InfoProc::color_text();
         let background = InfoProc::color_background();
 
@@ -236,7 +235,7 @@ impl InfoProc {
     }
 
     #[allow(unused_assignments)]
-    fn render_reversing(buffer: &mut FrameBuffer, cpu: &NESCPU) {
+    fn render_reversing(buffer: &mut FrameBuffer, cpu: &CPU) {
         let color = InfoProc::color_text();
         let background = InfoProc::color_background();
 
@@ -263,25 +262,21 @@ impl InfoProc {
 
     pub fn render_all() {
         interrupts::without_interrupts(|| {
+            let cpu = CPU::get();
+
             let mut buffer = CPU_FB.write();
-            unsafe {
-                NES_CPU.force_write_unlock();
-            }
-            Self::render_cpu(&mut buffer, &NES_CPU.read());
+            Self::render_cpu(&mut buffer, cpu);
 
             buffer.flush_all();
 
             let mut buffer = PPU_FB.write();
-            unsafe {
-                NES_PPU.force_write_unlock();
-            }
-            Self::render_ppu(&mut buffer, &NES_PPU.read());
+            Self::render_ppu(&mut buffer, &PPU::get());
 
             // The background is already drawn.
             buffer.flush(true);
 
             let mut buffer = REV_FB.write();
-            Self::render_reversing(&mut buffer, &NES_CPU.read());
+            Self::render_reversing(&mut buffer, cpu);
 
             buffer.flush(true);
 

@@ -13,10 +13,12 @@ use crate::info::InfoProc;
 use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
 use crate::logger::LOG_FB;
-use crate::nes::cartridge::CARTRIDGE;
+use crate::nes::apu::APU;
+use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::InterruptType;
-use crate::nes::cpu::NES_CPU;
-use crate::nes::ppu::{GAME_FB, NES_PPU};
+use crate::nes::cpu::CPU;
+use crate::nes::ppu::GAME_FB;
+use crate::nes::ppu::PPU;
 use crate::proc::ProcessSwitcher;
 
 #[no_mangle]
@@ -49,22 +51,29 @@ pub extern "C" fn kernel_main() -> ! {
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
-    {
-        let mut cartridge = CARTRIDGE.write();
-        let mut cpu = NES_CPU.write();
-        let mut ppu = NES_PPU.write();
-        cpu.interrupt(InterruptType::RST, &mut ppu, &mut cartridge);
+    let cpu = CPU::get();
+    cpu.init();
 
-        log!(SYS, "Initialized the NES CPU.");
-    }
+    cpu.interrupt(InterruptType::RST);
+
+    let cartridge = Cartridge::get();
+    cartridge.init();
+
+    let ppu = PPU::get();
+    ppu.init();
+
+    let apu = APU::get();
+    apu.init();
 
     game_main();
 }
 
 pub fn game_main() -> ! {
-    let mut cartridge = CARTRIDGE.write();
-    let mut cpu = NES_CPU.write();
-    let mut ppu = NES_PPU.write();
+    let cpu = CPU::get();
+    let ppu = PPU::get();
+    let apu = APU::get();
+    let cartridge = Cartridge::get();
+
     let mut frame_buffer = GAME_FB.write();
 
     info!(SYS, "Start the game.");
@@ -73,16 +82,19 @@ pub fn game_main() -> ! {
         const FRAME_CYCLES: usize = 29780;
 
         let mut cycles = 0;
+
         while cycles < FRAME_CYCLES {
-            let required = cpu.clock(&mut ppu, &mut cartridge);
-            ppu.render_bg(
-                required as usize * 3,
-                &mut frame_buffer,
-                &mut cpu,
-                &mut cartridge,
-            );
+            interrupts::disable();
+
+            let required = cpu.clock(ppu, apu, cartridge);
+            ppu.render_bg(required as usize * 3, &mut frame_buffer, cpu, cartridge);
+            apu.clock(cycles, cpu);
+
+            interrupts::enable();
+
             cycles += required as usize;
         }
+
         frame_buffer.flush(false);
     }
 }
@@ -121,10 +133,7 @@ pub fn on_info_switched() {
 fn panic(info: &PanicInfo) -> ! {
     error!(SYS, "Kernel panic: {}", info);
 
-    unsafe {
-        NES_CPU.force_write_unlock();
-    }
-    let cpu = NES_CPU.read();
+    let cpu = CPU::get();
     error!(CPU, "PC: {:#06X}", cpu.reg_pc);
     cpu.report_backtrace();
 

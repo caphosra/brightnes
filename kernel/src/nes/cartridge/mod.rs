@@ -1,15 +1,16 @@
 use core::ptr::slice_from_raw_parts_mut;
 
+use alloc::string::ToString;
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
-use spin::{Lazy, RwLock};
+use spin::{Lazy, Once};
 
+use crate::mem::MemoryAllocator;
 use crate::nes::cartridge::mapper0::Mapper0;
 use crate::nes::cartridge::mapper2::Mapper2;
 use crate::nes::cartridge::mapper3::Mapper3;
 use crate::nes::cartridge::mapper4::Mapper4;
-use crate::nes::cpu::{InterruptType, NESCPU};
-use crate::nes::ppu::NESPPU;
+use crate::nes::cpu::{InterruptType, CPU};
 use crate::nes::Mirroring;
 use crate::{critical, info};
 
@@ -52,6 +53,11 @@ impl NESHeader {
     pub fn mapper(&self) -> u8 {
         (self.flag6 >> 4) | (self.flag7 & 0xF0)
     }
+
+    #[inline(always)]
+    pub fn mirroring(&self) -> Mirroring {
+        (self.flag6 & 1).into()
+    }
 }
 
 const NES_FILE_ADDR: usize = 0x3_000_000;
@@ -75,17 +81,28 @@ pub enum CartridgeKind {
     Mapper4(Mapper4),
 }
 
-pub static CARTRIDGE: Lazy<RwLock<Cartridge>> = Lazy::new(|| {
-    let header = NESHeader::new();
-    let prg_rom_size = header.prg_rom_size as usize * PRG_ROM_UNIT;
-    let chr_size = header.chr_size as usize * CHR_UNIT;
-    RwLock::new(Cartridge::new(header, prg_rom_size, chr_size))
-});
+static CARTRIDGE_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 
 impl Cartridge {
-    pub fn new(header: NESHeader, prg_rom_size: usize, chr_size: usize) -> Self {
+    pub fn get() -> &'static mut Self {
+        let ptr = *CARTRIDGE_PTR.call_once(|| {
+            // Allocate memory for the cartridge.
+            let cartridge_raw_ptr = MemoryAllocator::alloc_zeroed::<Cartridge>();
+            cartridge_raw_ptr as usize
+        }) as *mut Cartridge;
+        unsafe { ptr.as_mut() }.unwrap()
+    }
+
+    pub fn init(&mut self) {
+        let header = NESHeader::new();
+        let prg_rom_size = header.prg_rom_size as usize * PRG_ROM_UNIT;
+        let chr_size = header.chr_size as usize * CHR_UNIT;
+
         let mapper = header.mapper();
         info!(CAT, "Mapper: {}", mapper);
+
+        let mirroring = header.mirroring();
+        info!(CAT, "Mirroring: {}", mirroring.to_string());
 
         let kind = match mapper {
             0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_size)),
@@ -97,9 +114,10 @@ impl Cartridge {
             }
         };
 
-        info!(SYS, "Loaded the cartridge.");
+        self.header = header;
+        self.kind = kind;
 
-        Cartridge { header, kind }
+        info!(SYS, "Loaded the cartridge.");
     }
 
     pub fn load_prg_rom<const N: usize>(prg_rom_size: usize) -> (Vec<u8, N>, *mut u8) {
@@ -195,11 +213,18 @@ impl Cartridge {
         };
     }
 
-    pub fn irq_clock(&mut self, cpu: &mut NESCPU, ppu: &mut NESPPU) {
+    pub fn irq_clock(&mut self, cpu: &mut CPU) {
         if let CartridgeKind::Mapper4(mapper) = &mut self.kind {
             if mapper.irq_clock() {
-                cpu.interrupt(InterruptType::IRQ, ppu, self);
+                cpu.interrupt(InterruptType::IRQ);
             }
+        }
+    }
+
+    pub fn working_ram(&mut self) -> Option<&mut [u8]> {
+        match &mut self.kind {
+            CartridgeKind::Mapper4(mapper) => Some(mapper.working_ram()),
+            _ => None,
         }
     }
 }

@@ -3,6 +3,9 @@ name = "brightnes-kernel"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+logging = []
+
 [dependencies]
 crc = "3.3.0"
 heapless = {version = "0.9.1", features = ["serde"]}
@@ -13,3 +16,4 @@ serde = {version = "1.0.225", default-features = false, features = ["derive", "a
 spin = "0.10.0"
 uart_16550 = "0.4.0"
 x86_64 = "0.15.2"
+brightnes-common = { path = "../common" }

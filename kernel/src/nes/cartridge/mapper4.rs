@@ -2,6 +2,7 @@
 // Reference: https://www.nesdev.org/wiki/MMC3
 //
 
+use alloc::string::ToString;
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
 
@@ -219,6 +220,10 @@ impl Mapper4 {
             false
         }
     }
+
+    pub fn working_ram(&mut self) -> &mut [u8] {
+        &mut self.prg_ram
+    }
 }
 
 impl CartridgeOperations for Mapper4 {
@@ -275,14 +280,11 @@ impl CartridgeOperations for Mapper4 {
             if addr % 2 == 0 {
                 // Mirroring
                 let mirroring: Mirroring = (data & 1).into();
-                match mirroring {
-                    Mirroring::Horizontal => {
-                        warn!(BUS, "Change mirroring to horizontal is not supported.");
-                    }
-                    Mirroring::Vertical => {
-                        warn!(BUS, "Change mirroring to vertical is not supported.")
-                    }
-                }
+                warn!(
+                    BUS,
+                    "Change mirroring to {} is not supported.",
+                    mirroring.to_string()
+                );
             } else {
                 // PRG RAM protect
                 self.prg_ram_enabled = data & (1 << 7) != 0;

@@ -1,14 +1,15 @@
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
-use spin::{Lazy, RwLock};
+use spin::{Lazy, Once, RwLock};
 
+use crate::mem::MemoryAllocator;
 use crate::nes::ppu::color::NESColorConverter;
 use crate::{
     critical,
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
         cartridge::Cartridge,
-        cpu::{InterruptType, NESCPU},
+        cpu::{InterruptType, CPU},
         ppu::{bus::PPUBus, oam::OAM, vram::VRAM},
     },
 };
@@ -30,7 +31,7 @@ pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
 });
 
 #[derive(Serialize, Deserialize)]
-pub struct NESPPU {
+pub struct PPU {
     pub reg_ctrl: u8,
     pub reg_mask: u8,
     pub reg_oam_addr: u8,
@@ -82,13 +83,62 @@ const PATTERN_SIZE: u16 = 16;
 const PPU_CYCLE: u16 = 341;
 const PPU_VBLANK: u16 = 22;
 
-impl NESPPU {
+static PPU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
+
+impl PPU {
     const COARSE_X_MASK: u16 = 0b00000000_00011111;
     const COARSE_Y_MASK: u16 = 0b00000011_11100000;
     const FINE_Y_MASK: u16 = 0b01110000_00000000;
     const NAME_TABLE_MASK: u16 = 0b00001100_00000000;
 
     const IRQ_CYCLE: u16 = 260;
+
+    pub fn new() -> Self {
+        PPU {
+            reg_ctrl: 0,
+            reg_mask: 0,
+            reg_oam_addr: 0,
+            reg_status: 0,
+            reg_data: 0,
+            reg_data_is_lo: false,
+
+            reg_data_buffer: 0,
+
+            reg_v: 0,
+            reg_t: 0,
+            reg_w: false,
+            reg_x: 0,
+
+            relative_x: 0,
+
+            x: 0,
+            y: 0,
+
+            vram: VRAM::new(),
+            oam: OAM::new(),
+
+            frame_counter: 0,
+
+            sprite0_hit: Vec::from_array([false; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
+            sprites_layer: Vec::from_array([None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
+        }
+    }
+
+    pub fn get() -> &'static mut Self {
+        let ppu_raw_ptr = *PPU_PTR.call_once(|| {
+            // Allocate memory for PPU.
+            let ppu_raw_ptr = MemoryAllocator::alloc_zeroed::<PPU>();
+            ppu_raw_ptr as usize
+        }) as *mut PPU;
+        unsafe { ppu_raw_ptr.as_mut() }.unwrap()
+    }
+
+    pub fn init(&mut self) {
+        self.vram = VRAM::new();
+        self.oam = OAM::new();
+        self.sprite0_hit = Vec::from_array([false; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]);
+        self.sprites_layer = Vec::from_array([None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]);
+    }
 
     #[inline(always)]
     pub fn ctrl_increment(&self) -> u16 {
@@ -177,7 +227,7 @@ impl NESPPU {
         }
     }
 
-    pub fn write_reg(&mut self, addr: u16, val: u8, cpu: &mut NESCPU, cartridge: &mut Cartridge) {
+    pub fn write_reg(&mut self, addr: u16, val: u8, cpu: &mut CPU, cartridge: &mut Cartridge) {
         if addr == OAM_DMA_ADDR {
             // OAM_DMA
             self.oam.request_dma_transfer(val, cpu);
@@ -353,7 +403,7 @@ impl NESPPU {
         &mut self,
         cycles: usize,
         frame_buffer: &mut FrameBuffer,
-        cpu: &mut NESCPU,
+        cpu: &mut CPU,
         cartridge: &mut Cartridge,
     ) {
         let mut bg_color = None;
@@ -452,8 +502,16 @@ impl NESPPU {
             }
 
             if self.x == Self::IRQ_CYCLE && self.y < NES_FRAME_HEIGHT as u16 {
-                // Clock IRQ counter
-                cartridge.irq_clock(cpu, self);
+                if self.ctrl_bg_pattern_table() != self.ctrl_sprite_pattern_table()
+                    && (self.mask_bg_visible() || self.mask_sprite_visible())
+                {
+                    // https://www.nesdev.org/wiki/MMC3
+
+                    // BG uses $0000, sprite uses $1000 or vice versa.
+
+                    // Clock IRQ counter
+                    cartridge.irq_clock(cpu);
+                }
             }
 
             if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
@@ -461,7 +519,7 @@ impl NESPPU {
                 self.reg_status |= 0x80;
 
                 if self.ctrl_nmi_enable() {
-                    cpu.interrupt(InterruptType::NMI, self, cartridge);
+                    cpu.interrupt(InterruptType::NMI);
                 }
             }
 
@@ -634,37 +692,6 @@ impl NESPPU {
         }
     }
 }
-
-pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
-    RwLock::new(NESPPU {
-        reg_ctrl: 0,
-        reg_mask: 0,
-        reg_oam_addr: 0,
-        reg_status: 0,
-        reg_data: 0,
-        reg_data_is_lo: false,
-
-        reg_data_buffer: 0,
-
-        reg_v: 0,
-        reg_t: 0,
-        reg_w: false,
-        reg_x: 0,
-
-        relative_x: 0,
-
-        x: 0,
-        y: 0,
-
-        vram: VRAM::new(),
-        oam: OAM::new(),
-
-        frame_counter: 0,
-
-        sprite0_hit: Vec::from_array([false; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
-        sprites_layer: Vec::from_array([None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
-    })
-});
 
 impl SpriteRequest {
     pub fn new(frame: usize, priority: usize, bg: bool, color: u8) -> Self {
