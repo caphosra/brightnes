@@ -1,5 +1,7 @@
 use x86_64::{instructions::port::Port, structures::port::PortRead};
 
+use crate::info;
+
 pub struct PCIDevice {
     pub bus_number: u8,
     pub device_number: u8,
@@ -33,6 +35,8 @@ impl PCIDevice {
                     let found_vendor_id = (data & 0xFFFF) as u16;
                     let found_device_id = (data >> 16) as u16;
                     if found_vendor_id == vendor_id && found_device_id == device_id {
+                        info!(DRV, "Found PCI device: bus={} device={} function={} vendor_id={:#06X} device_id={:#06X}", bus, device, function, vendor_id, device_id);
+
                         return Some(PCIDevice {
                             bus_number: bus,
                             device_number: device,

@@ -9,7 +9,7 @@ pub struct VirtBlockDevice<'a> {
 }
 
 impl<'a> VirtBlockDevice<'a> {
-    const VIRTIO_BLOCK_DEVICE_ID: u16 = 0x1001;
+    pub const VIRTIO_BLOCK_DEVICE_ID: u16 = 0x1001;
 
     pub fn new() -> Option<Self> {
         let base_driver = VirtIODevice::new(Self::VIRTIO_BLOCK_DEVICE_ID)?;

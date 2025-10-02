@@ -1,6 +1,6 @@
 use core::ptr::write_volatile;
 
-use crate::{drivers::pci::PCIDevice, log, mem::MemoryAllocator};
+use crate::{drivers::pci::PCIDevice, info};
 
 pub const VIRT_QUEUE_SIZE: usize = 64;
 
@@ -108,8 +108,8 @@ impl VirtIODevice {
             let cap_id = pci_device.read_config::<u8>(pointer);
             let cap_next = pci_device.read_config::<u8>(pointer + 1);
             let cap_len = pci_device.read_config::<u8>(pointer + 2);
-            log!(
-                SYS,
+            info!(
+                DRV,
                 "Found a capability: cap_id={:#04X} next_pointer={:#04X} len={:#04X}",
                 cap_id,
                 cap_next,
@@ -121,18 +121,26 @@ impl VirtIODevice {
                     let bar_index = pci_device.read_config::<u8>(pointer + 4);
                     let offset = pci_device.read_config::<u32>(pointer + 8);
                     let length = pci_device.read_config::<u32>(pointer + 12);
+                    info!(
+                        DRV,
+                        "VIRTIO_PCI_CAP_COMMON_CFG: bar_index={} offset={:#010X} length={:#010X}",
+                        bar_index,
+                        offset,
+                        length
+                    );
+
                     let address_lo =
                         pci_device.read_config::<u32>(0x10 + (bar_index as u8 * 4)) as u64;
                     let address_hi =
                         pci_device.read_config::<u32>(0x10 + ((bar_index + 1) as u8 * 4)) as u64;
-                    let address = (address_hi << 32) | address_lo;
-                    log!(
-                        SYS,
-                        "Found a VIRTIO_PCI_CAP_COMMON_CFG: bar_index={} offset={:#010X} length={:#010X} address={:#018X}",
-                        bar_index,
-                        offset,
-                        length,
-                        address
+
+                    // Through monitoring QEMU, it seems that the base address is always 16-byte aligned.
+                    // I'm not sure it is true.
+                    let address = ((address_hi << 32) | (address_lo & !0xF)) + offset as u64;
+                    info!(
+                        DRV,
+                        "PCI common config address: {:#018X}",
+                        address + offset as u64
                     );
                     return Some(address as *mut PCICommonConfig);
                 }
