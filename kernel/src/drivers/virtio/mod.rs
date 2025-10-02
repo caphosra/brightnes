@@ -1,6 +1,6 @@
-use core::ptr::write_volatile;
+use core::ptr::{read_volatile, write_volatile};
 
-use crate::{drivers::pci::PCIDevice, info};
+use crate::{critical, drivers::pci::PCIDevice, info};
 
 pub const VIRT_QUEUE_SIZE: usize = 64;
 
@@ -158,6 +158,8 @@ impl VirtIODevice {
     const FAILED: u8 = 128;
 
     pub fn init(&mut self) {
+        info!(DRV, "Num queues: {}", self.common_config.num_queues);
+
         // Reset the device.
         unsafe {
             write_volatile(&mut self.common_config.device_status, 0);
@@ -169,6 +171,14 @@ impl VirtIODevice {
                 &mut self.common_config.device_status,
                 Self::FEATURES_OK | Self::ACKNOWLEDGE,
             );
+        }
+
+        let status = unsafe { read_volatile(&self.common_config.device_status) };
+        if (status & Self::ACKNOWLEDGE) == 0 {
+            critical!(DRV, "Failed to acknowledge the device.");
+        }
+        if (status & Self::FEATURES_OK) == 0 {
+            critical!(DRV, "The device does not support FEATURES_OK.");
         }
 
         // This is a driver.

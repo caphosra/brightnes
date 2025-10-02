@@ -48,10 +48,10 @@ pub extern "C" fn kernel_main() -> ! {
     info!(SYS, "Enabled logging system.");
 
     let mut driver = VirtIODevice::new(VirtBlockDevice::VIRTIO_BLOCK_DEVICE_ID).unwrap();
-    info!(DRV, "Num queues {}", driver.common_config.num_queues);
+    driver.init();
 
     let mut driver = VirtIODevice::new(0x1059).unwrap();
-    info!(DRV, "Num queues {}", driver.common_config.num_queues);
+    driver.init();
 
     InterruptController::init();
     interrupts::enable();
