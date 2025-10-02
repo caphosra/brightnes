@@ -1,4 +1,3 @@
-use brightnes_common::serial::APURequest;
 use serde::{Deserialize, Serialize};
 use spin::{Lazy, Once};
 
@@ -9,7 +8,6 @@ use crate::{
         apu::{dmc::DMC, noise::APUNoise, pulse::APUPulse, triangle::APUTriangle},
         cpu::{InterruptType, CPU},
     },
-    serial::Serial,
 };
 
 #[repr(u8)]
@@ -132,8 +130,7 @@ impl APU {
             self.squares[1].write_reg(addr - 0x4004, data);
         } else if addr < 0x400C {
             // Triangle
-            let req = self.triangle.write_reg(addr - 0x4008, data);
-            Serial::communicate(|handler| handler.request_sound(APURequest::Triangle(req)));
+            self.triangle.write_reg(addr - 0x4008, data);
         } else if addr < 0x4010 {
             // Noise
             self.noise.write_reg(addr - 0x400C, data);
@@ -145,17 +142,9 @@ impl APU {
 
             self.squares[0].set_active((data & 1) != 0);
             self.squares[1].set_active(((data >> 1) & 1) != 0);
-            let triangle_active = ((data >> 2) & 1) != 0;
+            self.triangle.set_active(((data >> 2) & 1) != 0);
             self.noise.active = ((data >> 3) & 1) != 0;
             self.dmc.active = ((data >> 4) & 1) != 0;
-
-            if triangle_active != self.triangle.active {
-                // Change active state
-                self.triangle.active = triangle_active;
-
-                let req = self.triangle.generate_request();
-                Serial::communicate(|handler| handler.request_sound(APURequest::Triangle(req)));
-            }
         } else if addr == 0x4017 {
             // Frame Counter
             self.frame_counter.write_reg(data);
@@ -204,11 +193,13 @@ impl APU {
     fn quarter_frame(&mut self) {
         self.squares[0].quarter_frame();
         self.squares[1].quarter_frame();
+        self.triangle.quarter_frame();
     }
 
     fn half_frame(&mut self) {
         self.squares[0].half_frame();
         self.squares[1].half_frame();
+        self.triangle.half_frame();
     }
 
     pub fn convert_length_counter(length: u8) -> u8 {

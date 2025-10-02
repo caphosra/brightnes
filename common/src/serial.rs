@@ -23,7 +23,6 @@ pub struct PulseRequest {
 pub struct TriangleRequest {
     pub active: bool,
     pub frequency: f64,
-    pub length: f64,
 }
 
 #[derive(Serialize, Deserialize)]
