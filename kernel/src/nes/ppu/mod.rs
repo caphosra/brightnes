@@ -1,20 +1,22 @@
-use alloc::vec;
-use alloc::vec::Vec;
-use spin::{Lazy, RwLock};
+use heapless::Vec;
+use serde::{Deserialize, Serialize};
+use spin::{Lazy, Once, RwLock};
 
+use crate::mem::MemoryAllocator;
 use crate::nes::ppu::color::NESColorConverter;
 use crate::{
     critical,
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
         cartridge::Cartridge,
-        cpu::{InterruptType, NESCPU},
+        cpu::{InterruptType, CPU},
         ppu::{bus::PPUBus, oam::OAM, vram::VRAM},
     },
 };
 
 const NES_FRAME_WIDTH: usize = 256;
 const NES_FRAME_HEIGHT: usize = 240;
+const NES_FRAME_TOTAL_SIZE: usize = NES_FRAME_WIDTH * NES_FRAME_HEIGHT;
 
 pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     let (width, height) = FrameBuffer::max_size();
@@ -28,7 +30,8 @@ pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     ))
 });
 
-pub struct NESPPU {
+#[derive(Serialize, Deserialize)]
+pub struct PPU {
     pub reg_ctrl: u8,
     pub reg_mask: u8,
     pub reg_oam_addr: u8,
@@ -53,11 +56,11 @@ pub struct NESPPU {
 
     frame_counter: usize,
 
-    sprite0_hit: Vec<bool>,
-    sprites_layer: Vec<Option<SpriteRequest>>,
+    sprite0_hit: Vec<bool, NES_FRAME_TOTAL_SIZE>,
+    sprites_layer: Vec<Option<SpriteRequest>, NES_FRAME_TOTAL_SIZE>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct SpriteRequest {
     pub priority: usize,
     pub color: u8,
@@ -80,11 +83,62 @@ const PATTERN_SIZE: u16 = 16;
 const PPU_CYCLE: u16 = 341;
 const PPU_VBLANK: u16 = 22;
 
-impl NESPPU {
+static PPU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
+
+impl PPU {
     const COARSE_X_MASK: u16 = 0b00000000_00011111;
     const COARSE_Y_MASK: u16 = 0b00000011_11100000;
     const FINE_Y_MASK: u16 = 0b01110000_00000000;
     const NAME_TABLE_MASK: u16 = 0b00001100_00000000;
+
+    const IRQ_CYCLE: u16 = 260;
+
+    pub fn new() -> Self {
+        PPU {
+            reg_ctrl: 0,
+            reg_mask: 0,
+            reg_oam_addr: 0,
+            reg_status: 0,
+            reg_data: 0,
+            reg_data_is_lo: false,
+
+            reg_data_buffer: 0,
+
+            reg_v: 0,
+            reg_t: 0,
+            reg_w: false,
+            reg_x: 0,
+
+            relative_x: 0,
+
+            x: 0,
+            y: 0,
+
+            vram: VRAM::new(),
+            oam: OAM::new(),
+
+            frame_counter: 0,
+
+            sprite0_hit: Vec::from_array([false; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
+            sprites_layer: Vec::from_array([None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
+        }
+    }
+
+    pub fn get() -> &'static mut Self {
+        let ppu_raw_ptr = *PPU_PTR.call_once(|| {
+            // Allocate memory for PPU.
+            let ppu_raw_ptr = MemoryAllocator::alloc_zeroed::<PPU>();
+            ppu_raw_ptr as usize
+        }) as *mut PPU;
+        unsafe { ppu_raw_ptr.as_mut() }.unwrap()
+    }
+
+    pub fn init(&mut self) {
+        self.vram = VRAM::new();
+        self.oam = OAM::new();
+        self.sprite0_hit = Vec::from_array([false; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]);
+        self.sprites_layer = Vec::from_array([None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]);
+    }
 
     #[inline(always)]
     pub fn ctrl_increment(&self) -> u16 {
@@ -173,10 +227,10 @@ impl NESPPU {
         }
     }
 
-    pub fn write_reg(&mut self, addr: u16, val: u8, cartridge: &mut Cartridge) {
+    pub fn write_reg(&mut self, addr: u16, val: u8, cpu: &mut CPU, cartridge: &mut Cartridge) {
         if addr == OAM_DMA_ADDR {
             // OAM_DMA
-            self.oam.request_dma_transfer(val);
+            self.oam.request_dma_transfer(val, cpu);
             return;
         }
 
@@ -298,6 +352,11 @@ impl NESPPU {
     }
 
     fn get_bg_color(&self, cartridge: &mut Cartridge) -> Option<PixelColor> {
+        if !self.mask_bg_visible() || (self.x < 8 && !self.mask_bg_visible_left8()) {
+            // The background is not visible.
+            return None;
+        }
+
         let tile_addr = self.tile_addr();
         let attribute_addr = self.attribute_addr();
 
@@ -344,70 +403,79 @@ impl NESPPU {
         &mut self,
         cycles: usize,
         frame_buffer: &mut FrameBuffer,
+        cpu: &mut CPU,
         cartridge: &mut Cartridge,
     ) {
         let mut bg_color = None;
 
-        for cycle_num in 0..cycles {
+        for _ in 0..cycles {
             if self.x == 0 {
                 self.relative_x = self.reg_x as u16;
             }
 
             if self.x < NES_FRAME_WIDTH as u16 && self.y < NES_FRAME_HEIGHT as u16 {
-                if self.mask_bg_visible() && (self.x >= 8 || self.mask_bg_visible_left8()) {
-                    // Get the color of the background.
-                    let color = self.get_bg_color(cartridge);
+                let sprite_req =
+                    &self.sprites_layer[self.y as usize * NES_FRAME_WIDTH + self.x as usize];
 
-                    if let Some(color) = color {
-                        // The background color is not transparent.
+                if let Some(req) = sprite_req {
+                    // A sprite can be visible.
 
-                        let sprite_req = &self.sprites_layer
-                            [self.y as usize * NES_FRAME_WIDTH + self.x as usize];
-                        if let Some(req) = sprite_req {
-                            if !req.background() {
-                                // Sprite has higher priority.
-                                let color =
-                                    PixelColor::from_nes_color(req.color, self.mask_grey_scale());
-                                frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
-                            } else {
-                                // Background has higher priority.
-                                frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
-                            }
-                        } else {
-                            // Background has higher priority.
-                            frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
-                        }
+                    if !req.background() {
+                        // Sprite is over background.
+                        let color = PixelColor::from_nes_color(req.color, self.mask_grey_scale());
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
 
                         if self.sprite0_hit[self.y as usize * NES_FRAME_WIDTH + self.x as usize] {
-                            // Sprite 0 hit is occurred.
-                            self.reg_status |= 0x40;
+                            // Sprite 0 hit can be occurred.
+                            // To check it, we will calculate the background color even though it is not visible.
+
+                            if self.get_bg_color(cartridge).is_some() {
+                                // Sprite 0 hit is occurred.
+                                self.reg_status |= 0x40;
+                            }
                         }
                     } else {
-                        // The background color is transparent.
+                        let color = self.get_bg_color(cartridge);
+                        if let Some(color) = color {
+                            // The background color is not transparent.
+                            // Sprite is hidden.
+                            frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
 
-                        let sprite_req = &self.sprites_layer
-                            [self.y as usize * NES_FRAME_WIDTH + self.x as usize];
-                        if let Some(req) = sprite_req {
+                            if self.sprite0_hit[self.y as usize * NES_FRAME_WIDTH + self.x as usize]
+                            {
+                                // Sprite 0 hit is occurred.
+                                self.reg_status |= 0x40;
+                            }
+                        } else {
+                            // The background color is transparent.
                             // Sprite is visible.
                             let color =
                                 PixelColor::from_nes_color(req.color, self.mask_grey_scale());
                             frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
-                        } else {
-                            // Both background and sprite are transparent or not placed.
-                            let bg_color = match bg_color {
-                                Some(color) => color,
-                                None => {
-                                    // It is not initialized.
-                                    let color = PixelColor::from_nes_color(
-                                        PPUBus::read(PALETTE_BASE_ADDR, &self.vram, cartridge),
-                                        self.mask_grey_scale(),
-                                    );
-                                    bg_color = Some(color);
-                                    color
-                                }
-                            };
-                            frame_buffer.set_chunk(self.x as usize, self.y as usize, bg_color);
                         }
+                    }
+                } else {
+                    // No sprite is visible.
+
+                    let color = self.get_bg_color(cartridge);
+                    if let Some(color) = color {
+                        // The background color is not transparent.
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
+                    } else {
+                        // Both background and sprite are transparent or not placed.
+                        let bg_color = match bg_color {
+                            Some(color) => color,
+                            None => {
+                                // It is not initialized.
+                                let color = PixelColor::from_nes_color(
+                                    PPUBus::read(PALETTE_BASE_ADDR, &self.vram, cartridge),
+                                    self.mask_grey_scale(),
+                                );
+                                bg_color = Some(color);
+                                color
+                            }
+                        };
+                        frame_buffer.set_chunk(self.x as usize, self.y as usize, bg_color);
                     }
                 }
 
@@ -433,12 +501,25 @@ impl NESPPU {
                 self.update_vertical_v();
             }
 
+            if self.x == Self::IRQ_CYCLE && self.y < NES_FRAME_HEIGHT as u16 {
+                if self.ctrl_bg_pattern_table() != self.ctrl_sprite_pattern_table()
+                    && (self.mask_bg_visible() || self.mask_sprite_visible())
+                {
+                    // https://www.nesdev.org/wiki/MMC3
+
+                    // BG uses $0000, sprite uses $1000 or vice versa.
+
+                    // Clock IRQ counter
+                    cartridge.irq_clock(cpu);
+                }
+            }
+
             if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
                 // Set VBLANK flag
                 self.reg_status |= 0x80;
 
                 if self.ctrl_nmi_enable() {
-                    NESCPU::interrupt(InterruptType::NMI);
+                    cpu.interrupt(InterruptType::NMI);
                 }
             }
 
@@ -460,10 +541,8 @@ impl NESPPU {
                 // One frame is rendered.
                 self.frame_counter += 1;
 
-                // This function assumes that it does not cross one frame.
-                // So, if it reaches here, just restart it.
-                self.render_bg(cycles - cycle_num - 1, frame_buffer, cartridge);
-                return;
+                // Initialize the background color.
+                bg_color = None;
             }
         }
     }
@@ -613,37 +692,6 @@ impl NESPPU {
         }
     }
 }
-
-pub static NES_PPU: Lazy<RwLock<NESPPU>> = Lazy::new(|| {
-    RwLock::new(NESPPU {
-        reg_ctrl: 0,
-        reg_mask: 0,
-        reg_oam_addr: 0,
-        reg_status: 0,
-        reg_data: 0,
-        reg_data_is_lo: false,
-
-        reg_data_buffer: 0,
-
-        reg_v: 0,
-        reg_t: 0,
-        reg_w: false,
-        reg_x: 0,
-
-        relative_x: 0,
-
-        x: 0,
-        y: 0,
-
-        vram: VRAM::new(),
-        oam: OAM::new(),
-
-        frame_counter: 0,
-
-        sprite0_hit: vec![false; NES_FRAME_WIDTH * NES_FRAME_HEIGHT],
-        sprites_layer: vec![None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT],
-    })
-});
 
 impl SpriteRequest {
     pub fn new(frame: usize, priority: usize, bg: bool, color: u8) -> Self {

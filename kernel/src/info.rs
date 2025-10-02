@@ -6,14 +6,11 @@ use crate::{
     font::FONT_HEIGHT,
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
-        cartridge::{Cartridge, CARTRIDGE},
-        cpu::instr::Instruction,
         cpu::{
-            BRK_FLAG, CARRY_FLAG, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, NESCPU, NES_CPU, OVERFLOW_FLAG,
-            ZERO_FLAG,
+            BRK_FLAG, CARRY_FLAG, CPU, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, OVERFLOW_FLAG, ZERO_FLAG,
         },
         pad::{Pad, PadButton, PADS},
-        ppu::{NESPPU, NES_PPU},
+        ppu::PPU,
     },
 };
 
@@ -24,7 +21,6 @@ const PAD_HEIGHT: usize = BUTTON_SIZE * 3 + PADDING * 2;
 const BUTTON_SIZE: usize = 10;
 
 const CPU_PPU_HEIGHT: usize = FONT_HEIGHT as usize * 9;
-const REV_LEN: usize = 8;
 
 static PAD1_FB: Lazy<RwLock<FrameBuffer>> =
     Lazy::new(|| RwLock::new(FrameBuffer::new(PADDING, PADDING, PAD_WIDTH, PAD_HEIGHT, 1)));
@@ -75,7 +71,7 @@ static REV_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     let offset_x = PADDING;
     let offset_y = PADDING * 3 + PAD_HEIGHT + CPU_PPU_HEIGHT;
     let width = max_width - PADDING * 2;
-    let height = REV_LEN * FONT_HEIGHT as usize;
+    let height = CPU::HISTORY_SIZE * FONT_HEIGHT as usize;
     RwLock::new(FrameBuffer::new(offset_x, offset_y, width, height, 1))
 });
 
@@ -164,7 +160,7 @@ impl InfoProc {
     }
 
     #[allow(unused_assignments)]
-    fn render_cpu(buffer: &mut FrameBuffer, cpu: &NESCPU) {
+    fn render_cpu(buffer: &mut FrameBuffer, cpu: &CPU) {
         let color = InfoProc::color_text();
         let background = InfoProc::color_background();
 
@@ -207,7 +203,7 @@ impl InfoProc {
     }
 
     #[allow(unused_assignments)]
-    fn render_ppu(buffer: &mut FrameBuffer, ppu: &NESPPU) {
+    fn render_ppu(buffer: &mut FrameBuffer, ppu: &PPU) {
         let color = InfoProc::color_text();
         let background = InfoProc::color_background();
 
@@ -239,7 +235,7 @@ impl InfoProc {
     }
 
     #[allow(unused_assignments)]
-    fn render_reversing(buffer: &mut FrameBuffer, cpu: &NESCPU, cartridge: &mut Cartridge) {
+    fn render_reversing(buffer: &mut FrameBuffer, cpu: &CPU) {
         let color = InfoProc::color_text();
         let background = InfoProc::color_background();
 
@@ -259,43 +255,28 @@ impl InfoProc {
             };
         }
 
-        let mut pc = cpu.reg_pc;
-        for idx in 0..REV_LEN {
-            let inst = Instruction::fetch(pc, cartridge);
-            if idx == 0 {
-                draw_field!("--> {:#06X}: {}", pc, inst.to_string());
-            } else {
-                draw_field!("    {:#06X}: {}", pc, inst.to_string());
-            }
-            pc = pc.wrapping_add(inst.addr_mode.size());
-        }
+        cpu.history_summary(|inst| {
+            draw_field!("{}", inst);
+        });
     }
 
     pub fn render_all() {
         interrupts::without_interrupts(|| {
+            let cpu = CPU::get();
+
             let mut buffer = CPU_FB.write();
-            unsafe {
-                NES_CPU.force_write_unlock();
-            }
-            Self::render_cpu(&mut buffer, &NES_CPU.read());
+            Self::render_cpu(&mut buffer, cpu);
 
             buffer.flush_all();
 
             let mut buffer = PPU_FB.write();
-            unsafe {
-                NES_PPU.force_write_unlock();
-            }
-            Self::render_ppu(&mut buffer, &NES_PPU.read());
+            Self::render_ppu(&mut buffer, &PPU::get());
 
             // The background is already drawn.
             buffer.flush(true);
 
             let mut buffer = REV_FB.write();
-            unsafe {
-                CARTRIDGE.force_write_unlock();
-            }
-            let mut cartridge = CARTRIDGE.write();
-            Self::render_reversing(&mut buffer, &NES_CPU.read(), &mut cartridge);
+            Self::render_reversing(&mut buffer, cpu);
 
             buffer.flush(true);
 

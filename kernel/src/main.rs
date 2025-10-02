@@ -15,14 +15,20 @@ use crate::info::InfoProc;
 use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
 use crate::logger::LOG_FB;
-use crate::nes::cartridge::CARTRIDGE;
-use crate::nes::cpu::NESCPU;
-use crate::nes::cpu::NES_CPU;
-use crate::nes::ppu::{GAME_FB, NES_PPU};
+use crate::nes::apu::APU;
+use crate::nes::cartridge::Cartridge;
+use crate::nes::cpu::InterruptType;
+use crate::nes::cpu::CPU;
+use crate::nes::ppu::GAME_FB;
+use crate::nes::ppu::PPU;
+use crate::proc::ProcessSwitcher;
 
 #[no_mangle]
 #[inline(never)]
 pub extern "C" fn kernel_main() -> ! {
+    // Set the stack pointer.
+    ProcessSwitcher::reset_main_stack();
+
     if interrupts::are_enabled() {
         interrupts::disable();
     }
@@ -50,19 +56,30 @@ pub extern "C" fn kernel_main() -> ! {
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
+    let cpu = CPU::get();
+    cpu.init();
+
+    cpu.interrupt(InterruptType::RST);
+
+    let cartridge = Cartridge::get();
+    cartridge.init();
+
+    let ppu = PPU::get();
+    ppu.init();
+
+    let apu = APU::get();
+    apu.init();
+
     game_main();
 }
 
 pub fn game_main() -> ! {
-    let mut cartridge = CARTRIDGE.write();
-    let mut cpu = NES_CPU.write();
+    let cpu = CPU::get();
+    let ppu = PPU::get();
+    let apu = APU::get();
+    let cartridge = Cartridge::get();
+
     let mut frame_buffer = GAME_FB.write();
-
-    cartridge.load();
-
-    info!(SYS, "Loaded the cartridge.");
-
-    NESCPU::interrupt(nes::cpu::InterruptType::RST);
 
     info!(SYS, "Start the game.");
 
@@ -70,17 +87,19 @@ pub fn game_main() -> ! {
         const FRAME_CYCLES: usize = 29780;
 
         let mut cycles = 0;
+
         while cycles < FRAME_CYCLES {
-            let (required, dma_transfer_ends) = cpu.clock(&mut cartridge);
-            {
-                let mut ppu = NES_PPU.write();
-                if dma_transfer_ends {
-                    ppu.oam.do_dma_transfer(&mut cartridge);
-                }
-                ppu.render_bg(required as usize * 3, &mut frame_buffer, &mut cartridge);
-            }
+            interrupts::disable();
+
+            let required = cpu.clock(ppu, apu, cartridge);
+            ppu.render_bg(required as usize * 3, &mut frame_buffer, cpu, cartridge);
+            apu.clock(cycles, cpu);
+
+            interrupts::enable();
+
             cycles += required as usize;
         }
+
         frame_buffer.flush(false);
     }
 }
@@ -116,7 +135,13 @@ pub fn on_info_switched() {
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    error!(SYS, "Kernel panic: {}", info);
+
+    let cpu = CPU::get();
+    error!(CPU, "PC: {:#06X}", cpu.reg_pc);
+    cpu.report_backtrace();
+
     interrupts::enable();
     unsafe {
         interrupts::software_interrupt::<PANIC_INT_IDX>();
@@ -133,3 +158,4 @@ mod logger;
 mod mem;
 mod nes;
 mod proc;
+mod serial;

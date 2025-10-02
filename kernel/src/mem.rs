@@ -1,6 +1,7 @@
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::null_mut,
+    ptr::write_bytes,
 };
 
 use spin::{Lazy, Mutex};
@@ -76,8 +77,15 @@ impl MemoryAllocator {
         }
     }
 
-    pub fn alloc(size: usize, align: usize) -> *mut u8 {
-        let size = align * ((size + align - 1) / align);
-        unsafe { MEM_ALLOC.alloc(Layout::from_size_align_unchecked(size, align)) }
+    pub fn alloc<T>() -> *mut T {
+        let allocated = unsafe { MEM_ALLOC.alloc(Layout::new::<T>()) };
+        allocated as *mut T
+    }
+
+    #[allow(dead_code)]
+    pub fn alloc_zeroed<T>() -> *mut T {
+        let ptr = Self::alloc::<T>();
+        unsafe { write_bytes(ptr, 0, 1) };
+        ptr
     }
 }

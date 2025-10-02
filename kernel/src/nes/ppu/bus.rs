@@ -28,7 +28,7 @@ impl PPUBus {
             vram.read(addr)
         } else if addr < 0x3F20 {
             // Sprite Palette
-            if addr % 4 == 0 {
+            if addr & 0b11 == 0 {
                 Self::read(addr - 0x10, vram, cartridge)
             } else {
                 vram.read(addr)
@@ -63,7 +63,7 @@ impl PPUBus {
             vram.write(addr, val);
         } else if addr < 0x3F20 {
             // Sprite Palette
-            if addr % 4 == 0 {
+            if addr & 0b11 == 0 {
                 Self::write(addr - 0x10, val, vram, cartridge);
             } else {
                 vram.write(addr, val);

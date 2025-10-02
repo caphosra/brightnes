@@ -1,33 +1,33 @@
-use crate::{
-    nes::{
-        cartridge::Cartridge,
-        pad::PADS,
-        ppu::{NES_PPU, OAM_DMA_ADDR},
-        ram::NES_RAM,
-    },
-    warn,
+use crate::nes::{
+    apu::APU,
+    cartridge::Cartridge,
+    cpu::CPU,
+    pad::PADS,
+    ppu::{PPU, OAM_DMA_ADDR},
 };
 
 pub struct CPUBus;
 
 impl CPUBus {
-    pub fn read(addr: u16, cartridge: &mut Cartridge) -> u8 {
+    pub fn read(
+        addr: u16,
+        cpu: &CPU,
+        ppu: &mut PPU,
+        apu: &mut APU,
+        cartridge: &mut Cartridge,
+    ) -> u8 {
         if addr < 0x2000 {
             // RAM
-            let ram = NES_RAM.read();
-            ram.ram[addr as usize & 0x7FF]
+            cpu.ram.read(addr & 0x7FF)
         } else if addr < 0x4000 {
             // PPU
-            let mut ppu = NES_PPU.write();
             ppu.read_reg(addr, cartridge)
         } else if addr == OAM_DMA_ADDR {
             // OAM DMA
-            let mut ppu = NES_PPU.write();
             ppu.read_reg(addr, cartridge)
         } else if addr < 0x4016 {
             // APU
-            warn!(APU, "Attempt to read from APU: {:#06X}", addr);
-            0
+            apu.read_reg(addr)
         } else if addr == 0x4016 {
             // Pad 1
             let mut pad = PADS.write();
@@ -42,22 +42,26 @@ impl CPUBus {
         }
     }
 
-    pub fn write(addr: u16, data: u8, cartridge: &mut Cartridge) {
+    pub fn write(
+        addr: u16,
+        data: u8,
+        cpu: &mut CPU,
+        ppu: &mut PPU,
+        apu: &mut APU,
+        cartridge: &mut Cartridge,
+    ) {
         if addr < 0x2000 {
             // RAM
-            let mut ram = NES_RAM.write();
-            ram.ram[addr as usize & 0x7FF] = data;
+            cpu.ram.write(addr & 0x7FF, data);
         } else if addr < 0x4000 {
             // PPU
-            let mut ppu = NES_PPU.write();
-            ppu.write_reg(addr, data, cartridge);
+            ppu.write_reg(addr, data, cpu, cartridge);
         } else if addr == OAM_DMA_ADDR {
             // OAM DMA
-            let mut ppu = NES_PPU.write();
-            ppu.write_reg(addr, data, cartridge);
+            ppu.write_reg(addr, data, cpu, cartridge);
         } else if addr < 0x4016 {
             // APU
-            warn!(APU, "Attempt to write to APU: {:#06X}", addr);
+            apu.write_reg(addr, data);
         } else if addr == 0x4016 {
             // Pad 1
             let mut pad = PADS.write();
