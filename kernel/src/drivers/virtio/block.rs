@@ -14,7 +14,7 @@ impl<'a> VirtBlockDevice<'a> {
     pub fn new() -> Option<Self> {
         let base_driver = VirtIODevice::new(Self::VIRTIO_BLOCK_DEVICE_ID)?;
 
-        let queue = MemoryAllocator::alloc(size_of::<VirtQ>(), align_of::<VirtQ>()) as *mut VirtQ;
+        let queue = MemoryAllocator::alloc::<VirtQ>();
         let queue = unsafe { queue.as_mut() }?;
 
         Some(Self { base_driver, queue })
