@@ -56,6 +56,7 @@ pub struct VirtIODevice {
     pci_device: PCIDevice,
     pub common_config: &'static mut PCICommonConfig,
     notify_base: *mut u8,
+    notify_off_multiplier: u32,
 }
 
 #[repr(C)]
@@ -92,12 +93,14 @@ impl VirtIODevice {
 
     pub fn new(device_id: u16) -> Option<Self> {
         let pci_device = PCIDevice::find_device(Self::VIRTIO_VENDOR_ID, device_id)?;
-        let (common_config_ptr, notify_base) = Self::common_config(&pci_device)?;
+        let (common_config_ptr, notify_base, notify_off_multiplier) =
+            Self::common_config(&pci_device)?;
         let common_config = unsafe { &mut *common_config_ptr };
         Some(Self {
             pci_device: pci_device,
             common_config,
             notify_base,
+            notify_off_multiplier,
         })
     }
 
@@ -106,7 +109,7 @@ impl VirtIODevice {
     const PCI_CAP_COMMON_CFG: u8 = 1;
     const PCI_CAP_NOTIFY_CFG: u8 = 2;
 
-    fn common_config(pci_device: &PCIDevice) -> Option<(*mut PCICommonConfig, *mut u8)> {
+    fn common_config(pci_device: &PCIDevice) -> Option<(*mut PCICommonConfig, *mut u8, u32)> {
         let mut pointer = pci_device.capabilities_pointer()?;
         let mut config = None;
         let mut notify_base = None;
@@ -155,12 +158,15 @@ impl VirtIODevice {
                         config = Some(address as *mut PCICommonConfig);
                     }
                     Self::PCI_CAP_NOTIFY_CFG => {
+                        let notify_off_multiplier = pci_device.read_config::<u32>(pointer + 16);
+
                         info!(
                             DRV,
-                            "VIRTIO_PCI_CAP_NOTIFY_CFG: bar_index={} offset={:#010X} length={:#010X}",
+                            "VIRTIO_PCI_CAP_NOTIFY_CFG: bar_index={} offset={:#010X} length={:#010X} multiplier={}",
                             bar_index,
                             offset,
-                            length
+                            length,
+                            notify_off_multiplier
                         );
 
                         let address_lo =
@@ -173,7 +179,7 @@ impl VirtIODevice {
                         // I'm not sure it is true.
                         let address = ((address_hi << 32) | (address_lo & !0xF)) + offset as u64;
                         info!(DRV, "PCI notify base address: {:#018X}", address);
-                        notify_base = Some(address as *mut u8);
+                        notify_base = Some((address as *mut u8, notify_off_multiplier));
                     }
                     _ => {}
                 }
@@ -181,7 +187,9 @@ impl VirtIODevice {
             pointer = cap_next;
         }
         match (config, notify_base) {
-            (Some(cfg), Some(notify_base)) => Some((cfg, notify_base)),
+            (Some(cfg), Some((notify_base, notify_off_multiplier))) => {
+                Some((cfg, notify_base, notify_off_multiplier))
+            }
             _ => None,
         }
     }
@@ -226,7 +234,7 @@ impl VirtIODevice {
         }
     }
 
-    pub fn init_queue(&mut self, queue_idx: u16, queue: &mut VirtQ) {
+    pub fn init_queue(&mut self, queue_idx: u16, queue: &mut VirtQ) -> *mut u8 {
         // Select the queue.
         unsafe {
             write_volatile(&mut self.common_config.queue_select, queue_idx);
@@ -260,6 +268,20 @@ impl VirtIODevice {
         unsafe {
             write_volatile(&mut self.common_config.queue_enable, 1);
         }
+
+        // Get notify address.
+        let offset = unsafe { read_volatile(&mut self.common_config.queue_notify_off) };
+        let notify_address = unsafe {
+            self.notify_base
+                .add((offset as u32 * self.notify_off_multiplier) as usize)
+        };
+
+        info!(
+            DRV,
+            "Initialized queue {}: notify_address={:p}", queue_idx, notify_address
+        );
+
+        notify_address
     }
 
     pub fn driver_ok(&mut self) {
