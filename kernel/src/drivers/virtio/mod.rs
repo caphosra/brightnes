@@ -55,6 +55,7 @@ pub struct VirtQ {
 pub struct VirtIODevice {
     pci_device: PCIDevice,
     pub common_config: &'static mut PCICommonConfig,
+    notify_base: *mut u8,
 }
 
 #[repr(C)]
@@ -91,19 +92,25 @@ impl VirtIODevice {
 
     pub fn new(device_id: u16) -> Option<Self> {
         let pci_device = PCIDevice::find_device(Self::VIRTIO_VENDOR_ID, device_id)?;
-        let common_config_ptr = Self::common_config(&pci_device)?;
+        let (common_config_ptr, notify_base) = Self::common_config(&pci_device)?;
         let common_config = unsafe { &mut *common_config_ptr };
         Some(Self {
             pci_device: pci_device,
             common_config,
+            notify_base,
         })
     }
 
     const VENDOR_SPECIFIC_CAP_ID: u8 = 0x09;
-    const VIRTIO_PCI_CAP_COMMON_CFG: u8 = 1;
 
-    fn common_config(pci_device: &PCIDevice) -> Option<*mut PCICommonConfig> {
+    const PCI_CAP_COMMON_CFG: u8 = 1;
+    const PCI_CAP_NOTIFY_CFG: u8 = 2;
+
+    fn common_config(pci_device: &PCIDevice) -> Option<(*mut PCICommonConfig, *mut u8)> {
         let mut pointer = pci_device.capabilities_pointer()?;
+        let mut config = None;
+        let mut notify_base = None;
+
         while pointer != 0 {
             let cap_id = pci_device.read_config::<u8>(pointer);
             let cap_next = pci_device.read_config::<u8>(pointer + 1);
@@ -116,38 +123,67 @@ impl VirtIODevice {
                 cap_len
             );
             if cap_id == Self::VENDOR_SPECIFIC_CAP_ID {
+                let bar_index = pci_device.read_config::<u8>(pointer + 4);
+                let offset = pci_device.read_config::<u32>(pointer + 8);
+                let length = pci_device.read_config::<u32>(pointer + 12);
+
                 let cfg_type = pci_device.read_config::<u8>(pointer + 3);
-                if cfg_type == Self::VIRTIO_PCI_CAP_COMMON_CFG {
-                    let bar_index = pci_device.read_config::<u8>(pointer + 4);
-                    let offset = pci_device.read_config::<u32>(pointer + 8);
-                    let length = pci_device.read_config::<u32>(pointer + 12);
-                    info!(
-                        DRV,
-                        "VIRTIO_PCI_CAP_COMMON_CFG: bar_index={} offset={:#010X} length={:#010X}",
-                        bar_index,
-                        offset,
-                        length
-                    );
+                info!(
+                    DRV,
+                    "Found a vendor specific capability: type={:#04X}", cfg_type
+                );
+                match cfg_type {
+                    Self::PCI_CAP_COMMON_CFG => {
+                        info!(
+                            DRV,
+                            "VIRTIO_PCI_CAP_COMMON_CFG: bar_index={} offset={:#010X} length={:#010X}",
+                            bar_index,
+                            offset,
+                            length
+                        );
 
-                    let address_lo =
-                        pci_device.read_config::<u32>(0x10 + (bar_index as u8 * 4)) as u64;
-                    let address_hi =
-                        pci_device.read_config::<u32>(0x10 + ((bar_index + 1) as u8 * 4)) as u64;
+                        let address_lo =
+                            pci_device.read_config::<u32>(0x10 + (bar_index as u8 * 4)) as u64;
+                        let address_hi = pci_device
+                            .read_config::<u32>(0x10 + ((bar_index + 1) as u8 * 4))
+                            as u64;
 
-                    // Through monitoring QEMU, it seems that the base address is always 16-byte aligned.
-                    // I'm not sure it is true.
-                    let address = ((address_hi << 32) | (address_lo & !0xF)) + offset as u64;
-                    info!(
-                        DRV,
-                        "PCI common config address: {:#018X}",
-                        address + offset as u64
-                    );
-                    return Some(address as *mut PCICommonConfig);
+                        // Through monitoring QEMU, it seems that the base address is always 16-byte aligned.
+                        // I'm not sure it is true.
+                        let address = ((address_hi << 32) | (address_lo & !0xF)) + offset as u64;
+                        info!(DRV, "PCI common config address: {:#018X}", address);
+                        config = Some(address as *mut PCICommonConfig);
+                    }
+                    Self::PCI_CAP_NOTIFY_CFG => {
+                        info!(
+                            DRV,
+                            "VIRTIO_PCI_CAP_NOTIFY_CFG: bar_index={} offset={:#010X} length={:#010X}",
+                            bar_index,
+                            offset,
+                            length
+                        );
+
+                        let address_lo =
+                            pci_device.read_config::<u32>(0x10 + (bar_index as u8 * 4)) as u64;
+                        let address_hi = pci_device
+                            .read_config::<u32>(0x10 + ((bar_index + 1) as u8 * 4))
+                            as u64;
+
+                        // Through monitoring QEMU, it seems that the base address is always 16-byte aligned.
+                        // I'm not sure it is true.
+                        let address = ((address_hi << 32) | (address_lo & !0xF)) + offset as u64;
+                        info!(DRV, "PCI notify base address: {:#018X}", address);
+                        notify_base = Some(address as *mut u8);
+                    }
+                    _ => {}
                 }
             }
             pointer = cap_next;
         }
-        None
+        match (config, notify_base) {
+            (Some(cfg), Some(notify_base)) => Some((cfg, notify_base)),
+            _ => None,
+        }
     }
 
     const ACKNOWLEDGE: u8 = 1;
