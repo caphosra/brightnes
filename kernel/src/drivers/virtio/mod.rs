@@ -2,7 +2,7 @@ use core::ptr::{read_volatile, write_volatile};
 
 use crate::{critical, drivers::pci::PCIDevice, info};
 
-pub const VIRT_QUEUE_SIZE: usize = 64;
+pub const VIRT_QUEUE_SIZE: usize = 0x100;
 
 #[repr(C)]
 pub struct VirtQDesc {
@@ -35,9 +35,9 @@ pub struct VirtQUsedElem {
 }
 
 impl VirtQDesc {
-    pub const VIRTQ_DESC_F_NEXT: u16 = 1;
-    pub const VIRTQ_DESC_F_WRITE: u16 = 2;
-    pub const VIRTQ_DESC_F_INDIRECT: u16 = 4;
+    pub const F_NEXT: u16 = 1;
+    pub const F_WRITE: u16 = 2;
+    pub const F_INDIRECT: u16 = 4;
 }
 
 const VIRTQ_ALIGN: usize = 4096;
@@ -50,6 +50,9 @@ pub struct VirtQ {
     avail: VirtQAvail,
     padding: [u8; VIRTQ_PADDING],
     used: VirtQUsed,
+
+    // Additional fields
+    last_used_idx: u16,
 }
 
 pub struct VirtIODevice {
@@ -87,6 +90,24 @@ pub struct PCICommonConfig {
     /* About the administration virtqueue. */
     pub admin_queue_index: u16,
     pub admin_queue_num: u16,
+}
+
+impl VirtQ {
+    pub fn push(&mut self, desc_idx: u16, notify_address: *mut u8) {
+        let avail_idx = unsafe { read_volatile(&self.avail.idx) };
+        let ring_idx = (avail_idx as usize) % VIRT_QUEUE_SIZE;
+        unsafe {
+            write_volatile(&mut self.avail.ring[ring_idx], desc_idx);
+        }
+        unsafe {
+            write_volatile(&mut self.avail.idx, avail_idx.wrapping_add(1));
+        }
+
+        // Notify the request.
+        unsafe {
+            write_volatile(notify_address as *mut u16, 0);
+        }
+    }
 }
 
 impl VirtIODevice {
