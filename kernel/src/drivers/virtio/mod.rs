@@ -57,6 +57,7 @@ pub struct VirtIODevice {
     pub common_config: &'static mut PCICommonConfig,
     notify_base: *mut u8,
     notify_off_multiplier: u32,
+    pub device_specific: *mut u8,
 }
 
 #[repr(C)]
@@ -93,7 +94,7 @@ impl VirtIODevice {
 
     pub fn new(device_id: u16) -> Option<Self> {
         let pci_device = PCIDevice::find_device(Self::VIRTIO_VENDOR_ID, device_id)?;
-        let (common_config_ptr, notify_base, notify_off_multiplier) =
+        let (common_config_ptr, notify_base, notify_off_multiplier, device_specific) =
             Self::common_config(&pci_device)?;
         let common_config = unsafe { &mut *common_config_ptr };
         Some(Self {
@@ -101,6 +102,7 @@ impl VirtIODevice {
             common_config,
             notify_base,
             notify_off_multiplier,
+            device_specific,
         })
     }
 
@@ -108,11 +110,15 @@ impl VirtIODevice {
 
     const PCI_CAP_COMMON_CFG: u8 = 1;
     const PCI_CAP_NOTIFY_CFG: u8 = 2;
+    const PCI_CAP_DEVICE_CFG: u8 = 4;
 
-    fn common_config(pci_device: &PCIDevice) -> Option<(*mut PCICommonConfig, *mut u8, u32)> {
+    fn common_config(
+        pci_device: &PCIDevice,
+    ) -> Option<(*mut PCICommonConfig, *mut u8, u32, *mut u8)> {
         let mut pointer = pci_device.capabilities_pointer()?;
         let mut config = None;
-        let mut notify_base = None;
+        let mut notify_addr = None;
+        let mut device_specific = None;
 
         while pointer != 0 {
             let cap_id = pci_device.read_config::<u8>(pointer);
@@ -179,16 +185,38 @@ impl VirtIODevice {
                         // I'm not sure it is true.
                         let address = ((address_hi << 32) | (address_lo & !0xF)) + offset as u64;
                         info!(DRV, "PCI notify base address: {:#018X}", address);
-                        notify_base = Some((address as *mut u8, notify_off_multiplier));
+                        notify_addr = Some((address as *mut u8, notify_off_multiplier));
+                    }
+                    Self::PCI_CAP_DEVICE_CFG => {
+                        info!(
+                            DRV,
+                            "VIRTIO_PCI_CAP_DEVICE_CFG: bar_index={} offset={:#010X} length={:#010X}",
+                            bar_index,
+                            offset,
+                            length
+                        );
+
+                        let address_lo =
+                            pci_device.read_config::<u32>(0x10 + (bar_index as u8 * 4)) as u64;
+                        let address_hi = pci_device
+                            .read_config::<u32>(0x10 + ((bar_index + 1) as u8 * 4))
+                            as u64;
+
+                        // Through monitoring QEMU, it seems that the base address is always 16-byte aligned.
+                        // I'm not sure it is true.
+                        let address = ((address_hi << 32) | (address_lo & !0xF)) + offset as u64;
+                        info!(DRV, "PCI common config address: {:#018X}", address);
+
+                        device_specific = Some(address as *mut u8);
                     }
                     _ => {}
                 }
             }
             pointer = cap_next;
         }
-        match (config, notify_base) {
-            (Some(cfg), Some((notify_base, notify_off_multiplier))) => {
-                Some((cfg, notify_base, notify_off_multiplier))
+        match (config, notify_addr, device_specific) {
+            (Some(cfg), Some((notify_base, notify_off_multiplier)), Some(device_specific)) => {
+                Some((cfg, notify_base, notify_off_multiplier, device_specific))
             }
             _ => None,
         }
