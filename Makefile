@@ -1,6 +1,7 @@
 .PHONY: build-kernel \
 	build-kernel-dbg \
 	build-server \
+	create-disk \
 	resources build run run-dbg gdb
 
 OUT_DIR = ./dest
@@ -113,6 +114,10 @@ resources: ./res/font/Tamsyn8x16r.psf.gz
 
 build: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 	@echo "Build complete."
+
+create-disk:
+	dd if=/dev/zero of=disk.img bs=1M count=128
+	mkfs.fat -F32 -n BRIGHTNES disk.img
 
 run: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 	qemu-system-x86_64 $(QEMU_FLAGS)
