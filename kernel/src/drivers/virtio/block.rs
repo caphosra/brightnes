@@ -2,7 +2,7 @@ use core::ptr::{read_volatile, write_volatile};
 
 use crate::{
     drivers::virtio::{VirtIODevice, VirtQ, VirtQDesc},
-    error, info,
+    error, log,
     mem::MemoryAllocator,
 };
 
@@ -116,22 +116,16 @@ impl<'a> VirtBlockDevice<'a> {
         }
     }
 
-    pub fn read(&mut self, sector: u64, data: &mut [u8]) -> Result<(), ()> {
-        self.request(
-            sector,
-            data.as_mut_ptr(),
-            data.len() as u32,
-            BlockDeviceOperation::Read,
-        )
+    pub fn capacity(&self) -> u64 {
+        self.config.capacity * self.sector_size() as u64
     }
 
-    pub fn write(&mut self, sector: u64, data: &[u8]) -> Result<(), ()> {
-        self.request(
-            sector,
-            data.as_ptr() as *mut u8,
-            data.len() as u32,
-            BlockDeviceOperation::Write,
-        )
+    pub fn read(&mut self, sector: u64, data: *mut u8, len: u32) -> Result<(), ()> {
+        self.request(sector, data, len, BlockDeviceOperation::Read)
+    }
+
+    pub fn write(&mut self, sector: u64, data: *const u8, len: u32) -> Result<(), ()> {
+        self.request(sector, data as *mut u8, len, BlockDeviceOperation::Write)
     }
 
     fn request(
@@ -187,7 +181,7 @@ impl<'a> VirtBlockDevice<'a> {
             write_volatile(&mut self.queue.desc[2].next, 0);
         }
 
-        info!(DRV, "Submitting block device request...");
+        log!(DRV, "Submitting block device request...");
 
         self.queue.push(0, self.notify_addr);
 
@@ -200,7 +194,7 @@ impl<'a> VirtBlockDevice<'a> {
             }
         }
 
-        info!(DRV, "Request completed.");
+        log!(DRV, "Request completed.");
 
         let status = unsafe { read_volatile(&mut status) };
         if status != 0 {

@@ -9,8 +9,8 @@ SERIAL_PORT = 19837
 
 CARGO_FLAGS =
 QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
-	-drive format=raw,file=fat:rw:$(OUT_DIR) \
-	-drive if=none,id=main_drive,file=./dest/test.txt,format=raw \
+	-drive format=raw,file=fat:rw:$(OUT_DIR),index=0 \
+	-drive format=raw,if=none,id=main_drive,file=./disk.img,index=1 \
 	-device virtio-blk-pci,drive=main_drive \
 	-device virtio-sound-pci \
 	-monitor stdio \

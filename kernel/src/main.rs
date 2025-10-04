@@ -5,17 +5,16 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
-use core::ptr::slice_from_raw_parts_mut;
 
+use fatfs::FsOptions;
 use x86_64::instructions::{hlt, interrupts};
 
-use crate::drivers::virtio::block::VirtBlockDevice;
+use crate::drivers::FileSystemDriver;
 use crate::font::FontManager;
 use crate::info::InfoProc;
 use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
 use crate::logger::LOG_FB;
-use crate::mem::MemoryAllocator;
 use crate::nes::apu::APU;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::InterruptType;
@@ -48,17 +47,24 @@ pub extern "C" fn kernel_main() -> ! {
     log!(SYS, "Hello World from the kernel.");
     info!(SYS, "Enabled logging system.");
 
-    let mut block_device = VirtBlockDevice::new().unwrap();
-    let buffer_size = block_device.sector_size() as usize;
-    let buffer = unsafe {
-        slice_from_raw_parts_mut(MemoryAllocator::alloc_bytes(buffer_size), buffer_size).as_mut()
+    let fs = FileSystemDriver::new();
+    let option = FsOptions::new().strict(true);
+    let fs = fatfs::FileSystem::new(fs, option);
+    match fs {
+        Ok(fs) => {
+            let root_dir = fs.root_dir();
+
+            for item in fs.root_dir().iter() {
+                let item = item.unwrap();
+                if item.is_file() {
+                    info!(SYS, "Found a file: {}", item.file_name());
+                }
+            }
+        }
+        Err(e) => {
+            error!(SYS, "Failed to mount the filesystem: {:?}", e);
+        }
     }
-    .unwrap();
-
-    block_device.read(0, buffer).unwrap();
-
-    buffer[0] = 0x41;
-    block_device.write(0, buffer).unwrap();
 
     InterruptController::init();
     interrupts::enable();
