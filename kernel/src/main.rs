@@ -8,6 +8,7 @@ use core::panic::PanicInfo;
 
 use x86_64::instructions::{hlt, interrupts};
 
+use crate::drivers::virtio::sound::VirtSoundDevice;
 use crate::font::FontManager;
 use crate::fs::FILE_SYSTEM;
 use crate::info::InfoProc;
@@ -50,6 +51,8 @@ pub extern "C" fn kernel_main() -> ! {
         let mut fs = FILE_SYSTEM.write();
         fs.check_root_dir();
     }
+
+    VirtSoundDevice::new().unwrap();
 
     InterruptController::init();
     interrupts::enable();
