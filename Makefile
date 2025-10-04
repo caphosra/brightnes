@@ -54,6 +54,7 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/nes/pad.rs \
 	./kernel/src/font.rs \
 	./kernel/src/frame_buffer.rs \
+	./kernel/src/fs.rs \
 	./kernel/src/info.rs \
 	./kernel/src/logger.rs \
 	./kernel/src/main.rs \

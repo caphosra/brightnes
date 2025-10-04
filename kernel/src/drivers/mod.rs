@@ -1,20 +1,19 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
-use spin::{Lazy, RwLock};
 
 use crate::drivers::virtio::block::VirtBlockDevice;
 
-pub struct FileSystemDriver<'a> {
+pub struct BlockDeviceDriver<'a> {
     block_device: VirtBlockDevice<'a>,
     position: u64,
     sector_buffer: Vec<u8>,
 }
 
-impl IoBase for FileSystemDriver<'_> {
+impl IoBase for BlockDeviceDriver<'_> {
     type Error = ();
 }
 
-impl Seek for FileSystemDriver<'_> {
+impl Seek for BlockDeviceDriver<'_> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Self::Error> {
         match pos {
             SeekFrom::Start(offset) => {
@@ -32,7 +31,7 @@ impl Seek for FileSystemDriver<'_> {
     }
 }
 
-impl Read for FileSystemDriver<'_> {
+impl Read for BlockDeviceDriver<'_> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         let end = self.position + (buf.len() as u64);
 
@@ -65,7 +64,7 @@ impl Read for FileSystemDriver<'_> {
     }
 }
 
-impl Write for FileSystemDriver<'_> {
+impl Write for BlockDeviceDriver<'_> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         let end = self.position + (buf.len() as u64);
 
@@ -110,49 +109,16 @@ impl Write for FileSystemDriver<'_> {
     }
 }
 
-impl<'a> FileSystemDriver<'a> {
+impl<'a> BlockDeviceDriver<'a> {
     pub fn new() -> Self {
         let block_device = VirtBlockDevice::new().unwrap();
-        FileSystemDriver {
+        BlockDeviceDriver {
             block_device,
             position: 0,
             sector_buffer: Vec::new(),
         }
     }
 }
-
-pub trait DiskIODriver {
-    fn read(&mut self, pos: usize, buffer: &mut [u8]) -> Result<(), ()>;
-    fn write(&mut self, pos: usize, buffer: &[u8]) -> Result<(), ()>;
-}
-
-// TODO: Define functions
-pub trait AudioDriver {
-    fn play_sound(&mut self);
-}
-
-pub struct DummyDiskIODriver;
-
-impl DiskIODriver for DummyDiskIODriver {
-    fn read(&mut self, _pos: usize, _buffer: &mut [u8]) -> Result<(), ()> {
-        Ok(())
-    }
-    fn write(&mut self, _pos: usize, _buffer: &[u8]) -> Result<(), ()> {
-        Ok(())
-    }
-}
-
-pub struct DummyAudioDriver;
-
-impl AudioDriver for DummyAudioDriver {
-    fn play_sound(&mut self) {}
-}
-
-pub static DISK_IO_DRIVER: Lazy<RwLock<Box<dyn DiskIODriver + Send + Sync>>> =
-    Lazy::new(|| RwLock::new(Box::new(DummyDiskIODriver {})));
-
-pub static AUDIO_DRIVER: Lazy<RwLock<Box<dyn AudioDriver + Send + Sync>>> =
-    Lazy::new(|| RwLock::new(Box::new(DummyAudioDriver {})));
 
 pub mod pci;
 pub mod virtio;

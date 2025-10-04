@@ -6,11 +6,10 @@ extern crate alloc;
 
 use core::panic::PanicInfo;
 
-use fatfs::FsOptions;
 use x86_64::instructions::{hlt, interrupts};
 
-use crate::drivers::FileSystemDriver;
 use crate::font::FontManager;
+use crate::fs::FILE_SYSTEM;
 use crate::info::InfoProc;
 use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
@@ -47,23 +46,9 @@ pub extern "C" fn kernel_main() -> ! {
     log!(SYS, "Hello World from the kernel.");
     info!(SYS, "Enabled logging system.");
 
-    let fs = FileSystemDriver::new();
-    let option = FsOptions::new().strict(true);
-    let fs = fatfs::FileSystem::new(fs, option);
-    match fs {
-        Ok(fs) => {
-            let root_dir = fs.root_dir();
-
-            for item in fs.root_dir().iter() {
-                let item = item.unwrap();
-                if item.is_file() {
-                    info!(SYS, "Found a file: {}", item.file_name());
-                }
-            }
-        }
-        Err(e) => {
-            error!(SYS, "Failed to mount the filesystem: {:?}", e);
-        }
+    {
+        let mut fs = FILE_SYSTEM.write();
+        fs.check_root_dir();
     }
 
     InterruptController::init();
@@ -168,6 +153,7 @@ fn panic(info: &PanicInfo) -> ! {
 mod drivers;
 mod font;
 mod frame_buffer;
+mod fs;
 mod info;
 mod int;
 mod logger;
