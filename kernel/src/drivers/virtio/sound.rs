@@ -318,12 +318,12 @@ impl<'a> VirtSoundDevice<'a> {
 
         let mut samples: Vec<i16, SAMPLE_SIZE> = Vec::from_array([0; SAMPLE_SIZE]);
 
-        for i in 0..(SAMPLE_SIZE % 2) {
+        for i in 0..(SAMPLE_SIZE / 2) {
             let t = i as f32 / SAMPLE_RATE as f32;
             let sample_value = if (t * FREQUENCY as f32) % 1.0 < 0.5 {
-                30000
+                5000
             } else {
-                -30000
+                -5000
             };
             samples[i * 2] = sample_value; // Left channel
             samples[i * 2 + 1] = sample_value; // Right channel
