@@ -8,7 +8,6 @@ use core::panic::PanicInfo;
 
 use x86_64::instructions::{hlt, interrupts};
 
-use crate::drivers::virtio::sound::VirtSoundDevice;
 use crate::drivers::SoundDeviceDriver;
 use crate::font::FontManager;
 use crate::fs::FILE_SYSTEM;
@@ -77,21 +76,7 @@ pub extern "C" fn kernel_main() -> ! {
 }
 
 pub fn game_main() -> ! {
-    let mut driver = SoundDeviceDriver::new();
-
-    const SAMPLE_RATE: usize = 48000;
-    const FREQUENCY: usize = 440;
-    const SAMPLE_SIZE: usize = VirtSoundDevice::PERIOD_BYTES as usize * 20;
-
-    for i in 0..(SAMPLE_SIZE / 2) {
-        let t = i as f32 / SAMPLE_RATE as f32;
-        let sample_value = if (t * FREQUENCY as f32) % 1.0 < 0.5 {
-            5000
-        } else {
-            -5000
-        };
-        driver.add_data(sample_value, sample_value);
-    }
+    SoundDeviceDriver::new();
 
     let cpu = CPU::get();
     let ppu = PPU::get();
