@@ -68,6 +68,10 @@ impl APUComponent for APUTriangle {
             self.length_counter -= 1;
         }
     }
+
+    fn get_output(&self, _total_cycles: u64) -> i8 {
+        0
+    }
 }
 
 impl APUTriangle {

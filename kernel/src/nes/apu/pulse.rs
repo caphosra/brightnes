@@ -139,6 +139,10 @@ impl APUComponent for APUPulse {
             }
         }
     }
+
+    fn get_output(&self, _total_cycles: u64) -> i8 {
+        0
+    }
 }
 
 impl APUPulse {
