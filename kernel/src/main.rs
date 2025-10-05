@@ -8,7 +8,9 @@ use core::panic::PanicInfo;
 
 use x86_64::instructions::{hlt, interrupts};
 
+use crate::drivers::SoundDeviceDriver;
 use crate::font::FontManager;
+use crate::fs::FILE_SYSTEM;
 use crate::info::InfoProc;
 use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
@@ -45,6 +47,11 @@ pub extern "C" fn kernel_main() -> ! {
     log!(SYS, "Hello World from the kernel.");
     info!(SYS, "Enabled logging system.");
 
+    {
+        let mut fs = FILE_SYSTEM.write();
+        fs.check_root_dir();
+    }
+
     InterruptController::init();
     interrupts::enable();
 
@@ -69,6 +76,8 @@ pub extern "C" fn kernel_main() -> ! {
 }
 
 pub fn game_main() -> ! {
+    SoundDeviceDriver::new();
+
     let cpu = CPU::get();
     let ppu = PPU::get();
     let apu = APU::get();
@@ -144,8 +153,10 @@ fn panic(info: &PanicInfo) -> ! {
     loop {}
 }
 
+mod drivers;
 mod font;
 mod frame_buffer;
+mod fs;
 mod info;
 mod int;
 mod logger;

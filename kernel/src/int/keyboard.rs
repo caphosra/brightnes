@@ -3,7 +3,9 @@ use spin::{Lazy, RwLock};
 use x86_64::structures::idt::InterruptStackFrame;
 
 use crate::{
-    error, info,
+    error,
+    fs::FILE_SYSTEM,
+    info,
     logger::Logger,
     nes::{
         cartridge::Cartridge,
@@ -73,16 +75,13 @@ impl BKeyboard {
                             }
                         } else {
                             // Save the current state.
-                            if let Err(_) = Serial::communicate(|serial| {
-                                let cpu = CPU::get();
-                                let ppu = PPU::get();
-                                let cartridge = Cartridge::get();
-
-                                serial.save_state(cpu, ppu, cartridge)
-                            }) {
-                                error!(COM, "Failed to save the current state.");
-                            } else {
-                                info!(COM, "Saved the current state successfully.");
+                            let mut fs = FILE_SYSTEM.write();
+                            let cpu = CPU::get();
+                            let ppu = PPU::get();
+                            let cartridge = Cartridge::get();
+                            match fs.save_state(cpu, ppu, cartridge) {
+                                Ok(_) => info!(SYS, "Saved the current state successfully."),
+                                Err(_) => error!(SYS, "Failed to save the current state."),
                             }
                         }
                     } else {
@@ -113,16 +112,13 @@ impl BKeyboard {
                             }
                         } else {
                             // Load the latest state if requested.
-                            if let Err(_) = Serial::communicate(|serial| {
-                                let cpu = CPU::get();
-                                let ppu = PPU::get();
-                                let cartridge = Cartridge::get();
-
-                                serial.load_state(cpu, ppu, cartridge)
-                            }) {
-                                error!(COM, "Failed to load the latest state.");
-                            } else {
-                                info!(COM, "Loaded the latest saved state successfully.");
+                            let mut fs = FILE_SYSTEM.write();
+                            let cpu = CPU::get();
+                            let ppu = PPU::get();
+                            let cartridge = Cartridge::get();
+                            match fs.load_state(cpu, ppu, cartridge) {
+                                Ok(_) => info!(SYS, "Loaded the current state successfully."),
+                                Err(_) => error!(SYS, "Failed to load the current state."),
                             }
 
                             let mut switcher = PROCESS_SWITCHER.write();
