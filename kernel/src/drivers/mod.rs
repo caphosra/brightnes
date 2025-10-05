@@ -134,7 +134,7 @@ pub struct SoundDeviceDriver<'a> {
 }
 
 impl<'a> SoundDeviceDriver<'a> {
-    pub const SAMPLING_RATE: u32 = 48000;
+    pub const SAMPLING_RATE: u32 = 11025;
     pub const SOUND_DATA_SIZE: usize = VirtSoundDevice::PERIOD_BYTES as usize * 2;
     pub const MAX_REQ_SIZE: usize = VIRT_QUEUE_SIZE / 3 - 1;
 

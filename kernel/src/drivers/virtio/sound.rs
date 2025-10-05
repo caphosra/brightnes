@@ -59,7 +59,14 @@ enum SoundPCMFormat {
 /// Original: `VIRTIO_SND_PCM_RATE_*`
 #[repr(u8)]
 enum SoundPCMRate {
-    Rate48000 = 7,
+    Rate5512 = 0,
+    Rate8000,
+    Rate11025,
+    Rate16000,
+    Rate22050,
+    Rate32000,
+    Rate44100,
+    Rate48000,
 }
 
 #[repr(C)]
@@ -221,7 +228,7 @@ impl<'a> VirtSoundDevice<'a> {
             features: 0,
             channels: 2,
             format: SoundPCMFormat::S16,
-            rate: SoundPCMRate::Rate48000,
+            rate: SoundPCMRate::Rate11025,
             padding: 0,
         };
         self.control_request(&req);
