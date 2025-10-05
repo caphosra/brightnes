@@ -1,12 +1,9 @@
 use core::ptr::{read_volatile, write_volatile};
 
-use alloc::vec::Vec;
-
 use crate::{
     drivers::virtio::{VirtIODevice, VirtQ, VirtQDesc, VIRT_QUEUE_SIZE},
     error, info,
     mem::MemoryAllocator,
-    warn,
 };
 
 #[repr(C)]
@@ -99,9 +96,7 @@ pub struct VirtSoundDevice<'a> {
     rx_queue: &'a mut VirtQ,
     rx_queue_notify_addr: *mut u8,
 
-    tx_request_count: u16,
-    tx_queue_idx: usize,
-    tx_status: SoundPCMStatus,
+    tx_dummy_status: SoundPCMStatus,
 
     config: &'a mut SoundConfig,
 }
@@ -109,7 +104,7 @@ pub struct VirtSoundDevice<'a> {
 impl<'a> VirtSoundDevice<'a> {
     pub const VIRTIO_SOUND_DEVICE_ID: u16 = 0x1059;
 
-    const PERIOD_BYTES: u32 = 0x10000;
+    pub const PERIOD_BYTES: u32 = 0x1000;
     const MAX_TX_REQUESTS: usize = VIRT_QUEUE_SIZE / 3;
 
     pub fn new() -> Option<Self> {
@@ -148,9 +143,7 @@ impl<'a> VirtSoundDevice<'a> {
             tx_queue_notify_addr,
             rx_queue,
             rx_queue_notify_addr,
-            tx_request_count: 0,
-            tx_queue_idx: 0,
-            tx_status: SoundPCMStatus {
+            tx_dummy_status: SoundPCMStatus {
                 status: SoundStatus::IOError,
                 latency_bytes: 0,
             },
@@ -255,125 +248,71 @@ impl<'a> VirtSoundDevice<'a> {
         Ok(())
     }
 
-    pub fn write_stream(&mut self, buf: &[u8]) {
-        let used_idx = unsafe { read_volatile(&mut self.tx_queue.used.idx) };
-        let diff = self.tx_request_count.wrapping_sub(used_idx);
-        if diff as usize >= Self::MAX_TX_REQUESTS {
-            warn!(DRV, "Sound device TX queue is full. Dropping audio data.");
-            return;
-        }
+    pub fn tx_consumed_count(&self) -> u16 {
+        unsafe { read_volatile(&self.tx_queue.used.idx) }
+    }
 
-        let tx_actual_idx = self.tx_queue_idx as usize * 3;
+    pub fn write_stream(&mut self, index: u16, buf: &[u8]) {
         let query = SoundPCMTransferHeader { stream_id: 0 };
 
         // Write the request to the descriptor table.
         unsafe {
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx].addr,
+                &mut self.tx_queue.desc[index as usize * 3].addr,
                 &query as *const _ as u64,
             );
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx].len,
+                &mut self.tx_queue.desc[index as usize * 3].len,
                 size_of::<SoundPCMTransferHeader>() as u32,
             );
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx].flags,
+                &mut self.tx_queue.desc[index as usize * 3].flags,
                 VirtQDesc::F_NEXT,
             );
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx].next,
-                tx_actual_idx as u16 + 1,
+                &mut self.tx_queue.desc[index as usize * 3].next,
+                index as u16 * 3 + 1,
             );
         }
 
         // Write the buffer to the descriptor table.
         unsafe {
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx + 1].addr,
+                &mut self.tx_queue.desc[index as usize * 3 + 1].addr,
                 buf.as_ptr() as u64,
             );
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx + 1].len,
+                &mut self.tx_queue.desc[index as usize * 3 + 1].len,
                 buf.len() as u32,
             );
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx + 1].flags,
+                &mut self.tx_queue.desc[index as usize * 3 + 1].flags,
                 VirtQDesc::F_NEXT,
             );
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx + 1].next,
-                tx_actual_idx as u16 + 2,
+                &mut self.tx_queue.desc[index as usize * 3 + 1].next,
+                index as u16 * 3 + 2,
             );
         }
 
         // Write the status byte to the descriptor table.
         unsafe {
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx + 2].addr,
-                &self.tx_status as *const _ as u64,
+                &mut self.tx_queue.desc[index as usize * 3 + 2].addr,
+                &self.tx_dummy_status as *const _ as u64,
             );
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx + 2].len,
+                &mut self.tx_queue.desc[index as usize * 3 + 2].len,
                 size_of::<SoundPCMStatus>() as u32,
             );
             write_volatile(
-                &mut self.tx_queue.desc[tx_actual_idx + 2].flags,
+                &mut self.tx_queue.desc[index as usize * 3 + 2].flags,
                 VirtQDesc::F_WRITE,
             );
-            write_volatile(&mut self.tx_queue.desc[tx_actual_idx + 2].next, 0);
+            write_volatile(&mut self.tx_queue.desc[index as usize * 3 + 2].next, 0);
         }
 
         self.tx_queue
-            .push(tx_actual_idx as u16, self.tx_queue_notify_addr);
-
-        self.tx_request_count = self.tx_request_count.wrapping_add(1);
-        self.tx_queue_idx = self.tx_queue_idx.wrapping_add(1);
-        self.tx_queue_idx %= Self::MAX_TX_REQUESTS;
-    }
-
-    pub fn generate_square_wave(&mut self) {
-        const SAMPLE_RATE: usize = 48000;
-        const FREQUENCY: usize = 440;
-        const SAMPLE_SIZE: usize = VirtSoundDevice::PERIOD_BYTES as usize * 2;
-
-        let mut samples1: Vec<i16> = Vec::with_capacity(SAMPLE_SIZE);
-        for i in 0..(SAMPLE_SIZE / 2) {
-            let t = i as f32 / SAMPLE_RATE as f32;
-            let sample_value = if (t * FREQUENCY as f32) % 1.0 < 0.5 {
-                5000
-            } else {
-                -5000
-            };
-            samples1.push(sample_value); // Left channel
-            samples1.push(sample_value); // Right channel
-        }
-
-        let mut samples2: Vec<i16> = Vec::with_capacity(SAMPLE_SIZE);
-        for i in 0..(SAMPLE_SIZE / 2) {
-            let t = i as f32 / SAMPLE_RATE as f32;
-            let sample_value = if (t * FREQUENCY as f32 * 2.0) % 1.0 < 0.5 {
-                5000
-            } else {
-                -5000
-            };
-            samples2.push(sample_value); // Left channel
-            samples2.push(sample_value); // Right channel
-        }
-
-        self.prepare().unwrap();
-        self.start().unwrap();
-        self.write_stream(unsafe {
-            core::slice::from_raw_parts(
-                samples1.as_slice() as *const _ as *const u8,
-                samples1.len() * size_of::<i16>(),
-            )
-        });
-
-        self.write_stream(unsafe {
-            core::slice::from_raw_parts(
-                samples2.as_slice() as *const _ as *const u8,
-                samples2.len() * size_of::<i16>(),
-            )
-        });
+            .push(index as u16 * 3, self.tx_queue_notify_addr);
     }
 }
