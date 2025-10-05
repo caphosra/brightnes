@@ -69,7 +69,9 @@ impl APUComponent for APUTriangle {
         }
     }
 
-    fn get_output(&self, _total_cycles: u64) -> i8 {
+    fn clock(&mut self, _cycles: u32) {}
+
+    fn get_output(&self) -> i8 {
         0
     }
 }

@@ -1,13 +1,8 @@
-use brightnes_common::serial::{APURequest, PulseRequest};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     critical,
-    nes::{
-        apu::{APUComponent, APU},
-        cpu::CPU,
-    },
-    serial::Serial,
+    nes::apu::{APUComponent, APU},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -35,6 +30,9 @@ pub struct APUPulse {
     last_volume: u8,
     last_time: u16,
     last_duty_cycle: u8,
+
+    timer_counter: u16,
+    duty_step: u8,
 }
 
 impl APUComponent for APUPulse {
@@ -87,7 +85,6 @@ impl APUComponent for APUPulse {
                 self.length_counter = 0;
             }
             self.active = active;
-            self.send_request();
         }
     }
 
@@ -108,8 +105,6 @@ impl APUComponent for APUPulse {
                 }
             }
         }
-
-        self.send_request();
     }
 
     fn half_frame(&mut self) {
@@ -140,13 +135,22 @@ impl APUComponent for APUPulse {
         }
     }
 
-    fn get_output(&self, _total_cycles: u64) -> i8 {
+    fn clock(&mut self, cycles: u32) {
+        self.timer_counter += cycles as u16 * APU::APU_CLOCKS_PER_CPU_CLOCK as u16;
+        while self.timer_counter >= self.timer + 1 {
+            self.duty_cycle = (self.duty_cycle + 1) % Self::MAX_DUTY_STEPS;
+            self.timer_counter -= self.timer + 1;
+        }
+    }
+
+    fn get_output(&self) -> i8 {
         0
     }
 }
 
 impl APUPulse {
     const MAX_VOLUME: u8 = 0x0F;
+    const MAX_DUTY_STEPS: u8 = 8;
 
     pub fn new(id: usize) -> Self {
         Self {
@@ -172,6 +176,9 @@ impl APUPulse {
             last_volume: 0,
             last_time: 0,
             last_duty_cycle: 0,
+
+            timer_counter: 0,
+            duty_step: 0,
         }
     }
 
@@ -184,42 +191,6 @@ impl APUPulse {
             _ => {
                 critical!(APU, "Invalid duty cycle: {}", self.duty_cycle);
             }
-        }
-    }
-
-    pub fn send_request(&mut self) {
-        let active = self.active && self.length_counter > 0 && self.timer >= 8;
-
-        if self.last_active != active
-            || (active
-                && (self.last_volume != self.volume
-                    || self.last_time != self.timer
-                    || self.last_duty_cycle != self.duty_cycle))
-        {
-            // There are some changes, send a request.
-
-            let frequency = if self.timer == 0 {
-                0.0
-            } else {
-                CPU::CLOCK_FREQ as f64 / (16 * (self.timer + 1)) as f64
-            };
-            let volume = (self.volume as f64) / (Self::MAX_VOLUME as f64);
-
-            let request = PulseRequest {
-                active,
-                frequency,
-                volume,
-                duty_rate: self.duty_rate(),
-            };
-
-            Serial::communicate(|handler| {
-                handler.request_sound(APURequest::Pulse(self.id, request))
-            });
-
-            self.last_active = active;
-            self.last_volume = self.volume;
-            self.last_time = self.timer;
-            self.last_duty_cycle = self.duty_cycle;
         }
     }
 }

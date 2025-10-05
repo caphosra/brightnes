@@ -68,7 +68,8 @@ trait APUComponent {
     fn set_active(&mut self, active: bool);
     fn quarter_frame(&mut self);
     fn half_frame(&mut self);
-    fn get_output(&self, total_cycles: u64) -> i8;
+    fn clock(&mut self, cycles: u32);
+    fn get_output(&self) -> i8;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -80,7 +81,6 @@ pub struct APU {
     frame_counter: APUFrameCounter,
 
     sampling_clocks_counter: u32,
-    total_cycles: u64,
 }
 
 static APU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
@@ -91,6 +91,8 @@ impl APU {
 
     pub const QUARTER_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 240;
     pub const HALF_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 120;
+
+    pub const APU_CLOCKS_PER_CPU_CLOCK: u8 = 2;
 
     pub const SAMPLING_CLOCKS: u32 = CPU::CLOCK_FREQ / SoundDeviceDriver::SAMPLING_RATE;
 
@@ -110,7 +112,6 @@ impl APU {
             noise: APUNoise::new(),
             dmc: DMC::new(),
             frame_counter: APUFrameCounter::new(),
-            total_cycles: 0,
             sampling_clocks_counter: 0,
         };
     }
@@ -164,9 +165,12 @@ impl APU {
     }
 
     pub fn clock(&mut self, cycles: u32, cpu: &mut CPU, sound: &mut SoundDeviceDriver) {
-        self.total_cycles += cycles as u64;
         self.frame_counter.step += cycles;
         self.sampling_clocks_counter += cycles;
+
+        self.squares[0].clock(cycles);
+        self.squares[1].clock(cycles);
+        self.triangle.clock(cycles);
 
         while self.frame_counter.step >= Self::QUARTER_FRAME_CLOCKS {
             // Quarter frame comes.
@@ -209,9 +213,9 @@ impl APU {
 
             self.sampling_clocks_counter -= Self::SAMPLING_CLOCKS;
 
-            let output = (self.squares[0].get_output(self.total_cycles) as i16)
-                + (self.squares[1].get_output(self.total_cycles) as i16)
-                + (self.triangle.get_output(self.total_cycles) as i16);
+            let output = (self.squares[0].get_output() as i16)
+                + (self.squares[1].get_output() as i16)
+                + (self.triangle.get_output() as i16);
             sound.add_data(output, output);
         }
     }
