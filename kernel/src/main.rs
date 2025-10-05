@@ -52,7 +52,9 @@ pub extern "C" fn kernel_main() -> ! {
         fs.check_root_dir();
     }
 
-    VirtSoundDevice::new().unwrap();
+    let mut device = VirtSoundDevice::new().unwrap();
+    device.set_params().unwrap();
+    device.prepare().unwrap();
 
     InterruptController::init();
     interrupts::enable();
