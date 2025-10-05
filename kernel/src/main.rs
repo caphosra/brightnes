@@ -54,7 +54,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     let mut device = VirtSoundDevice::new().unwrap();
     device.set_params().unwrap();
-    device.prepare().unwrap();
+    device.generate_square_wave();
 
     InterruptController::init();
     interrupts::enable();

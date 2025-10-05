@@ -1,5 +1,7 @@
 use core::ptr::{read_volatile, write_volatile};
 
+use heapless::Vec;
+
 use crate::{
     drivers::virtio::{VirtIODevice, VirtQ, VirtQDesc},
     error, info,
@@ -15,14 +17,18 @@ struct SoundConfig {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 struct SoundPCMHeader {
     code: SoundRequestType,
     stream_id: u32,
 }
 
+/// Original: `struct virtio_snd_pcm_xfer`
+#[repr(C)]
+struct SoundPCMTransferHeader {
+    stream_id: u32,
+}
+
 #[repr(u32)]
-#[derive(Clone, Copy)]
 enum SoundRequestType {
     PCMInfo = 0x100,
     PCMSetParams,
@@ -70,6 +76,13 @@ struct SoundPCMSetParams {
     padding: u8,
 }
 
+/// Original: `struct virtio_snd_pcm_status`
+#[repr(C)]
+struct SoundPCMStatus {
+    status: SoundStatus,
+    latency_bytes: u32,
+}
+
 pub struct VirtSoundDevice<'a> {
     base_driver: VirtIODevice,
 
@@ -91,7 +104,7 @@ pub struct VirtSoundDevice<'a> {
 impl<'a> VirtSoundDevice<'a> {
     pub const VIRTIO_SOUND_DEVICE_ID: u16 = 0x1059;
 
-    const PERIOD_BYTES: u32 = 1024;
+    const PERIOD_BYTES: u32 = 0x10000;
 
     pub fn new() -> Option<Self> {
         let mut base_driver = VirtIODevice::new(Self::VIRTIO_SOUND_DEVICE_ID)?;
@@ -201,7 +214,7 @@ impl<'a> VirtSoundDevice<'a> {
                 stream_id: 0,
             },
             buffer_bytes: Self::PERIOD_BYTES * (size_of::<i16>() * 2) as u32,
-            period_bytes: Self::PERIOD_BYTES,
+            period_bytes: Self::PERIOD_BYTES * (size_of::<i16>() * 2) as u32,
             features: 0,
             channels: 2,
             format: SoundPCMFormat::S16,
@@ -210,5 +223,119 @@ impl<'a> VirtSoundDevice<'a> {
         };
         self.control_request(&req);
         Ok(())
+    }
+
+    pub fn start(&mut self) -> Result<(), ()> {
+        let req = SoundPCMHeader {
+            code: SoundRequestType::PCMStart,
+            stream_id: 0,
+        };
+        self.control_request(&req);
+        Ok(())
+    }
+
+    pub fn stop(&mut self) -> Result<(), ()> {
+        let req = SoundPCMHeader {
+            code: SoundRequestType::PCMStop,
+            stream_id: 0,
+        };
+        self.control_request(&req);
+        Ok(())
+    }
+
+    pub fn write_stream(&mut self, buf: &[u8]) {
+        let query = SoundPCMTransferHeader { stream_id: 0 };
+
+        // Write the request to the descriptor table.
+        unsafe {
+            write_volatile(&mut self.tx_queue.desc[0].addr, &query as *const _ as u64);
+            write_volatile(
+                &mut self.tx_queue.desc[0].len,
+                size_of::<SoundPCMTransferHeader>() as u32,
+            );
+            write_volatile(&mut self.tx_queue.desc[0].flags, VirtQDesc::F_NEXT);
+            write_volatile(&mut self.tx_queue.desc[0].next, 1);
+        }
+
+        // Write the buffer to the descriptor table.
+        unsafe {
+            write_volatile(&mut self.tx_queue.desc[1].addr, buf.as_ptr() as u64);
+            write_volatile(&mut self.tx_queue.desc[1].len, buf.len() as u32);
+            write_volatile(&mut self.tx_queue.desc[1].flags, VirtQDesc::F_NEXT);
+            write_volatile(&mut self.tx_queue.desc[1].next, 2);
+        }
+
+        // Write the status byte to the descriptor table.
+        let mut status: SoundPCMStatus = SoundPCMStatus {
+            status: SoundStatus::IOError,
+            latency_bytes: 0,
+        };
+        unsafe {
+            write_volatile(&mut self.tx_queue.desc[2].addr, &status as *const _ as u64);
+            write_volatile(
+                &mut self.tx_queue.desc[2].len,
+                size_of::<SoundPCMStatus>() as u32,
+            );
+            write_volatile(&mut self.tx_queue.desc[2].flags, VirtQDesc::F_WRITE);
+            write_volatile(&mut self.tx_queue.desc[2].next, 0);
+        }
+
+        self.tx_queue.push(0, self.tx_queue_notify_addr);
+
+        loop {
+            // Wait until the device processes the request.
+            let used_idx = unsafe { read_volatile(&mut self.tx_queue.used.idx) };
+            if used_idx != self.tx_queue.last_used_idx {
+                self.tx_queue.last_used_idx = used_idx;
+                break;
+            }
+        }
+
+        let status = unsafe { read_volatile(&mut status) };
+        match status.status {
+            SoundStatus::OK => {
+                info!(
+                    DRV,
+                    "Sound device write completed. latency={}", status.latency_bytes
+                );
+            }
+            SoundStatus::BadMessage => {
+                error!(DRV, "Sound device request failed: BadMessage");
+            }
+            SoundStatus::NotSupported => {
+                error!(DRV, "Sound device request failed: NotSupported");
+            }
+            SoundStatus::IOError => {
+                error!(DRV, "Sound device request failed: IOError");
+            }
+        }
+    }
+
+    pub fn generate_square_wave(&mut self) {
+        const SAMPLE_RATE: usize = 48000;
+        const FREQUENCY: usize = 440;
+        const SAMPLE_SIZE: usize = VirtSoundDevice::PERIOD_BYTES as usize * 2;
+
+        let mut samples: Vec<i16, SAMPLE_SIZE> = Vec::from_array([0; SAMPLE_SIZE]);
+
+        for i in 0..(SAMPLE_SIZE % 2) {
+            let t = i as f32 / SAMPLE_RATE as f32;
+            let sample_value = if (t * FREQUENCY as f32) % 1.0 < 0.5 {
+                30000
+            } else {
+                -30000
+            };
+            samples[i * 2] = sample_value; // Left channel
+            samples[i * 2 + 1] = sample_value; // Right channel
+        }
+
+        self.prepare().unwrap();
+        self.start().unwrap();
+        self.write_stream(unsafe {
+            core::slice::from_raw_parts(
+                samples.as_ptr() as *const u8,
+                samples.len() * size_of::<i16>(),
+            )
+        });
     }
 }
