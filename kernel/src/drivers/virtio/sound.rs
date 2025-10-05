@@ -188,9 +188,7 @@ impl<'a> VirtSoundDevice<'a> {
 
         let status = unsafe { read_volatile(&mut status) };
         match status {
-            SoundStatus::OK => {
-                info!(DRV, "Sound device request completed.");
-            }
+            SoundStatus::OK => {}
             SoundStatus::BadMessage => {
                 error!(DRV, "Sound device request failed: BadMessage");
             }

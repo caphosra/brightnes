@@ -177,6 +177,7 @@ impl<'a> SoundDeviceDriver<'a> {
                 unsafe { from_raw_parts(raw_data, Self::SOUND_DATA_SIZE * size_of::<i16>()) };
 
             // Send the data to the device.
+            self.sound_device.start();
             self.sound_device
                 .write_stream(self.last_sound_data as u16, data);
 

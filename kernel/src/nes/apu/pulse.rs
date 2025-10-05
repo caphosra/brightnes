@@ -136,15 +136,23 @@ impl APUComponent for APUPulse {
     }
 
     fn clock(&mut self, cycles: u32) {
-        self.timer_counter += cycles as u16 * APU::APU_CLOCKS_PER_CPU_CLOCK as u16;
-        while self.timer_counter >= self.timer + 1 {
-            self.duty_cycle = (self.duty_cycle + 1) % Self::MAX_DUTY_STEPS;
-            self.timer_counter -= self.timer + 1;
-        }
+        self.timer_counter += cycles as u16 / APU::CPU_CLOCKS_PER_APU_CLOCK as u16;
+        self.duty_step =
+            (self.duty_step + (self.timer_counter / (self.timer + 1)) as u8) % Self::MAX_DUTY_STEPS;
+        self.timer_counter %= self.timer + 1;
     }
 
     fn get_output(&self) -> i8 {
-        0
+        if self.active && self.length_counter > 0 && self.timer >= 8 && self.volume > 0 {
+            let duty_rate = self.duty_rate();
+            if (self.duty_step as f64) < (Self::MAX_DUTY_STEPS as f64 * duty_rate) {
+                self.volume as i8
+            } else {
+                self.volume as i8 * -1
+            }
+        } else {
+            0
+        }
     }
 }
 

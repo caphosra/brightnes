@@ -92,9 +92,11 @@ impl APU {
     pub const QUARTER_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 240;
     pub const HALF_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 120;
 
-    pub const APU_CLOCKS_PER_CPU_CLOCK: u8 = 2;
+    pub const CPU_CLOCKS_PER_APU_CLOCK: u8 = 2;
 
     pub const SAMPLING_CLOCKS: u32 = CPU::CLOCK_FREQ / SoundDeviceDriver::SAMPLING_RATE;
+
+    pub const VOLUME: i16 = 100;
 
     pub fn get() -> &'static mut Self {
         let ptr = *APU_PTR.call_once(|| {
@@ -213,8 +215,8 @@ impl APU {
 
             self.sampling_clocks_counter -= Self::SAMPLING_CLOCKS;
 
-            let output = (self.squares[0].get_output() as i16)
-                + (self.squares[1].get_output() as i16)
+            let output = (self.squares[0].get_output() as i16) * Self::VOLUME
+                + (self.squares[1].get_output() as i16) * Self::VOLUME
                 + (self.triangle.get_output() as i16);
             sound.add_data(output, output);
         }
