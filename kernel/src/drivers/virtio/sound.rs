@@ -1,11 +1,12 @@
 use core::ptr::{read_volatile, write_volatile};
 
-use heapless::Vec;
+use alloc::vec::Vec;
 
 use crate::{
-    drivers::virtio::{VirtIODevice, VirtQ, VirtQDesc},
+    drivers::virtio::{VirtIODevice, VirtQ, VirtQDesc, VIRT_QUEUE_SIZE},
     error, info,
     mem::MemoryAllocator,
+    warn,
 };
 
 #[repr(C)]
@@ -98,6 +99,10 @@ pub struct VirtSoundDevice<'a> {
     rx_queue: &'a mut VirtQ,
     rx_queue_notify_addr: *mut u8,
 
+    tx_request_count: u16,
+    tx_queue_idx: usize,
+    tx_status: SoundPCMStatus,
+
     config: &'a mut SoundConfig,
 }
 
@@ -105,6 +110,7 @@ impl<'a> VirtSoundDevice<'a> {
     pub const VIRTIO_SOUND_DEVICE_ID: u16 = 0x1059;
 
     const PERIOD_BYTES: u32 = 0x10000;
+    const MAX_TX_REQUESTS: usize = VIRT_QUEUE_SIZE / 3;
 
     pub fn new() -> Option<Self> {
         let mut base_driver = VirtIODevice::new(Self::VIRTIO_SOUND_DEVICE_ID)?;
@@ -142,6 +148,12 @@ impl<'a> VirtSoundDevice<'a> {
             tx_queue_notify_addr,
             rx_queue,
             rx_queue_notify_addr,
+            tx_request_count: 0,
+            tx_queue_idx: 0,
+            tx_status: SoundPCMStatus {
+                status: SoundStatus::IOError,
+                latency_bytes: 0,
+            },
             config,
         })
     }
@@ -244,71 +256,79 @@ impl<'a> VirtSoundDevice<'a> {
     }
 
     pub fn write_stream(&mut self, buf: &[u8]) {
+        let used_idx = unsafe { read_volatile(&mut self.tx_queue.used.idx) };
+        let diff = self.tx_request_count.wrapping_sub(used_idx);
+        if diff as usize >= Self::MAX_TX_REQUESTS {
+            warn!(DRV, "Sound device TX queue is full. Dropping audio data.");
+            return;
+        }
+
+        let tx_actual_idx = self.tx_queue_idx as usize * 3;
         let query = SoundPCMTransferHeader { stream_id: 0 };
 
         // Write the request to the descriptor table.
         unsafe {
-            write_volatile(&mut self.tx_queue.desc[0].addr, &query as *const _ as u64);
             write_volatile(
-                &mut self.tx_queue.desc[0].len,
+                &mut self.tx_queue.desc[tx_actual_idx].addr,
+                &query as *const _ as u64,
+            );
+            write_volatile(
+                &mut self.tx_queue.desc[tx_actual_idx].len,
                 size_of::<SoundPCMTransferHeader>() as u32,
             );
-            write_volatile(&mut self.tx_queue.desc[0].flags, VirtQDesc::F_NEXT);
-            write_volatile(&mut self.tx_queue.desc[0].next, 1);
+            write_volatile(
+                &mut self.tx_queue.desc[tx_actual_idx].flags,
+                VirtQDesc::F_NEXT,
+            );
+            write_volatile(
+                &mut self.tx_queue.desc[tx_actual_idx].next,
+                tx_actual_idx as u16 + 1,
+            );
         }
 
         // Write the buffer to the descriptor table.
         unsafe {
-            write_volatile(&mut self.tx_queue.desc[1].addr, buf.as_ptr() as u64);
-            write_volatile(&mut self.tx_queue.desc[1].len, buf.len() as u32);
-            write_volatile(&mut self.tx_queue.desc[1].flags, VirtQDesc::F_NEXT);
-            write_volatile(&mut self.tx_queue.desc[1].next, 2);
+            write_volatile(
+                &mut self.tx_queue.desc[tx_actual_idx + 1].addr,
+                buf.as_ptr() as u64,
+            );
+            write_volatile(
+                &mut self.tx_queue.desc[tx_actual_idx + 1].len,
+                buf.len() as u32,
+            );
+            write_volatile(
+                &mut self.tx_queue.desc[tx_actual_idx + 1].flags,
+                VirtQDesc::F_NEXT,
+            );
+            write_volatile(
+                &mut self.tx_queue.desc[tx_actual_idx + 1].next,
+                tx_actual_idx as u16 + 2,
+            );
         }
 
         // Write the status byte to the descriptor table.
-        let mut status: SoundPCMStatus = SoundPCMStatus {
-            status: SoundStatus::IOError,
-            latency_bytes: 0,
-        };
         unsafe {
-            write_volatile(&mut self.tx_queue.desc[2].addr, &status as *const _ as u64);
             write_volatile(
-                &mut self.tx_queue.desc[2].len,
+                &mut self.tx_queue.desc[tx_actual_idx + 2].addr,
+                &self.tx_status as *const _ as u64,
+            );
+            write_volatile(
+                &mut self.tx_queue.desc[tx_actual_idx + 2].len,
                 size_of::<SoundPCMStatus>() as u32,
             );
-            write_volatile(&mut self.tx_queue.desc[2].flags, VirtQDesc::F_WRITE);
-            write_volatile(&mut self.tx_queue.desc[2].next, 0);
+            write_volatile(
+                &mut self.tx_queue.desc[tx_actual_idx + 2].flags,
+                VirtQDesc::F_WRITE,
+            );
+            write_volatile(&mut self.tx_queue.desc[tx_actual_idx + 2].next, 0);
         }
 
-        self.tx_queue.push(0, self.tx_queue_notify_addr);
+        self.tx_queue
+            .push(tx_actual_idx as u16, self.tx_queue_notify_addr);
 
-        loop {
-            // Wait until the device processes the request.
-            let used_idx = unsafe { read_volatile(&mut self.tx_queue.used.idx) };
-            if used_idx != self.tx_queue.last_used_idx {
-                self.tx_queue.last_used_idx = used_idx;
-                break;
-            }
-        }
-
-        let status = unsafe { read_volatile(&mut status) };
-        match status.status {
-            SoundStatus::OK => {
-                info!(
-                    DRV,
-                    "Sound device write completed. latency={}", status.latency_bytes
-                );
-            }
-            SoundStatus::BadMessage => {
-                error!(DRV, "Sound device request failed: BadMessage");
-            }
-            SoundStatus::NotSupported => {
-                error!(DRV, "Sound device request failed: NotSupported");
-            }
-            SoundStatus::IOError => {
-                error!(DRV, "Sound device request failed: IOError");
-            }
-        }
+        self.tx_request_count = self.tx_request_count.wrapping_add(1);
+        self.tx_queue_idx = self.tx_queue_idx.wrapping_add(1);
+        self.tx_queue_idx %= Self::MAX_TX_REQUESTS;
     }
 
     pub fn generate_square_wave(&mut self) {
@@ -316,8 +336,7 @@ impl<'a> VirtSoundDevice<'a> {
         const FREQUENCY: usize = 440;
         const SAMPLE_SIZE: usize = VirtSoundDevice::PERIOD_BYTES as usize * 2;
 
-        let mut samples: Vec<i16, SAMPLE_SIZE> = Vec::from_array([0; SAMPLE_SIZE]);
-
+        let mut samples1: Vec<i16> = Vec::with_capacity(SAMPLE_SIZE);
         for i in 0..(SAMPLE_SIZE / 2) {
             let t = i as f32 / SAMPLE_RATE as f32;
             let sample_value = if (t * FREQUENCY as f32) % 1.0 < 0.5 {
@@ -325,16 +344,35 @@ impl<'a> VirtSoundDevice<'a> {
             } else {
                 -5000
             };
-            samples[i * 2] = sample_value; // Left channel
-            samples[i * 2 + 1] = sample_value; // Right channel
+            samples1.push(sample_value); // Left channel
+            samples1.push(sample_value); // Right channel
+        }
+
+        let mut samples2: Vec<i16> = Vec::with_capacity(SAMPLE_SIZE);
+        for i in 0..(SAMPLE_SIZE / 2) {
+            let t = i as f32 / SAMPLE_RATE as f32;
+            let sample_value = if (t * FREQUENCY as f32 * 2.0) % 1.0 < 0.5 {
+                5000
+            } else {
+                -5000
+            };
+            samples2.push(sample_value); // Left channel
+            samples2.push(sample_value); // Right channel
         }
 
         self.prepare().unwrap();
         self.start().unwrap();
         self.write_stream(unsafe {
             core::slice::from_raw_parts(
-                samples.as_ptr() as *const u8,
-                samples.len() * size_of::<i16>(),
+                samples1.as_slice() as *const _ as *const u8,
+                samples1.len() * size_of::<i16>(),
+            )
+        });
+
+        self.write_stream(unsafe {
+            core::slice::from_raw_parts(
+                samples2.as_slice() as *const _ as *const u8,
+                samples2.len() * size_of::<i16>(),
             )
         });
     }
