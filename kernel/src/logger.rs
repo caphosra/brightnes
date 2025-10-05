@@ -11,6 +11,7 @@ use crate::proc::{ProcessMode, PROCESS_SWITCHER};
 #[derive(Clone, Copy)]
 pub enum LogLocation {
     SYS,
+    DRV,
     CPU,
     PPU,
     APU,
@@ -23,6 +24,7 @@ impl LogLocation {
     pub fn to_str(&self) -> &str {
         match self {
             LogLocation::SYS => "SYS",
+            LogLocation::DRV => "DRV",
             LogLocation::CPU => "CPU",
             LogLocation::PPU => "PPU",
             LogLocation::APU => "APU",

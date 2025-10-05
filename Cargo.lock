@@ -111,6 +111,7 @@ version = "0.1.0"
 dependencies = [
  "brightnes-common",
  "crc",
+ "fatfs",
  "heapless 0.9.1",
  "pc-keyboard",
  "pic8259",
@@ -332,6 +333,15 @@ name = "extended"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
+
+[[package]]
+name = "fatfs"
+version = "0.4.0"
+source = "git+https://github.com/rafalh/rust-fatfs.git?rev=4eccb50d011146fbed20e133d33b22f3c27292e7#4eccb50d011146fbed20e133d33b22f3c27292e7"
+dependencies = [
+ "bitflags 2.6.0",
+ "log",
+]
 
 [[package]]
 name = "find-msvc-tools"

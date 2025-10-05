@@ -6,3 +6,4 @@
 dest/
 OVMF.fd
 .gdb_history
+*.img
