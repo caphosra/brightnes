@@ -17,6 +17,8 @@ pub const PANIC_INT_IDX: u8 = 0x60;
 static PICS: Mutex<ChainedPics> =
     Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
 
+pub static SLEEP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
 #[repr(u8)]
 pub enum InterruptIdx {
     Timer = PIC_1_OFFSET,
@@ -100,6 +102,12 @@ extern "x86-interrupt" fn timer_handler(mut stack_frame: InterruptStackFrame) {
 
         let mut switcher = PROCESS_SWITCHER.write();
         switcher.enter_safe_mode(&mut stack_frame);
+    }
+
+    {
+        // Wake up the main thread if it's sleeping.
+        let mut sleep = SLEEP.lock();
+        *sleep = false;
     }
 
     unsafe {

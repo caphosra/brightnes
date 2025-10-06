@@ -14,6 +14,7 @@ use crate::fs::FILE_SYSTEM;
 use crate::info::InfoProc;
 use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
+use crate::int::SLEEP;
 use crate::logger::LOG_FB;
 use crate::nes::apu::APU;
 use crate::nes::cartridge::Cartridge;
@@ -105,6 +106,12 @@ pub fn game_main() -> ! {
         }
 
         frame_buffer.flush(false);
+
+        // Sleep until the next interrupt comes.
+        while *SLEEP.lock() {
+            hlt();
+        }
+        *SLEEP.lock() = true;
     }
 }
 
