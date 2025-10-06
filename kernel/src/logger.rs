@@ -17,7 +17,6 @@ pub enum LogLocation {
     APU,
     CAT,
     BUS,
-    COM,
 }
 
 impl LogLocation {
@@ -30,7 +29,6 @@ impl LogLocation {
             LogLocation::APU => "APU",
             LogLocation::CAT => "CAT",
             LogLocation::BUS => "BUS",
-            LogLocation::COM => "COM",
         }
     }
 }
@@ -132,7 +130,7 @@ impl Logger {
         use crate::serial::Serial;
 
         Serial::communicate(|handler| {
-            handler.write_u8(b'[');
+            handler.write(b"[");
             handler.write(location.to_str().as_bytes());
             match level {
                 LogLevel::Log => handler.write(b"]  LOG: "),
@@ -141,7 +139,7 @@ impl Logger {
                 LogLevel::Error => handler.write(b"]  ERR: "),
             }
             handler.write(chunk);
-            handler.write_u8(b'\n');
+            handler.write(b"\n");
         });
     }
 
