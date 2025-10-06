@@ -105,6 +105,7 @@ build: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 create-disk:
 	dd if=/dev/zero of=disk.img bs=1M count=128
 	mkfs.fat -F32 -n BRIGHTNES disk.img
+	mcopy -i ./disk.img ./res/nes/*.nes ::
 
 run: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 	qemu-system-x86_64 $(QEMU_FLAGS)
