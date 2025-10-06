@@ -15,7 +15,8 @@ QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
 	-device virtio-blk-pci,drive=main_drive \
 	-device virtio-sound-pci \
 	-monitor stdio \
-	-serial tcp::$(SERIAL_PORT),server,nowait
+	-serial tcp::$(SERIAL_PORT),server,nowait \
+	-cpu host
 
 COMMON_SOURCES = ./common/Cargo.toml \
 	./common/src/lib.rs \

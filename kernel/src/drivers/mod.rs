@@ -4,7 +4,11 @@ use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
 use heapless::Vec;
 
 use crate::{
-    drivers::virtio::{block::VirtBlockDevice, sound::VirtSoundDevice, VIRT_QUEUE_SIZE},
+    drivers::virtio::{
+        block::VirtBlockDevice,
+        sound::{SoundPCMFormatType, SoundPCMRate, VirtSoundDevice},
+        VIRT_QUEUE_SIZE,
+    },
     warn,
 };
 
@@ -78,9 +82,9 @@ impl Write for BlockDeviceDriver<'_> {
         let end_sector = (end + sector_size - 1) / sector_size;
 
         let buffer_size = (end_sector - start_sector) * sector_size;
-        if self.sector_buffer.len() > buffer_size as usize {
+        if self.sector_buffer.len() < buffer_size as usize {
             // Increase the buffer size.
-            for _ in 0..self.sector_buffer.len() - buffer_size as usize {
+            for _ in 0..buffer_size as usize - self.sector_buffer.len() {
                 self.sector_buffer.push(0);
             }
         }
@@ -125,26 +129,27 @@ impl<'a> BlockDeviceDriver<'a> {
     }
 }
 
-pub struct SoundDeviceDriver<'a> {
+pub struct SoundDeviceDriver<'a, S: SoundPCMFormatType> {
     sound_device: VirtSoundDevice<'a>,
-    sound_data:
-        Vec<Vec<i16, { SoundDeviceDriver::SOUND_DATA_SIZE }>, { SoundDeviceDriver::MAX_REQ_SIZE }>,
+    sound_data: Vec<Vec<S, { SOUND_DATA_SIZE }>, { MAX_REQ_SIZE }>,
     last_used: u16,
     last_sound_data: usize,
 }
 
-impl<'a> SoundDeviceDriver<'a> {
-    pub const SOUND_DATA_SIZE: usize = VirtSoundDevice::PERIOD_BYTES as usize * 2;
-    pub const MAX_REQ_SIZE: usize = VIRT_QUEUE_SIZE / 3 - 1;
+pub const SOUND_DATA_SIZE: usize = VirtSoundDevice::PERIOD_BYTES as usize * 2;
+pub const MAX_REQ_SIZE: usize = VIRT_QUEUE_SIZE / 3 - 1;
 
+pub const SAMPLING_RATE: SoundPCMRate = SoundPCMRate::Rate48000;
+
+impl<'a, S: SoundPCMFormatType> SoundDeviceDriver<'a, S> {
     pub fn new() -> Self {
         let mut sound_device = VirtSoundDevice::new().unwrap();
-        sound_device.set_params().unwrap();
+        sound_device.set_params::<S>(SAMPLING_RATE).unwrap();
         sound_device.prepare().unwrap();
         sound_device.start().unwrap();
 
         let mut sound_data = Vec::new();
-        for _ in 0..Self::MAX_REQ_SIZE {
+        for _ in 0..MAX_REQ_SIZE {
             sound_data.push(Vec::new());
         }
         SoundDeviceDriver {
@@ -158,10 +163,10 @@ impl<'a> SoundDeviceDriver<'a> {
     fn queue_is_full(&self) -> bool {
         let consumed = self.sound_device.tx_consumed_count();
         let remains = self.last_used.wrapping_sub(consumed);
-        remains as usize >= Self::MAX_REQ_SIZE
+        remains as usize >= MAX_REQ_SIZE
     }
 
-    pub fn add_data(&mut self, left_data: i16, right_data: i16) {
+    pub fn add_data(&mut self, left_data: S, right_data: S) {
         if self.queue_is_full() {
             warn!(DRV, "Sound device queue is full. Dropping data.");
             return;
@@ -170,19 +175,19 @@ impl<'a> SoundDeviceDriver<'a> {
         self.sound_data[self.last_sound_data].push(right_data);
 
         // If the buffer is full, send it to the device.
-        if self.sound_data[self.last_sound_data].len() >= Self::SOUND_DATA_SIZE {
+        if self.sound_data[self.last_sound_data].len() >= SOUND_DATA_SIZE {
             let raw_data = self.sound_data[self.last_sound_data].as_slice().as_ptr() as *const u8;
-            let data =
-                unsafe { from_raw_parts(raw_data, Self::SOUND_DATA_SIZE * size_of::<i16>()) };
+            let data = unsafe { from_raw_parts(raw_data, SOUND_DATA_SIZE * size_of::<S>()) };
 
             // Send the data to the device.
+            self.sound_device.start();
             self.sound_device
                 .write_stream(self.last_sound_data as u16, data);
 
             // Clear the buffer and move to the next one.
             self.sound_data[self.last_sound_data].clear();
             self.last_sound_data += 1;
-            if self.last_sound_data >= Self::MAX_REQ_SIZE {
+            if self.last_sound_data >= MAX_REQ_SIZE {
                 self.last_sound_data = 0;
             }
 

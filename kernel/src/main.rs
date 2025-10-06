@@ -76,7 +76,7 @@ pub extern "C" fn kernel_main() -> ! {
 }
 
 pub fn game_main() -> ! {
-    SoundDeviceDriver::new();
+    let mut sound = SoundDeviceDriver::new();
 
     let cpu = CPU::get();
     let ppu = PPU::get();
@@ -90,18 +90,18 @@ pub fn game_main() -> ! {
     loop {
         const FRAME_CYCLES: usize = 29780;
 
-        let mut cycles = 0;
+        let mut total_cycles = 0;
 
-        while cycles < FRAME_CYCLES {
+        while total_cycles < FRAME_CYCLES {
             interrupts::disable();
 
-            let required = cpu.clock(ppu, apu, cartridge);
-            ppu.render_bg(required as usize * 3, &mut frame_buffer, cpu, cartridge);
-            apu.clock(cycles, cpu);
+            let cycles = cpu.clock(ppu, apu, cartridge);
+            ppu.render_bg(cycles as usize * 3, &mut frame_buffer, cpu, cartridge);
+            apu.clock(cycles, cpu, &mut sound);
 
             interrupts::enable();
 
-            cycles += required as usize;
+            total_cycles += cycles as usize;
         }
 
         frame_buffer.flush(false);

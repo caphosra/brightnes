@@ -1,13 +1,12 @@
 use std::{io::Read, net::TcpStream};
 
-use brightnes_common::serial::{APURequest, Volume};
+use brightnes_common::serial::{APURequest, PulseRequest, TriangleRequest};
 use cpal::{
     Device, Stream, SupportedStreamConfig, default_host,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use fundsp::{
-    hacker::{AudioUnit, Fade, envelope, lfo, pulse, zero},
-    hacker32::{constant, triangle},
+    hacker::{AudioUnit, Fade, constant, lfo, pulse, triangle, zero},
     net::{Net, NodeId},
 };
 use postcard::from_bytes;
@@ -16,15 +15,17 @@ pub struct Sound {
     _device: Device,
     _config: SupportedStreamConfig,
 
-    pulses: [NodeId; 2],
-    triangle: NodeId,
+    last_pulses_req: [Option<PulseRequest>; 2],
+    last_triangle_req: Option<TriangleRequest>,
+
+    output: NodeId,
     net: Net,
     _stream: Stream,
 }
 
 impl Sound {
     const MASTER_VOLUME: f32 = 0.1;
-    const FADE_TIME: f32 = 0.00001;
+    const FADE_TIME: f32 = 0.001;
 
     pub const CPU_CLOCK_FREQUENCY: f64 = 1789773.0;
     pub const TRIANGLE_FREQUENCY_LIMIT: f64 = Self::CPU_CLOCK_FREQUENCY / 32.0 / 2.0;
@@ -37,24 +38,11 @@ impl Sound {
         let stream_config = config.config();
         let channel_count = stream_config.channels as usize;
 
-        let mut pulse1_net = Net::new(0, 2);
-        let mut pulse2_net = Net::new(0, 2);
-        let mut triangle_net = Net::new(0, 2);
+        let mut net = Net::new(0, 2);
 
-        let pulse1 = pulse1_net.push(Box::new(zero()));
-        pulse1_net.pipe_output(pulse1);
-        println!("[-] Pulse 1 node ID: {}", pulse1.value());
+        let output = net.push(Box::new(zero()));
+        net.pipe_output(output);
 
-        let pulse2 = pulse2_net.push(Box::new(zero()));
-        pulse2_net.pipe_output(pulse2);
-        println!("[-] Pulse 2 node ID: {}", pulse2.value());
-
-        let triangle = triangle_net.push(Box::new(zero()));
-        triangle_net.pipe_output(triangle);
-        println!("[-] Triangle node ID: {}", triangle.value());
-
-        let pulse_nets = Net::sum(pulse1_net, pulse2_net);
-        let mut net = Net::sum(pulse_nets, triangle_net);
         net.set_sample_rate(config.sample_rate().0 as f64);
 
         let mut backend = net.backend();
@@ -84,8 +72,9 @@ impl Sound {
         Self {
             _device: device,
             _config: config,
-            pulses: [pulse1, pulse2],
-            triangle,
+            last_pulses_req: [None, None],
+            last_triangle_req: None,
+            output,
             net,
             _stream: stream,
         }
@@ -106,105 +95,68 @@ impl Sound {
 
         match request {
             APURequest::Pulse(id, req) => {
-                let unit: Box<dyn AudioUnit> = if req.active {
-                    let pulse_state = lfo(move |t| {
-                        if req.sweep_enabled {
-                            let sweep_phase = (t / req.sweep_interval).floor() as u32;
-                            let mut timer = req.timer as u32;
-
-                            for _ in 0..sweep_phase {
-                                if req.sweep_negate {
-                                    timer =
-                                        timer.checked_sub(timer >> req.sweep_shift).unwrap_or(0);
-                                } else {
-                                    timer += timer >> req.sweep_shift;
-                                };
-                            }
-
-                            if timer <= 0x8 {
-                                // Mute the channel.
-                                (0.0, 0.0)
-                            } else {
-                                // Recalculate frequency.
-                                (
-                                    Self::CPU_CLOCK_FREQUENCY / (16 * (timer + 1) as u32) as f64,
-                                    req.duty_rate,
-                                )
-                            }
-                        } else {
-                            (
-                                Self::CPU_CLOCK_FREQUENCY / (16 * (req.timer + 1) as u32) as f64,
-                                req.duty_rate,
-                            )
-                        }
-                    });
-
-                    match req.volume {
-                        Volume::Constant(volume) => {
-                            let wave = pulse_state
-                                >> pulse()
-                                    * Self::MASTER_VOLUME
-                                    * (volume as f32)
-                                    * envelope(move |t| if t < req.length { 1.0 } else { 0.0 });
-                            Box::new(wave)
-                        }
-                        Volume::Decreasing(decreasing_time) => {
-                            let wave = pulse_state
-                                >> pulse()
-                                    * Self::MASTER_VOLUME
-                                    * envelope(move |t| {
-                                        if t < req.length {
-                                            let step = if req.loop_enabled {
-                                                (t / decreasing_time).floor() as u32 % 16
-                                            } else {
-                                                ((t / decreasing_time).floor() as u32).min(15)
-                                            };
-                                            (15 - step) as f64 / 15.0
-                                        } else {
-                                            0.0
-                                        }
-                                    });
-                            Box::new(wave)
-                        }
-                    }
-                } else {
-                    Box::new(zero())
-                };
-                self.net
-                    .crossfade(self.pulses[id], Fade::Smooth, Self::FADE_TIME, unit);
-                self.net.commit();
+                self.last_pulses_req[id] = Some(req);
             }
             APURequest::Triangle(req) => {
-                let unit: Box<dyn AudioUnit> =
-                    if req.active && req.frequency < Self::TRIANGLE_FREQUENCY_LIMIT {
-                        let wave = constant(req.frequency as f32)
-                            >> triangle()
-                                * Self::MASTER_VOLUME
-                                * envelope(move |t| if t < req.length { 1.0 } else { 0.0 });
-                        Box::new(wave)
-                    } else {
-                        Box::new(zero())
-                    };
-                self.net
-                    .crossfade(self.triangle, Fade::Smooth, Self::FADE_TIME, unit);
-                self.net.commit();
+                self.last_triangle_req = Some(req);
             }
         }
+
+        let output_wave = zero();
+
+        macro_rules! add_pulse_wave {
+            ($wave:expr, $id:expr) => {{
+                let (frequency, duty_rate, volume) =
+                    if let Some(last_req) = &self.last_pulses_req[$id] {
+                        if last_req.active {
+                            (
+                                last_req.frequency,
+                                last_req.duty_rate,
+                                last_req.volume as f32,
+                            )
+                        } else {
+                            (0.0, 0.0, 0.0)
+                        }
+                    } else {
+                        (0.0, 0.0, 0.0)
+                    };
+                $wave
+                    + (lfo(move |_t| (frequency, duty_rate))
+                        >> pulse() * Self::MASTER_VOLUME * volume)
+            }};
+        }
+
+        // Pulse waves
+        let output_wave = add_pulse_wave!(output_wave, 0);
+        let output_wave = add_pulse_wave!(output_wave, 1);
+
+        // Triangle wave
+        let frequency = if let Some(last_req) = &self.last_triangle_req {
+            if last_req.active {
+                last_req.frequency
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+        let output_wave =
+            output_wave + (constant(frequency as f32) >> triangle() * Self::MASTER_VOLUME);
+
+        self.net.crossfade(
+            self.output,
+            Fade::Smooth,
+            Self::FADE_TIME,
+            Box::new(output_wave),
+        );
+        self.net.commit();
 
         Ok(())
     }
 
     pub fn disable_all(&mut self) {
-        for &pulse in &self.pulses {
-            self.net
-                .crossfade(pulse, Fade::Smooth, Self::FADE_TIME, Box::new(zero()));
-        }
-        self.net.crossfade(
-            self.triangle,
-            Fade::Smooth,
-            Self::FADE_TIME,
-            Box::new(zero()),
-        );
+        self.net
+            .crossfade(self.output, Fade::Smooth, Self::FADE_TIME, Box::new(zero()));
         self.net.commit();
     }
 }

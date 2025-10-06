@@ -62,6 +62,8 @@ impl ToString for InterruptType {
 static CPU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 
 impl CPU {
+    pub const CLOCK_FREQ: u32 = 1789773;
+
     pub const HISTORY_SIZE: usize = 16;
     const MAX_STALL_CYCLES: u32 = 8;
     const INTERRUPT_CYCLES: u32 = 7;
