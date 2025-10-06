@@ -56,9 +56,27 @@ enum SoundPCMFormat {
     U16,          /* 16 / 16 bits */
 }
 
+pub trait SoundPCMFormatType {
+    const FORMAT: SoundPCMFormat;
+}
+
+impl SoundPCMFormatType for i16 {
+    const FORMAT: SoundPCMFormat = SoundPCMFormat::S16;
+}
+
+impl SoundPCMFormatType for u16 {
+    const FORMAT: SoundPCMFormat = SoundPCMFormat::U16;
+}
+
+impl SoundPCMFormat {
+    pub fn from_type<T: SoundPCMFormatType>() -> Self {
+        T::FORMAT
+    }
+}
+
 /// Original: `VIRTIO_SND_PCM_RATE_*`
 #[repr(u8)]
-enum SoundPCMRate {
+pub enum SoundPCMRate {
     Rate5512 = 0,
     Rate8000,
     Rate11025,
@@ -67,6 +85,21 @@ enum SoundPCMRate {
     Rate32000,
     Rate44100,
     Rate48000,
+}
+
+impl SoundPCMRate {
+    pub const fn to_hz(&self) -> u32 {
+        match self {
+            SoundPCMRate::Rate5512 => 5512,
+            SoundPCMRate::Rate8000 => 8000,
+            SoundPCMRate::Rate11025 => 11025,
+            SoundPCMRate::Rate16000 => 16000,
+            SoundPCMRate::Rate22050 => 22050,
+            SoundPCMRate::Rate32000 => 32000,
+            SoundPCMRate::Rate44100 => 44100,
+            SoundPCMRate::Rate48000 => 48000,
+        }
+    }
 }
 
 #[repr(C)]
@@ -217,18 +250,18 @@ impl<'a> VirtSoundDevice<'a> {
         Ok(())
     }
 
-    pub fn set_params(&mut self) -> Result<(), ()> {
+    pub fn set_params<S: SoundPCMFormatType>(&mut self, rate: SoundPCMRate) -> Result<(), ()> {
         let req = SoundPCMSetParams {
             header: SoundPCMHeader {
                 code: SoundRequestType::PCMSetParams,
                 stream_id: 0,
             },
-            buffer_bytes: Self::PERIOD_BYTES * (size_of::<i16>() * 2) as u32,
-            period_bytes: Self::PERIOD_BYTES * (size_of::<i16>() * 2) as u32,
+            buffer_bytes: Self::PERIOD_BYTES * (size_of::<S>() * 2) as u32,
+            period_bytes: Self::PERIOD_BYTES * (size_of::<S>() * 2) as u32,
             features: 0,
             channels: 2,
-            format: SoundPCMFormat::S16,
-            rate: SoundPCMRate::Rate11025,
+            format: SoundPCMFormat::from_type::<S>(),
+            rate,
             padding: 0,
         };
         self.control_request(&req);

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error,
     nes::{
-        apu::{APUComponent, APU},
+        apu::{APUComponent, SoundSampleType, APU},
         cpu::CPU,
     },
     serial::Serial,
@@ -20,6 +20,9 @@ pub struct APUTriangle {
 
     pub last_active: bool,
     pub last_timer: u16,
+
+    timer_counter: u16,
+    duty_step: u8,
 }
 
 impl APUComponent for APUTriangle {
@@ -69,14 +72,32 @@ impl APUComponent for APUTriangle {
         }
     }
 
-    fn clock(&mut self, _cycles: u32) {}
+    fn clock(&mut self, cycles: u32) {
+        self.timer_counter += cycles as u16;
+        self.duty_step =
+            (self.duty_step + (self.timer_counter / (self.timer + 1)) as u8) % Self::MAX_DUTY_STEPS;
+        self.timer_counter %= self.timer + 1;
+    }
 
-    fn get_output(&self) -> i8 {
-        0
+    fn get_output(&self) -> SoundSampleType {
+        let counter_ok = (self.linear_counter_control && self.linear_counter > 0)
+            || (!self.linear_counter_control && self.length_counter > 0);
+        if self.active && counter_ok && self.length_counter > 0 && self.timer >= 2 {
+            let output = if self.duty_step & 0x10 != 0 {
+                self.duty_step ^ 0x1F
+            } else {
+                self.duty_step
+            };
+            output as SoundSampleType - 7
+        } else {
+            0
+        }
     }
 }
 
 impl APUTriangle {
+    const MAX_DUTY_STEPS: u8 = 32;
+
     pub fn new() -> Self {
         Self {
             active: false,
@@ -87,6 +108,9 @@ impl APUTriangle {
 
             last_active: false,
             last_timer: 0,
+
+            timer_counter: 0,
+            duty_step: 0,
         }
     }
 

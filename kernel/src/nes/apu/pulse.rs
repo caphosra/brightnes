@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     critical,
-    nes::apu::{APUComponent, APU},
+    nes::apu::{APUComponent, SoundSampleType, APU},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -142,14 +142,15 @@ impl APUComponent for APUPulse {
         self.timer_counter %= self.timer + 1;
     }
 
-    fn get_output(&self) -> i8 {
+    fn get_output(&self) -> SoundSampleType {
         if self.active && self.length_counter > 0 && self.timer >= 8 && self.volume > 0 {
             let duty_rate = self.duty_rate();
-            if (self.duty_step as f64) < (Self::MAX_DUTY_STEPS as f64 * duty_rate) {
-                self.volume as i8
+            let output = if (self.duty_step as f64) < (Self::MAX_DUTY_STEPS as f64 * duty_rate) {
+                self.volume
             } else {
-                self.volume as i8 * -1
-            }
+                0
+            };
+            output as SoundSampleType - 7
         } else {
             0
         }

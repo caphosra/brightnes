@@ -3,7 +3,7 @@ use spin::{Lazy, Once};
 
 use crate::{
     critical,
-    drivers::SoundDeviceDriver,
+    drivers::{SoundDeviceDriver, SAMPLING_RATE},
     log,
     mem::MemoryAllocator,
     nes::{
@@ -63,13 +63,15 @@ impl APUFrameCounter {
     }
 }
 
+pub type SoundSampleType = i16;
+
 trait APUComponent {
     fn write_reg(&mut self, addr: u16, data: u8);
     fn set_active(&mut self, active: bool);
     fn quarter_frame(&mut self);
     fn half_frame(&mut self);
     fn clock(&mut self, cycles: u32);
-    fn get_output(&self) -> i8;
+    fn get_output(&self) -> SoundSampleType;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -94,9 +96,9 @@ impl APU {
 
     pub const CPU_CLOCKS_PER_APU_CLOCK: u8 = 2;
 
-    pub const SAMPLING_CLOCKS: u32 = CPU::CLOCK_FREQ / SoundDeviceDriver::SAMPLING_RATE;
+    pub const SAMPLING_CLOCKS: u32 = CPU::CLOCK_FREQ / SAMPLING_RATE.to_hz();
 
-    pub const VOLUME: i16 = 100;
+    pub const VOLUME: SoundSampleType = 500;
 
     pub fn get() -> &'static mut Self {
         let ptr = *APU_PTR.call_once(|| {
@@ -166,7 +168,12 @@ impl APU {
         }
     }
 
-    pub fn clock(&mut self, cycles: u32, cpu: &mut CPU, sound: &mut SoundDeviceDriver) {
+    pub fn clock(
+        &mut self,
+        cycles: u32,
+        cpu: &mut CPU,
+        sound: &mut SoundDeviceDriver<SoundSampleType>,
+    ) {
         self.frame_counter.step += cycles;
         self.sampling_clocks_counter += cycles;
 
@@ -215,9 +222,9 @@ impl APU {
 
             self.sampling_clocks_counter -= Self::SAMPLING_CLOCKS;
 
-            let output = (self.squares[0].get_output() as i16) * Self::VOLUME
-                + (self.squares[1].get_output() as i16) * Self::VOLUME
-                + (self.triangle.get_output() as i16);
+            let output = (self.squares[0].get_output() as SoundSampleType) * Self::VOLUME
+                + (self.squares[1].get_output() as SoundSampleType) * Self::VOLUME
+                + (self.triangle.get_output() as SoundSampleType) * Self::VOLUME;
             sound.add_data(output, output);
         }
     }
