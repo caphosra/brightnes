@@ -52,7 +52,7 @@ pub extern "C" fn kernel_main() -> ! {
         fs.check_root_dir();
     }
 
-    InterruptController::init();
+    InterruptController::init(60);
     interrupts::enable();
 
     info!(SYS, "Interrupts are enabled.");

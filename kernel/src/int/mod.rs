@@ -38,13 +38,34 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
 pub struct InterruptController;
 
 impl InterruptController {
-    pub fn init() {
+    const PIT_FREQ: u32 = 1193182;
+    const PIT_CH0_DATA: u16 = 0x40;
+    const PIT_CMD: u16 = 0x43;
+
+    pub fn init(freq: u32) {
         IDT.load();
 
         {
             let mut pics = PICS.lock();
             unsafe { pics.initialize() };
+            Self::pit_set_freq(freq);
             unsafe { pics.write_masks(0xFC, 0xFF) };
+        }
+    }
+
+    pub fn pit_set_freq(freq: u32) {
+        let divisor: u16 = (Self::PIT_FREQ / freq) as u16;
+        let mut port = Port::new(Self::PIT_CMD);
+        unsafe {
+            // 1 1 = Access mode: lobyte/hibyte
+            // 1 0 1 = Mode 2 (rate generator)
+            port.write(0b00110100u8);
+        }
+
+        let mut port = Port::new(Self::PIT_CH0_DATA);
+        unsafe {
+            port.write((divisor & 0xFF) as u8);
+            port.write((divisor >> 8) as u8);
         }
     }
 }
