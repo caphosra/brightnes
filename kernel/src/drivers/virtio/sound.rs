@@ -138,6 +138,7 @@ pub struct VirtSoundDevice<'a> {
     _rx_queue: &'a mut VirtQ,
     _rx_queue_notify_addr: *mut u8,
 
+    tx_transfer_header: SoundPCMTransferHeader,
     tx_dummy_status: SoundPCMStatus,
 }
 
@@ -181,6 +182,7 @@ impl<'a> VirtSoundDevice<'a> {
             tx_queue_notify_addr,
             _rx_queue: rx_queue,
             _rx_queue_notify_addr: rx_queue_notify_addr,
+            tx_transfer_header: SoundPCMTransferHeader { stream_id: 0 },
             tx_dummy_status: SoundPCMStatus {
                 status: SoundStatus::IOError,
                 latency_bytes: 0,
@@ -284,13 +286,11 @@ impl<'a> VirtSoundDevice<'a> {
     }
 
     pub fn write_stream(&mut self, index: u16, buf: &[u8]) {
-        let query = SoundPCMTransferHeader { stream_id: 0 };
-
         // Write the request to the descriptor table.
         unsafe {
             write_volatile(
                 &mut self.tx_queue.desc[index as usize * 3].addr,
-                &query as *const _ as u64,
+                &self.tx_transfer_header as *const _ as u64,
             );
             write_volatile(
                 &mut self.tx_queue.desc[index as usize * 3].len,
