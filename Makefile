@@ -1,12 +1,10 @@
 .PHONY: build-kernel \
 	build-kernel-dbg \
-	build-server \
 	create-disk \
 	resources build run run-dbg gdb
 
 OUT_DIR = ./dest
 NES_FILE = ./res/nes/$(GAME)
-SERIAL_PORT = 19837
 
 CARGO_FLAGS =
 QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
@@ -14,9 +12,7 @@ QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
 	-drive format=raw,if=none,id=main_drive,file=./disk.img,index=1 \
 	-device virtio-blk-pci,drive=main_drive \
 	-device virtio-sound-pci \
-	-monitor stdio \
-	-serial tcp::$(SERIAL_PORT),server,nowait \
-	-cpu host
+	-monitor stdio
 
 COMMON_SOURCES = ./common/Cargo.toml \
 	./common/src/lib.rs \
@@ -68,11 +64,6 @@ BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 	./bootloader/src/fs.rs \
 	./bootloader/src/main.rs
 
-SERVER_SOURCES = ./server/Cargo.toml \
-	./server/src/fs.rs \
-	./server/src/main.rs \
-	./server/src/sound.rs
-
 KERNEL_RELEASE = ./target/x86_64-unknown-none/release/brightnes-kernel
 KERNEL_DEBUG = ./target/x86_64-unknown-none/debug/brightnes-kernel
 
@@ -104,11 +95,6 @@ $(OUT_DIR)/efi/boot/bootx64.efi: $(BOOTLOADER_SOURCES)
 	mkdir -p $(OUT_DIR)/efi/boot
 	cp ./target/x86_64-unknown-uefi/debug/brightnes-bootloader.efi $(OUT_DIR)/efi/boot/bootx64.efi
 
-build-server: $(SERVER_SOURCES)
-	cargo build \
-		--package brightnes-server \
-		--release
-
 resources: ./res/font/Tamsyn8x16r.psf.gz
 	gzip -d < ./res/font/Tamsyn8x16r.psf.gz > $(OUT_DIR)/system_font.psf
 
@@ -127,11 +113,6 @@ run: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 run-dbg: build-kernel-dbg $(OUT_DIR)/efi/boot/bootx64.efi resources
 	qemu-system-x86_64 $(QEMU_FLAGS) \
 		-S -gdb tcp::31415
-
-run-server: $(SERVER_SOURCES) $(COMMON_SOURCES)
-	cargo run \
-		--package brightnes-server \
-		--release
 
 gdb:
 	gdb -x ./.gdbinit

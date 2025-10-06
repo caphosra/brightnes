@@ -2,6 +2,5 @@
 members = [
     "bootloader",
     "common",
-    "kernel",
-    "server"
+    "kernel"
 ]
