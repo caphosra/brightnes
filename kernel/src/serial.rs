@@ -1,9 +1,8 @@
-use brightnes_common::serial::{APURequest, SerialRequest};
-use postcard::to_allocvec;
+use brightnes_common::serial::SerialRequest;
 use spin::{lazy::Lazy, mutex::Mutex};
 use uart_16550::SerialPort;
 
-use crate::{error, log};
+use crate::error;
 
 static SERIAL: Lazy<Mutex<Serial>> = Lazy::new(|| {
     let mut serial_port = unsafe { SerialPort::new(Serial::SERIAL_PORT_IO_ADDR) };
@@ -66,23 +65,6 @@ impl Serial {
 
             Ok(())
         }
-    }
-
-    pub fn request_sound(&mut self, req: APURequest) -> Result<(), ()> {
-        SerialRequest::PlaySound.send(self);
-
-        let serialized_req = to_allocvec(&req);
-        let serialized_req = serialized_req.map_err(|_| {
-            error!(COM, "Failed to serialize APU request");
-            ()
-        })?;
-
-        self.write_u32(serialized_req.len() as u32);
-        self.write(&serialized_req);
-
-        log!(COM, "Sent APU request ({} bytes)", serialized_req.len());
-
-        Ok(())
     }
 
     pub fn write(&mut self, data: &[u8]) {

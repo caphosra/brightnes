@@ -1,13 +1,8 @@
-use brightnes_common::serial::{APURequest, TriangleRequest};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     error,
-    nes::{
-        apu::{APUComponent, SoundSampleType, APU},
-        cpu::CPU,
-    },
-    serial::Serial,
+    nes::apu::{APUComponent, SoundSampleType, APU},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -17,9 +12,6 @@ pub struct APUTriangle {
     pub linear_counter_control: bool,
     pub timer: u16,
     pub length_counter: u8,
-
-    pub last_active: bool,
-    pub last_timer: u16,
 
     timer_counter: u16,
     duty_step: u8,
@@ -54,7 +46,6 @@ impl APUComponent for APUTriangle {
                 self.length_counter = 0;
             }
             self.active = active;
-            self.send_request();
         }
     }
 
@@ -62,8 +53,6 @@ impl APUComponent for APUTriangle {
         if self.linear_counter_control && self.linear_counter > 0 {
             self.linear_counter -= 1;
         }
-
-        self.send_request();
     }
 
     fn half_frame(&mut self) {
@@ -106,33 +95,8 @@ impl APUTriangle {
             timer: 0,
             length_counter: 0,
 
-            last_active: false,
-            last_timer: 0,
-
             timer_counter: 0,
             duty_step: 0,
-        }
-    }
-
-    fn send_request(&mut self) {
-        let counter_ok = (self.linear_counter_control && self.linear_counter > 0)
-            || (!self.linear_counter_control && self.length_counter > 0);
-        let active = self.active && counter_ok && self.length_counter > 0 && self.timer >= 8;
-
-        if self.last_active != active || (active && self.last_timer != self.timer) {
-            // There are some changes, send a request.
-
-            let frequency = if self.timer == 0 {
-                0.0
-            } else {
-                CPU::CLOCK_FREQ as f64 / (32 * (self.timer + 1)) as f64
-            };
-            let request = TriangleRequest { active, frequency };
-
-            Serial::communicate(|handler| handler.request_sound(APURequest::Triangle(request)));
-
-            self.last_active = active;
-            self.last_timer = self.timer;
         }
     }
 }
