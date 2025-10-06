@@ -17,6 +17,8 @@ pub const PANIC_INT_IDX: u8 = 0x60;
 static PICS: Mutex<ChainedPics> =
     Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
 
+pub static SLEEP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
 #[repr(u8)]
 pub enum InterruptIdx {
     Timer = PIC_1_OFFSET,
@@ -38,13 +40,34 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
 pub struct InterruptController;
 
 impl InterruptController {
-    pub fn init() {
+    const PIT_FREQ: u32 = 1193182;
+    const PIT_CH0_DATA: u16 = 0x40;
+    const PIT_CMD: u16 = 0x43;
+
+    pub fn init(freq: u32) {
         IDT.load();
 
         {
             let mut pics = PICS.lock();
             unsafe { pics.initialize() };
+            Self::pit_set_freq(freq);
             unsafe { pics.write_masks(0xFC, 0xFF) };
+        }
+    }
+
+    pub fn pit_set_freq(freq: u32) {
+        let divisor: u16 = (Self::PIT_FREQ / freq) as u16;
+        let mut port = Port::new(Self::PIT_CMD);
+        unsafe {
+            // 1 1 = Access mode: lobyte/hibyte
+            // 1 0 1 = Mode 2 (rate generator)
+            port.write(0b00110100u8);
+        }
+
+        let mut port = Port::new(Self::PIT_CH0_DATA);
+        unsafe {
+            port.write((divisor & 0xFF) as u8);
+            port.write((divisor >> 8) as u8);
         }
     }
 }
@@ -79,6 +102,12 @@ extern "x86-interrupt" fn timer_handler(mut stack_frame: InterruptStackFrame) {
 
         let mut switcher = PROCESS_SWITCHER.write();
         switcher.enter_safe_mode(&mut stack_frame);
+    }
+
+    {
+        // Wake up the main thread if it's sleeping.
+        let mut sleep = SLEEP.lock();
+        *sleep = false;
     }
 
     unsafe {

@@ -3,13 +3,10 @@ use core::slice::from_raw_parts;
 use fatfs::{IoBase, Read, Seek, SeekFrom, Write};
 use heapless::Vec;
 
-use crate::{
-    drivers::virtio::{
-        block::VirtBlockDevice,
-        sound::{SoundPCMFormatType, SoundPCMRate, VirtSoundDevice},
-        VIRT_QUEUE_SIZE,
-    },
-    warn,
+use crate::drivers::virtio::{
+    block::VirtBlockDevice,
+    sound::{SoundPCMFormatType, SoundPCMRate, VirtSoundDevice},
+    VIRT_QUEUE_SIZE,
 };
 
 pub struct BlockDeviceDriver<'a> {
@@ -168,7 +165,6 @@ impl<'a, S: SoundPCMFormatType> SoundDeviceDriver<'a, S> {
 
     pub fn add_data(&mut self, left_data: S, right_data: S) {
         if self.queue_is_full() {
-            warn!(DRV, "Sound device queue is full. Dropping data.");
             return;
         }
 
@@ -186,11 +182,11 @@ impl<'a, S: SoundPCMFormatType> SoundDeviceDriver<'a, S> {
                 .write_stream(self.last_sound_data as u16, data);
 
             // Clear the buffer and move to the next one.
-            self.sound_data[self.last_sound_data].clear();
             self.last_sound_data += 1;
             if self.last_sound_data >= MAX_REQ_SIZE {
                 self.last_sound_data = 0;
             }
+            self.sound_data[self.last_sound_data].clear();
 
             // Increment the used count.
             self.last_used = self.last_used.wrapping_add(1);

@@ -14,7 +14,6 @@ use crate::{
         ppu::PPU,
     },
     proc::{ProcessMode, PROCESS_SWITCHER},
-    serial::Serial,
 };
 
 pub struct BKeyboard;
@@ -61,17 +60,20 @@ impl BKeyboard {
                     if modifiers.is_ctrl() {
                         if modifiers.is_shifted() {
                             // Save the working RAM
-                            if let Err(_) = Serial::communicate(|serial| {
-                                let cartridge = Cartridge::get();
-                                let ram = cartridge.working_ram().ok_or(())?;
-                                serial.save_ram(ram)
-                            }) {
-                                error!(
-                                    COM,
-                                    "Failed to save the working RAM. Possibly no working RAM."
-                                );
-                            } else {
-                                info!(COM, "Saved the working RAM successfully.");
+                            let mut fs = FILE_SYSTEM.write();
+                            let cartridge = Cartridge::get();
+                            match cartridge.working_ram().ok_or(()) {
+                                Ok(ram) => match fs.save_ram(ram) {
+                                    Ok(_) => info!(SYS, "Saved the working RAM successfully."),
+                                    Err(_) => error!(
+                                        SYS,
+                                        "Failed to save the working RAM. Possibly no working RAM saved."
+                                    ),
+                                },
+                                Err(_) => error!(
+                                    SYS,
+                                    "The cartridge has no working RAM."
+                                ),
                             }
                         } else {
                             // Save the current state.
@@ -98,17 +100,20 @@ impl BKeyboard {
                     if modifiers.is_ctrl() {
                         if modifiers.is_shifted() {
                             // Load the working RAM
-                            if let Err(_) = Serial::communicate(|serial| {
-                                let cartridge = Cartridge::get();
-                                let ram = cartridge.working_ram().ok_or(())?;
-                                serial.load_ram(ram)
-                            }) {
-                                error!(
-                                    COM,
-                                    "Failed to load the working RAM. Possibly no working RAM."
-                                );
-                            } else {
-                                info!(COM, "Load the working RAM successfully.");
+                            let mut fs = FILE_SYSTEM.write();
+                            let cartridge = Cartridge::get();
+                            match cartridge.working_ram().ok_or(()) {
+                                Ok(ram) => match fs.load_ram(ram) {
+                                    Ok(_) => info!(SYS, "Load the working RAM successfully."),
+                                    Err(_) => error!(
+                                        SYS,
+                                        "Failed to load the working RAM. Possibly no working RAM saved."
+                                    ),
+                                },
+                                Err(_) => error!(
+                                    SYS,
+                                    "The cartridge has no working RAM."
+                                ),
                             }
                         } else {
                             // Load the latest state if requested.

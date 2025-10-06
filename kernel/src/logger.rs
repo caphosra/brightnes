@@ -17,7 +17,6 @@ pub enum LogLocation {
     APU,
     CAT,
     BUS,
-    COM,
 }
 
 impl LogLocation {
@@ -30,7 +29,6 @@ impl LogLocation {
             LogLocation::APU => "APU",
             LogLocation::CAT => "CAT",
             LogLocation::BUS => "BUS",
-            LogLocation::COM => "COM",
         }
     }
 }
@@ -121,10 +119,32 @@ impl Logger {
                         self.scroll += 1;
                     }
                     self.add_buffer(location, level, String::from_utf8_lossy(chunk).to_string());
+                    self.send_serial(location, level, chunk);
                 }
             }
         }
     }
+
+    #[cfg(feature = "serial")]
+    fn send_serial(&self, location: LogLocation, level: LogLevel, chunk: &[u8]) {
+        use crate::serial::Serial;
+
+        Serial::communicate(|handler| {
+            handler.write(b"[");
+            handler.write(location.to_str().as_bytes());
+            match level {
+                LogLevel::Log => handler.write(b"]  LOG: "),
+                LogLevel::Info => handler.write(b"] INFO: "),
+                LogLevel::Warn => handler.write(b"] WARN: "),
+                LogLevel::Error => handler.write(b"]  ERR: "),
+            }
+            handler.write(chunk);
+            handler.write(b"\n");
+        });
+    }
+
+    #[cfg(not(feature = "serial"))]
+    fn send_serial(&self, _location: LogLocation, _level: LogLevel, _chunk: &[u8]) {}
 
     fn add_buffer(&mut self, location: LogLocation, level: LogLevel, message: String) {
         if self.buffer.len() == self.scroll {

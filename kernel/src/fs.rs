@@ -26,6 +26,7 @@ unsafe impl Sync for FileSystem {}
 
 impl FileSystem {
     const STATE_FILE_NAME: &'static str = "saved.brt";
+    const RAM_FILE_NAME: &'static str = "ram.brr";
 
     pub fn new() -> Self {
         let driver = BlockDeviceDriver::new();
@@ -155,6 +156,32 @@ impl FileSystem {
             error!(SYS, "Failed to deserialize cartridge state");
             ()
         })?;
+
+        Ok(())
+    }
+
+    pub fn save_ram(&mut self, data: &[u8]) -> Result<(), ()> {
+        info!(SYS, "Request to save RAM. ({} bytes)", data.len());
+
+        let root_dir = self.file_system.root_dir();
+        let mut file = root_dir.create_file(Self::RAM_FILE_NAME).map_err(|_| ())?;
+
+        // The file should be overwritten.
+        file.truncate().map_err(|_| ())?;
+
+        file.write_all(data).map_err(|_| ())?;
+        file.flush().map_err(|_| ())?;
+
+        Ok(())
+    }
+
+    pub fn load_ram(&mut self, buffer: &mut [u8]) -> Result<(), ()> {
+        info!(SYS, "Request to load RAM. ({} bytes)", buffer.len());
+
+        let root_dir = self.file_system.root_dir();
+        let mut file = root_dir.open_file(Self::RAM_FILE_NAME).map_err(|_| ())?;
+
+        file.read_exact(buffer).map_err(|_| ())?;
 
         Ok(())
     }

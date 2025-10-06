@@ -14,6 +14,7 @@ use crate::fs::FILE_SYSTEM;
 use crate::info::InfoProc;
 use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
+use crate::int::SLEEP;
 use crate::logger::LOG_FB;
 use crate::nes::apu::APU;
 use crate::nes::cartridge::Cartridge;
@@ -52,7 +53,7 @@ pub extern "C" fn kernel_main() -> ! {
         fs.check_root_dir();
     }
 
-    InterruptController::init();
+    InterruptController::init(60);
     interrupts::enable();
 
     info!(SYS, "Interrupts are enabled.");
@@ -105,6 +106,12 @@ pub fn game_main() -> ! {
         }
 
         frame_buffer.flush(false);
+
+        // Sleep until the next interrupt comes.
+        while *SLEEP.lock() {
+            hlt();
+        }
+        *SLEEP.lock() = true;
     }
 }
 
