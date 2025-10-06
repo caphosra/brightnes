@@ -82,9 +82,9 @@ impl Write for BlockDeviceDriver<'_> {
         let end_sector = (end + sector_size - 1) / sector_size;
 
         let buffer_size = (end_sector - start_sector) * sector_size;
-        if self.sector_buffer.len() > buffer_size as usize {
+        if self.sector_buffer.len() < buffer_size as usize {
             // Increase the buffer size.
-            for _ in 0..self.sector_buffer.len() - buffer_size as usize {
+            for _ in 0..buffer_size as usize - self.sector_buffer.len() {
                 self.sector_buffer.push(0);
             }
         }
