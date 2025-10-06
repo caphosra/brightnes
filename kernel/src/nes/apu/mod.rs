@@ -28,8 +28,6 @@ pub struct APUFrameCounter {
 }
 
 impl APUFrameCounter {
-    const CLOCK_PER_FRAME: usize = 7457;
-
     pub fn new() -> Self {
         Self {
             irq: false,
@@ -88,11 +86,7 @@ pub struct APU {
 static APU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 
 impl APU {
-    pub const QUARTER_FRAME_INTERVAL: f64 = 1.0 / 60.0 / 4.0;
-    pub const HALF_FRAME_INTERVAL: f64 = 1.0 / 60.0 / 2.0;
-
     pub const QUARTER_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 240;
-    pub const HALF_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 120;
 
     pub const CPU_CLOCKS_PER_APU_CLOCK: u8 = 2;
 
@@ -282,7 +276,6 @@ impl APU {
     }
 }
 
-pub mod bus;
 pub mod dmc;
 pub mod noise;
 pub mod pulse;

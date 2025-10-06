@@ -63,8 +63,9 @@ impl FileSystem {
             ()
         })?;
 
-        file.write_all(&serialized_cpu.len().to_le_bytes());
-        file.write_all(&serialized_cpu);
+        file.write_all(&serialized_cpu.len().to_le_bytes())
+            .map_err(|_| ())?;
+        file.write_all(&serialized_cpu).map_err(|_| ())?;
 
         info!(SYS, "Saved CPU state ({} bytes)", serialized_cpu.len());
 
@@ -74,8 +75,9 @@ impl FileSystem {
             ()
         })?;
 
-        file.write_all(&serialized_ppu.len().to_le_bytes());
-        file.write_all(&serialized_ppu);
+        file.write_all(&serialized_ppu.len().to_le_bytes())
+            .map_err(|_| ())?;
+        file.write_all(&serialized_ppu).map_err(|_| ())?;
 
         info!(SYS, "Saved PPU state ({} bytes)", serialized_ppu.len());
 
@@ -85,8 +87,9 @@ impl FileSystem {
             ()
         })?;
 
-        file.write_all(&serialized_cartridge.len().to_le_bytes());
-        file.write_all(&serialized_cartridge);
+        file.write_all(&serialized_cartridge.len().to_le_bytes())
+            .map_err(|_| ())?;
+        file.write_all(&serialized_cartridge).map_err(|_| ())?;
 
         info!(
             SYS,

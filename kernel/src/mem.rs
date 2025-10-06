@@ -82,14 +82,9 @@ impl MemoryAllocator {
         allocated as *mut T
     }
 
-    #[allow(dead_code)]
     pub fn alloc_zeroed<T>() -> *mut T {
         let ptr = Self::alloc::<T>();
         unsafe { write_bytes(ptr, 0, 1) };
         ptr
-    }
-
-    pub fn alloc_bytes(size: usize) -> *mut u8 {
-        unsafe { MEM_ALLOC.alloc(Layout::from_size_align(size, 1).unwrap()) }
     }
 }

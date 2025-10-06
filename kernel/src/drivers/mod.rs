@@ -144,13 +144,13 @@ pub const SAMPLING_RATE: SoundPCMRate = SoundPCMRate::Rate48000;
 impl<'a, S: SoundPCMFormatType> SoundDeviceDriver<'a, S> {
     pub fn new() -> Self {
         let mut sound_device = VirtSoundDevice::new().unwrap();
-        sound_device.set_params::<S>(SAMPLING_RATE).unwrap();
-        sound_device.prepare().unwrap();
-        sound_device.start().unwrap();
+        sound_device.set_params::<S>(SAMPLING_RATE);
+        sound_device.prepare();
+        sound_device.start();
 
         let mut sound_data = Vec::new();
         for _ in 0..MAX_REQ_SIZE {
-            sound_data.push(Vec::new());
+            let _ = sound_data.push(Vec::new());
         }
         SoundDeviceDriver {
             sound_device,
@@ -171,8 +171,9 @@ impl<'a, S: SoundPCMFormatType> SoundDeviceDriver<'a, S> {
             warn!(DRV, "Sound device queue is full. Dropping data.");
             return;
         }
-        self.sound_data[self.last_sound_data].push(left_data);
-        self.sound_data[self.last_sound_data].push(right_data);
+
+        let _ = self.sound_data[self.last_sound_data].push(left_data);
+        let _ = self.sound_data[self.last_sound_data].push(right_data);
 
         // If the buffer is full, send it to the device.
         if self.sound_data[self.last_sound_data].len() >= SOUND_DATA_SIZE {

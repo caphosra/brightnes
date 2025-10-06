@@ -241,16 +241,15 @@ impl<'a> VirtSoundDevice<'a> {
         }
     }
 
-    pub fn prepare(&mut self) -> Result<(), ()> {
+    pub fn prepare(&mut self) {
         let req = SoundPCMHeader {
             code: SoundRequestType::PCMPrepare,
             stream_id: 0,
         };
         self.control_request(&req);
-        Ok(())
     }
 
-    pub fn set_params<S: SoundPCMFormatType>(&mut self, rate: SoundPCMRate) -> Result<(), ()> {
+    pub fn set_params<S: SoundPCMFormatType>(&mut self, rate: SoundPCMRate) {
         let req = SoundPCMSetParams {
             header: SoundPCMHeader {
                 code: SoundRequestType::PCMSetParams,
@@ -265,25 +264,22 @@ impl<'a> VirtSoundDevice<'a> {
             padding: 0,
         };
         self.control_request(&req);
-        Ok(())
     }
 
-    pub fn start(&mut self) -> Result<(), ()> {
+    pub fn start(&mut self) {
         let req = SoundPCMHeader {
             code: SoundRequestType::PCMStart,
             stream_id: 0,
         };
         self.control_request(&req);
-        Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<(), ()> {
+    pub fn stop(&mut self) {
         let req = SoundPCMHeader {
             code: SoundRequestType::PCMStop,
             stream_id: 0,
         };
         self.control_request(&req);
-        Ok(())
     }
 
     pub fn tx_consumed_count(&self) -> u16 {

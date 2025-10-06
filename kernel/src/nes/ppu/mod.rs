@@ -93,37 +93,6 @@ impl PPU {
 
     const IRQ_CYCLE: u16 = 260;
 
-    pub fn new() -> Self {
-        PPU {
-            reg_ctrl: 0,
-            reg_mask: 0,
-            reg_oam_addr: 0,
-            reg_status: 0,
-            reg_data: 0,
-            reg_data_is_lo: false,
-
-            reg_data_buffer: 0,
-
-            reg_v: 0,
-            reg_t: 0,
-            reg_w: false,
-            reg_x: 0,
-
-            relative_x: 0,
-
-            x: 0,
-            y: 0,
-
-            vram: VRAM::new(),
-            oam: OAM::new(),
-
-            frame_counter: 0,
-
-            sprite0_hit: Vec::from_array([false; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
-            sprites_layer: Vec::from_array([None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]),
-        }
-    }
-
     pub fn get() -> &'static mut Self {
         let ppu_raw_ptr = *PPU_PTR.call_once(|| {
             // Allocate memory for PPU.
