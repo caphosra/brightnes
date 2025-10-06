@@ -37,6 +37,7 @@ pub struct VirtQUsedElem {
 impl VirtQDesc {
     pub const F_NEXT: u16 = 1;
     pub const F_WRITE: u16 = 2;
+    #[allow(dead_code)]
     pub const F_INDIRECT: u16 = 4;
 }
 
@@ -56,7 +57,6 @@ pub struct VirtQ {
 }
 
 pub struct VirtIODevice {
-    pci_device: PCIDevice,
     pub common_config: &'static mut PCICommonConfig,
     notify_base: *mut u8,
     notify_off_multiplier: u32,
@@ -92,6 +92,18 @@ pub struct PCICommonConfig {
     pub admin_queue_num: u16,
 }
 
+#[repr(u8)]
+enum DeviceStatus {
+    Acknowledge = 1,
+    Driver = 2,
+    DriverOK = 4,
+    FeaturesOK = 8,
+    #[allow(dead_code)]
+    DeviceNeedsReset = 64,
+    #[allow(dead_code)]
+    Failed = 128,
+}
+
 impl VirtQ {
     pub fn push(&mut self, desc_idx: u16, notify_address: *mut u8) {
         let avail_idx = unsafe { read_volatile(&self.avail.idx) };
@@ -119,7 +131,6 @@ impl VirtIODevice {
             Self::common_config(&pci_device)?;
         let common_config = unsafe { &mut *common_config_ptr };
         Some(Self {
-            pci_device: pci_device,
             common_config,
             notify_base,
             notify_off_multiplier,
@@ -243,13 +254,6 @@ impl VirtIODevice {
         }
     }
 
-    const ACKNOWLEDGE: u8 = 1;
-    const DRIVER: u8 = 2;
-    const DRIVER_OK: u8 = 4;
-    const FEATURES_OK: u8 = 8;
-    const DEVICE_NEEDS_RESET: u8 = 64;
-    const FAILED: u8 = 128;
-
     pub fn init(&mut self) {
         info!(DRV, "Num queues: {}", self.common_config.num_queues);
 
@@ -262,15 +266,15 @@ impl VirtIODevice {
         unsafe {
             write_volatile(
                 &mut self.common_config.device_status,
-                Self::FEATURES_OK | Self::ACKNOWLEDGE,
+                DeviceStatus::FeaturesOK as u8 | DeviceStatus::Acknowledge as u8,
             );
         }
 
         let status = unsafe { read_volatile(&self.common_config.device_status) };
-        if (status & Self::ACKNOWLEDGE) == 0 {
+        if (status & DeviceStatus::Acknowledge as u8) == 0 {
             critical!(DRV, "Failed to acknowledge the device.");
         }
-        if (status & Self::FEATURES_OK) == 0 {
+        if (status & DeviceStatus::FeaturesOK as u8) == 0 {
             critical!(DRV, "The device does not support FEATURES_OK.");
         }
 
@@ -278,7 +282,7 @@ impl VirtIODevice {
         unsafe {
             write_volatile(
                 &mut self.common_config.device_status,
-                self.common_config.device_status | Self::DRIVER,
+                self.common_config.device_status | DeviceStatus::Driver as u8,
             );
         }
     }
@@ -337,7 +341,7 @@ impl VirtIODevice {
         unsafe {
             write_volatile(
                 &mut self.common_config.device_status,
-                self.common_config.device_status | Self::DRIVER_OK,
+                self.common_config.device_status | DeviceStatus::DriverOK as u8,
             );
         }
     }

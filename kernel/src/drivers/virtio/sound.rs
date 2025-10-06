@@ -1,7 +1,7 @@
 use core::ptr::{read_volatile, write_volatile};
 
 use crate::{
-    drivers::virtio::{VirtIODevice, VirtQ, VirtQDesc, VIRT_QUEUE_SIZE},
+    drivers::virtio::{VirtIODevice, VirtQ, VirtQDesc},
     error, info,
     mem::MemoryAllocator,
 };
@@ -27,6 +27,7 @@ struct SoundPCMTransferHeader {
 }
 
 #[repr(u32)]
+#[allow(dead_code)]
 enum SoundRequestType {
     PCMInfo = 0x100,
     PCMSetParams,
@@ -37,6 +38,7 @@ enum SoundRequestType {
 }
 
 #[repr(u32)]
+#[allow(dead_code)]
 enum SoundStatus {
     OK = 0x8000,
     BadMessage,
@@ -46,7 +48,8 @@ enum SoundStatus {
 
 /// Original: `VIRTIO_SND_PCM_FMT_*`
 #[repr(u8)]
-enum SoundPCMFormat {
+#[allow(dead_code)]
+pub enum SoundPCMFormat {
     IMAADPCM = 0, /*  4 /  4 bits */
     MuLaw,        /*  8 /  8 bits */
     ALaw,         /*  8 /  8 bits */
@@ -76,6 +79,7 @@ impl SoundPCMFormat {
 
 /// Original: `VIRTIO_SND_PCM_RATE_*`
 #[repr(u8)]
+#[allow(dead_code)]
 pub enum SoundPCMRate {
     Rate5512 = 0,
     Rate8000,
@@ -122,30 +126,25 @@ struct SoundPCMStatus {
 }
 
 pub struct VirtSoundDevice<'a> {
-    base_driver: VirtIODevice,
-
     control_queue: &'a mut VirtQ,
     control_queue_notify_addr: *mut u8,
 
-    event_queue: &'a mut VirtQ,
-    event_queue_notify_addr: *mut u8,
+    _event_queue: &'a mut VirtQ,
+    _event_queue_notify_addr: *mut u8,
 
     tx_queue: &'a mut VirtQ,
     tx_queue_notify_addr: *mut u8,
 
-    rx_queue: &'a mut VirtQ,
-    rx_queue_notify_addr: *mut u8,
+    _rx_queue: &'a mut VirtQ,
+    _rx_queue_notify_addr: *mut u8,
 
     tx_dummy_status: SoundPCMStatus,
-
-    config: &'a mut SoundConfig,
 }
 
 impl<'a> VirtSoundDevice<'a> {
     pub const VIRTIO_SOUND_DEVICE_ID: u16 = 0x1059;
 
     pub const PERIOD_BYTES: u32 = 0x1000;
-    const MAX_TX_REQUESTS: usize = VIRT_QUEUE_SIZE / 3;
 
     pub fn new() -> Option<Self> {
         let mut base_driver = VirtIODevice::new(Self::VIRTIO_SOUND_DEVICE_ID)?;
@@ -174,20 +173,18 @@ impl<'a> VirtSoundDevice<'a> {
         info!(DRV, "Num of sound streams: {}", config.streams);
 
         Some(Self {
-            base_driver,
             control_queue,
             control_queue_notify_addr,
-            event_queue,
-            event_queue_notify_addr,
+            _event_queue: event_queue,
+            _event_queue_notify_addr: event_queue_notify_addr,
             tx_queue,
             tx_queue_notify_addr,
-            rx_queue,
-            rx_queue_notify_addr,
+            _rx_queue: rx_queue,
+            _rx_queue_notify_addr: rx_queue_notify_addr,
             tx_dummy_status: SoundPCMStatus {
                 status: SoundStatus::IOError,
                 latency_bytes: 0,
             },
-            config,
         })
     }
 
@@ -274,7 +271,7 @@ impl<'a> VirtSoundDevice<'a> {
         self.control_request(&req);
     }
 
-    pub fn stop(&mut self) {
+    pub fn _stop(&mut self) {
         let req = SoundPCMHeader {
             code: SoundRequestType::PCMStop,
             stream_id: 0,

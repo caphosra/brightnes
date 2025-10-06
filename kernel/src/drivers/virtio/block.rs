@@ -60,6 +60,7 @@ struct BlockRequest {
 }
 
 #[repr(u32)]
+#[allow(dead_code)]
 enum BlockRequestType {
     In = 0,
     Out = 1,
@@ -72,7 +73,6 @@ enum BlockRequestType {
 }
 
 pub struct VirtBlockDevice<'a> {
-    base_driver: VirtIODevice,
     queue: &'a mut VirtQ,
     notify_addr: *mut u8,
     config: &'a mut BlockConfig,
@@ -101,7 +101,6 @@ impl<'a> VirtBlockDevice<'a> {
         base_driver.driver_ok();
 
         Some(Self {
-            base_driver,
             queue,
             notify_addr,
             config,
