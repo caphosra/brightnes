@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 logging = []
+serial = []
 
 [dependencies]
 crc = "3.3.0"

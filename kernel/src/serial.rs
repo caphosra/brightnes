@@ -34,7 +34,6 @@ impl Serial {
         F: FnOnce(&mut Self) -> T,
     {
         let mut port = SERIAL.lock();
-        port.serial_port.send_raw(Self::SPECIAL_CTRL_CHAR);
         handler(&mut port)
     }
 
