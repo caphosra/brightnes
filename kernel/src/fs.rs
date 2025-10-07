@@ -1,10 +1,13 @@
+use core::slice::from_raw_parts_mut;
+
 use alloc::vec;
 use crc::{Crc, CRC_32_ISCSI};
-use fatfs::{FsOptions, Read, Write};
+use fatfs::{Error, FsOptions, Read, Write};
 use postcard::{from_bytes_crc32, to_allocvec_crc32};
 use spin::{Lazy, RwLock};
 
 use crate::{
+    critical,
     drivers::BlockDeviceDriver,
     error, info,
     nes::{cartridge::Cartridge, cpu::CPU, ppu::PPU},
@@ -33,6 +36,39 @@ impl FileSystem {
         let option = FsOptions::new().strict(true);
         let file_system = FATFileSystem::new(driver, option).unwrap();
         FileSystem { file_system }
+    }
+
+    pub fn load_cartridge(&mut self, path: &str) {
+        const BUF_SIZE: usize = 1024;
+
+        let root_dir = self.file_system.root_dir();
+        let file = root_dir.open_file(path);
+        match file {
+            Ok(mut file) => {
+                let mut loaded_bytes = 0;
+                let mut nes_file_ptr = Cartridge::NES_FILE_ADDR as *mut u8;
+                loop {
+                    let nes_file_data = unsafe { from_raw_parts_mut(nes_file_ptr, BUF_SIZE) };
+                    match file.read(nes_file_data) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            nes_file_ptr = unsafe { nes_file_ptr.add(n) };
+                            loaded_bytes += n;
+                        }
+                        Err(_) => {
+                            critical!(CAT, "Failed to load the cartridge: {}", path);
+                        }
+                    }
+                }
+                info!(CAT, "Loaded the cartridge. ({} bytes)", loaded_bytes);
+            }
+            Err(Error::NotFound) => {
+                error!(CAT, "The specified cartridge was not found: {}", path);
+            }
+            _ => {
+                error!(CAT, "Failed to open the cartridge.");
+            }
+        }
     }
 
     pub fn check_root_dir(&mut self) {
