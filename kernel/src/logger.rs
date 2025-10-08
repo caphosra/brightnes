@@ -17,6 +17,7 @@ pub enum LogLocation {
     APU,
     CAT,
     BUS,
+    DSK,
 }
 
 impl LogLocation {
@@ -29,6 +30,7 @@ impl LogLocation {
             LogLocation::APU => "APU",
             LogLocation::CAT => "CAT",
             LogLocation::BUS => "BUS",
+            LogLocation::DSK => "DSK",
         }
     }
 }

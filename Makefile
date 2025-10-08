@@ -56,7 +56,8 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/main.rs \
 	./kernel/src/mem.rs \
 	./kernel/src/proc.rs \
-	./kernel/src/serial.rs
+	./kernel/src/serial.rs \
+	./kernel/src/system.rs
 BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 	./bootloader/src/elf.rs \
 	./bootloader/src/frame_buffer.rs \
@@ -105,7 +106,9 @@ build: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 create-disk:
 	dd if=/dev/zero of=disk.img bs=1M count=128
 	mkfs.fat -F32 -n BRIGHTNES disk.img
-	mcopy -i ./disk.img ./res/nes/*.nes ::
+	mmd -i ./disk.img ::nes
+	mcopy -i ./disk.img ./res/nes/*.nes ::nes
+	mcopy -i ./disk.img ./res/nes/*.txt ::nes
 
 run: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 	qemu-system-x86_64 $(QEMU_FLAGS)

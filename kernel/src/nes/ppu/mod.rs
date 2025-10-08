@@ -14,8 +14,8 @@ use crate::{
     },
 };
 
-const NES_FRAME_WIDTH: usize = 256;
-const NES_FRAME_HEIGHT: usize = 240;
+pub const NES_FRAME_WIDTH: usize = 256;
+pub const NES_FRAME_HEIGHT: usize = 240;
 const NES_FRAME_TOTAL_SIZE: usize = NES_FRAME_WIDTH * NES_FRAME_HEIGHT;
 
 pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {

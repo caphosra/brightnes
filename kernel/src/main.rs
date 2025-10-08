@@ -23,6 +23,7 @@ use crate::nes::cpu::CPU;
 use crate::nes::ppu::GAME_FB;
 use crate::nes::ppu::PPU;
 use crate::proc::ProcessSwitcher;
+use crate::system::SYSTEM;
 
 #[no_mangle]
 #[inline(never)]
@@ -58,6 +59,11 @@ pub extern "C" fn kernel_main() -> ! {
 
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
+
+    {
+        let mut sys = SYSTEM.write();
+        sys.update_cartridges();
+    }
 
     let cpu = CPU::get();
     cpu.init();
@@ -171,3 +177,4 @@ mod mem;
 mod nes;
 mod proc;
 mod serial;
+mod system;

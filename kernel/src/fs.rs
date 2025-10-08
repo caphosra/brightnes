@@ -1,6 +1,8 @@
 use core::slice::from_raw_parts_mut;
 
+use alloc::string::{String, ToString};
 use alloc::vec;
+use alloc::{format, vec::Vec};
 use crc::{Crc, CRC_32_ISCSI};
 use fatfs::{Error, FsOptions, Read, Write};
 use postcard::{from_bytes_crc32, to_allocvec_crc32};
@@ -24,10 +26,21 @@ pub struct FileSystem {
     file_system: FATFileSystem<BlockDeviceDriver<'static>>,
 }
 
+pub struct CartridgeInfo {
+    short_name: String,
+    long_name: String,
+    has_savedata: bool,
+    has_ram: bool,
+}
+
 unsafe impl Send for FileSystem {}
 unsafe impl Sync for FileSystem {}
 
 impl FileSystem {
+    const NES_DIR_NAME: &'static str = "nes";
+    const SAVEDATA_EXT: &'static str = "brs";
+    const RAM_EXT: &'static str = "brr";
+
     const STATE_FILE_NAME: &'static str = "saved.brt";
     const RAM_FILE_NAME: &'static str = "ram.brr";
 
@@ -36,6 +49,89 @@ impl FileSystem {
         let option = FsOptions::new().strict(true);
         let file_system = FATFileSystem::new(driver, option).unwrap();
         FileSystem { file_system }
+    }
+
+    pub fn cartridge_infos(&self) -> Vec<CartridgeInfo> {
+        let root_dir = self.file_system.root_dir();
+        let nes_dir = root_dir.open_dir(Self::NES_DIR_NAME).unwrap_or_else(|_| {
+            critical!(
+                DSK,
+                "Failed to find cartridges. The disk might be corrupted."
+            );
+        });
+        let mut infos = Vec::new();
+        for file in nes_dir.iter() {
+            if let Ok(file) = file {
+                if file.is_file() {
+                    let short_name = file.short_file_name_as_bytes();
+                    if short_name.ends_with(b".NES") {
+                        // Found a NES file.
+
+                        // Remove the extension.
+                        let name_without_ext =
+                            str::from_utf8(&short_name[..short_name.len() - b".NES".len()])
+                                .unwrap();
+
+                        // Look up a file with ".TXT" to retrieve the long name.
+                        // If not found, use the short name as the long name.
+                        let long_name =
+                            match nes_dir.open_file(&format!("{}.TXT", name_without_ext)) {
+                                Ok(mut file) => {
+                                    let mut long_name = Vec::new();
+                                    let mut buf = [0u8; 64];
+                                    let mut length = 0;
+                                    loop {
+                                        match file.read(&mut buf) {
+                                            Ok(0) => break,
+                                            Ok(n) => {
+                                                long_name.extend_from_slice(&buf[..n]);
+                                                length += n;
+                                            }
+                                            Err(_) => break,
+                                        }
+                                    }
+                                    match str::from_utf8(&long_name[..length]) {
+                                        Ok(s) => s.to_string(),
+                                        Err(_) => name_without_ext.to_string(),
+                                    }
+                                }
+                                Err(Error::NotFound) => name_without_ext.to_string(),
+                                _ => {
+                                    critical!(
+                                        DSK,
+                                        "Failed to find cartridges. The disk might be corrupted."
+                                    );
+                                }
+                            };
+
+                        // Check saved files by trying to open those.
+                        let has_savedata = nes_dir
+                            .open_file(&format!("{}.{}", name_without_ext, Self::SAVEDATA_EXT))
+                            .is_ok();
+                        let has_ram = nes_dir
+                            .open_file(&format!("{}.{}", name_without_ext, Self::RAM_EXT))
+                            .is_ok();
+
+                        info!(
+                            DSK,
+                            "A cartridge found: {} ({}), savedata={}, ram={}",
+                            long_name,
+                            name_without_ext,
+                            has_savedata,
+                            has_ram
+                        );
+
+                        infos.push(CartridgeInfo {
+                            short_name: name_without_ext.to_string(),
+                            long_name,
+                            has_savedata,
+                            has_ram,
+                        });
+                    }
+                }
+            }
+        }
+        infos
     }
 
     pub fn load_cartridge(&mut self, path: &str) {
