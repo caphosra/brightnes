@@ -28,7 +28,7 @@ fn main() -> Status {
     let mut file_helper = FileHelper::new(FILE_INFO_SIZE);
 
     let kernel_file = file_helper.read_file(
-        cstr16!("kernel"),
+        cstr16!("brightnes-kernel"),
         AllocateType::AnyPages,
         MemoryType::BOOT_SERVICES_DATA,
     );

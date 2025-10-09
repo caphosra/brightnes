@@ -1,17 +1,19 @@
-.PHONY: build-kernel \
-	build-kernel-dbg \
-	create-disk \
-	resources build run run-dbg gdb
+.PHONY: build run run-dbg clean gdb
 
 OUT_DIR = ./dest
 
-CARGO_FLAGS =
-QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
+BOOTLOADER_CARGO_FLAGS = --release
+KERNEL_CARGO_FLAGS = --release
+
+QEMU_FLAGS =
+
+QEMU_DEFAULT_FLAGS = -m 2G -bios ./OVMF.fd \
 	-drive format=raw,file=fat:rw:$(OUT_DIR),index=0 \
 	-drive format=raw,if=none,id=main_drive,file=./disk.img,index=1 \
 	-device virtio-blk-pci,drive=main_drive \
 	-device virtio-sound-pci \
-	-monitor stdio
+	-monitor stdio \
+	$(QEMU_FLAGS)
 
 COMMON_SOURCES = ./common/Cargo.toml \
 	./common/src/lib.rs \
@@ -63,56 +65,50 @@ BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 	./bootloader/src/fs.rs \
 	./bootloader/src/main.rs
 
-KERNEL_RELEASE = ./target/x86_64-unknown-none/release/brightnes-kernel
-KERNEL_DEBUG = ./target/x86_64-unknown-none/debug/brightnes-kernel
-
-$(KERNEL_RELEASE): $(KERNEL_SOURCES) $(COMMON_SOURCES)
+$(OUT_DIR)/brightnes-kernel: $(KERNEL_SOURCES) $(COMMON_SOURCES)
+	mkdir -p $(OUT_DIR)
 	cargo build \
+		-Zunstable-options \
 		--package brightnes-kernel \
 		--target x86_64-unknown-none \
-		--release \
-		$(CARGO_FLAGS)
-
-build-kernel: $(KERNEL_RELEASE)
-	mkdir -p $(OUT_DIR)
-	cp $(KERNEL_RELEASE) $(OUT_DIR)/kernel
-
-$(KERNEL_DEBUG): $(KERNEL_SOURCES) $(COMMON_SOURCES)
-	cargo build \
-		--package brightnes-kernel \
-		--target x86_64-unknown-none \
-		$(CARGO_FLAGS)
-
-build-kernel-dbg: $(KERNEL_DEBUG)
-	mkdir -p $(OUT_DIR)
-	cp $(KERNEL_DEBUG) $(OUT_DIR)/kernel
+		--artifact-dir $(OUT_DIR) \
+		$(KERNEL_CARGO_FLAGS)
 
 $(OUT_DIR)/efi/boot/bootx64.efi: $(BOOTLOADER_SOURCES)
-	cargo build \
-		--package brightnes-bootloader \
-		--target x86_64-unknown-uefi
 	mkdir -p $(OUT_DIR)/efi/boot
-	cp ./target/x86_64-unknown-uefi/debug/brightnes-bootloader.efi $(OUT_DIR)/efi/boot/bootx64.efi
+	cargo build \
+		-Zunstable-options \
+		--package brightnes-bootloader \
+		--target x86_64-unknown-uefi \
+		--artifact-dir $(OUT_DIR)/efi/boot \
+		$(BOOTLOADER_CARGO_FLAGS)
+	mv $(OUT_DIR)/efi/boot/brightnes-bootloader.efi $(OUT_DIR)/efi/boot/bootx64.efi
 
-resources: ./res/font/Tamsyn8x16r.psf.gz
+$(OUT_DIR)/system_font.psf: ./res/font/Tamsyn8x16r.psf.gz
+	mkdir -p $(OUT_DIR)
 	gzip -d < ./res/font/Tamsyn8x16r.psf.gz > $(OUT_DIR)/system_font.psf
 
-build: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
-	@echo "Build complete."
-
-create-disk:
+disk.img:
 	dd if=/dev/zero of=disk.img bs=1M count=128
 	mkfs.fat -F32 -n BRIGHTNES disk.img
 	mmd -i ./disk.img ::nes
 	mcopy -i ./disk.img ./res/nes/*.nes ::nes
 	mcopy -i ./disk.img ./res/nes/*.txt ::nes
 
-run: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
-	qemu-system-x86_64 $(QEMU_FLAGS)
+build: $(OUT_DIR)/brightnes-kernel $(OUT_DIR)/efi/boot/bootx64.efi $(OUT_DIR)/system_font.psf
+	@echo "Build complete."
 
-run-dbg: build-kernel-dbg $(OUT_DIR)/efi/boot/bootx64.efi resources
-	qemu-system-x86_64 $(QEMU_FLAGS) \
+run: $(OUT_DIR)/brightnes-kernel $(OUT_DIR)/efi/boot/bootx64.efi $(OUT_DIR)/system_font.psf
+	qemu-system-x86_64 $(QEMU_DEFAULT_FLAGS)
+
+run-dbg: $(OUT_DIR)/brightnes-kernel $(OUT_DIR)/efi/boot/bootx64.efi $(OUT_DIR)/system_font.psf
+	qemu-system-x86_64 $(QEMU_DEFAULT_FLAGS) \
 		-S -gdb tcp::31415
+
+clean:
+	cargo clean
+	rm -rf $(OUT_DIR)
+	@echo "Clean complete."
 
 gdb:
 	gdb -x ./.gdbinit
