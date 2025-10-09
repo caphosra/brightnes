@@ -89,7 +89,7 @@ pub fn on_system_switched() {
     interrupts::without_interrupts(|| {
         let mut sys = SYSTEM.write();
         sys.update_cartridges();
-        sys.render();
+        sys.render(true);
     });
     let mut fb = SYSTEM_FB.write();
     fb.flush_all();

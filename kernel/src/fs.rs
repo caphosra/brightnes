@@ -26,6 +26,7 @@ pub struct FileSystem {
     file_system: FATFileSystem<BlockDeviceDriver<'static>>,
 }
 
+#[derive(Clone)]
 pub struct CartridgeInfo {
     pub short_name: String,
     pub long_name: String,
@@ -134,11 +135,17 @@ impl FileSystem {
         infos
     }
 
-    pub fn load_cartridge(&mut self, path: &str) {
+    pub fn load_cartridge(&mut self, info: &CartridgeInfo) {
         const BUF_SIZE: usize = 1024;
 
         let root_dir = self.file_system.root_dir();
-        let file = root_dir.open_file(path);
+        let nes_dir = root_dir.open_dir(Self::NES_DIR_NAME).unwrap_or_else(|_| {
+            critical!(
+                DSK,
+                "Failed to find cartridges. The disk might be corrupted."
+            );
+        });
+        let file = nes_dir.open_file(&format!("{}.NES", info.short_name));
         match file {
             Ok(mut file) => {
                 let mut loaded_bytes = 0;
@@ -152,14 +159,17 @@ impl FileSystem {
                             loaded_bytes += n;
                         }
                         Err(_) => {
-                            critical!(CAT, "Failed to load the cartridge: {}", path);
+                            critical!(CAT, "Failed to load the cartridge: {}", info.long_name);
                         }
                     }
                 }
                 info!(CAT, "Loaded the cartridge. ({} bytes)", loaded_bytes);
             }
             Err(Error::NotFound) => {
-                error!(CAT, "The specified cartridge was not found: {}", path);
+                error!(
+                    CAT,
+                    "The specified cartridge was not found: {}", info.long_name
+                );
             }
             _ => {
                 error!(CAT, "Failed to open the cartridge.");

@@ -55,29 +55,45 @@ impl System {
         self.cursor = 0;
     }
 
+    pub fn load_selected_cartridge(&mut self) {
+        if self.cartridges.len() == 0 {
+            self.running_cartridge = None;
+        } else {
+            let cart = &self.cartridges[self.cursor];
+            self.running_cartridge = Some(cart.clone());
+
+            let mut fs = FILE_SYSTEM.write();
+            fs.load_cartridge(&cart);
+        }
+    }
+
     pub fn move_cursor_forward(&mut self) {
         self.cursor += 1;
         if self.cursor >= self.cartridges.len() {
             self.cursor = 0;
         }
-        self.render();
+        self.render(false);
     }
 
     pub fn move_cursor_back(&mut self) {
         if self.cartridges.len() == 0 {
             self.cursor = 0;
-            self.render();
+            self.render(false);
         } else {
             if self.cursor == 0 {
                 self.cursor = self.cartridges.len();
             }
             self.cursor -= 1;
-            self.render();
+            self.render(false);
         }
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self, clear: bool) {
         let mut fb = SYSTEM_FB.write();
+        if clear {
+            fb.clear(Self::bg_color());
+        }
+
         let mut y = 0;
         match &self.running_cartridge {
             Some(cart) => {

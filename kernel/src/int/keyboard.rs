@@ -8,8 +8,9 @@ use crate::{
     info,
     logger::Logger,
     nes::{
+        apu::APU,
         cartridge::Cartridge,
-        cpu::CPU,
+        cpu::{InterruptType, CPU},
         pad::{PadButton, PADS},
         ppu::PPU,
     },
@@ -171,6 +172,35 @@ impl BKeyboard {
                 }
                 (KeyState::Down, KeyCode::ArrowRight, _) => {
                     Logger::reset_scroll();
+                }
+                (KeyState::Down, KeyCode::Return, _) => {
+                    let mut switcher = PROCESS_SWITCHER.write();
+                    if switcher.mode() == ProcessMode::System {
+                        // Load the selected cartridge.
+                        {
+                            let mut sys = SYSTEM.write();
+                            sys.load_selected_cartridge();
+                        }
+
+                        // Initialize NES.
+
+                        let cpu = CPU::get();
+                        cpu.init();
+
+                        cpu.interrupt(InterruptType::RST);
+
+                        let cartridge = Cartridge::get();
+                        cartridge.init();
+
+                        let ppu = PPU::get();
+                        ppu.init();
+
+                        let apu = APU::get();
+                        apu.init();
+
+                        // Start the game.
+                        switcher.switch_proc(ProcessMode::Game, stack_frame, true);
+                    }
                 }
                 (_, _, _) => {}
             }
