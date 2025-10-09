@@ -77,6 +77,10 @@ pub extern "C" fn kernel_main() -> ! {
 
     on_system_switched();
     loop {
+        {
+            let mut fb = SYSTEM_FB.write();
+            fb.flush(false);
+        }
         hlt();
     }
 }

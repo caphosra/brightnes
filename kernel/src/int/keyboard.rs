@@ -14,6 +14,7 @@ use crate::{
         ppu::PPU,
     },
     proc::{ProcessMode, PROCESS_SWITCHER},
+    system::SYSTEM,
 };
 
 pub struct BKeyboard;
@@ -142,10 +143,22 @@ impl BKeyboard {
                     BKeyboard::on_pad_button(state, PadButton::Start);
                 }
                 (KeyState::Down, KeyCode::ArrowUp, _) => {
-                    Logger::scroll(-1);
+                    let switcher = PROCESS_SWITCHER.read();
+                    if switcher.mode() == ProcessMode::System {
+                        let mut sys = SYSTEM.write();
+                        sys.move_cursor_back();
+                    } else {
+                        Logger::scroll(-1);
+                    }
                 }
                 (KeyState::Down, KeyCode::ArrowDown, _) => {
-                    Logger::scroll(1);
+                    let switcher = PROCESS_SWITCHER.read();
+                    if switcher.mode() == ProcessMode::System {
+                        let mut sys = SYSTEM.write();
+                        sys.move_cursor_forward();
+                    } else {
+                        Logger::scroll(1);
+                    }
                 }
                 (KeyState::Down, KeyCode::PageUp, _) => {
                     Logger::scroll(-0x100);

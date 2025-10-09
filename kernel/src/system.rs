@@ -55,6 +55,27 @@ impl System {
         self.cursor = 0;
     }
 
+    pub fn move_cursor_forward(&mut self) {
+        self.cursor += 1;
+        if self.cursor >= self.cartridges.len() {
+            self.cursor = 0;
+        }
+        self.render();
+    }
+
+    pub fn move_cursor_back(&mut self) {
+        if self.cartridges.len() == 0 {
+            self.cursor = 0;
+            self.render();
+        } else {
+            if self.cursor == 0 {
+                self.cursor = self.cartridges.len();
+            }
+            self.cursor -= 1;
+            self.render();
+        }
+    }
+
     pub fn render(&mut self) {
         let mut fb = SYSTEM_FB.write();
         let mut y = 0;
