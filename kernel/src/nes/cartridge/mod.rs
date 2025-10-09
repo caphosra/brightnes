@@ -31,7 +31,8 @@ pub struct NESHeader {
 impl NESHeader {
     fn new() -> Self {
         // Load the NES header.
-        let nes_header = unsafe { (NES_FILE_ADDR as *const NESHeader).as_ref() }.unwrap();
+        let nes_header =
+            unsafe { (Cartridge::NES_FILE_ADDR as *const NESHeader).as_ref() }.unwrap();
         if nes_header.magic != NES_MAGIC {
             critical!(CAT, "The NES file is invalid.");
         }
@@ -60,8 +61,6 @@ impl NESHeader {
     }
 }
 
-const NES_FILE_ADDR: usize = 0x3_000_000;
-
 const NES_MAGIC: [u8; 4] = *b"NES\x1A";
 
 const PRG_ROM_UNIT: usize = 0x4000;
@@ -84,6 +83,8 @@ pub enum CartridgeKind {
 static CARTRIDGE_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 
 impl Cartridge {
+    pub const NES_FILE_ADDR: usize = 0x3_000_000;
+
     pub fn get() -> &'static mut Self {
         let ptr = *CARTRIDGE_PTR.call_once(|| {
             // Allocate memory for the cartridge.
@@ -131,7 +132,7 @@ impl Cartridge {
         }
 
         // Load PRG ROM.
-        let prg_rom_start = unsafe { (NES_FILE_ADDR as *mut u8).add(size_of::<NESHeader>()) };
+        let prg_rom_start = unsafe { (Self::NES_FILE_ADDR as *mut u8).add(size_of::<NESHeader>()) };
         let prg_rom =
             unsafe { slice_from_raw_parts_mut(prg_rom_start, prg_rom_size).as_mut() }.unwrap();
 

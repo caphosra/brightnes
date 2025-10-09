@@ -23,6 +23,8 @@ use crate::nes::cpu::CPU;
 use crate::nes::ppu::GAME_FB;
 use crate::nes::ppu::PPU;
 use crate::proc::ProcessSwitcher;
+use crate::system::SYSTEM;
+use crate::system::SYSTEM_FB;
 
 #[no_mangle]
 #[inline(never)]
@@ -33,9 +35,6 @@ pub extern "C" fn kernel_main() -> ! {
     if interrupts::are_enabled() {
         interrupts::disable();
     }
-
-    // Initialize the frame buffer.
-    on_game_switched();
 
     // Load the font data.
     // This task is required to render texts on the screen.
@@ -53,6 +52,17 @@ pub extern "C" fn kernel_main() -> ! {
         fs.check_root_dir();
     }
 
+    {
+        let mut fb = SYSTEM_FB.write();
+        fb.flush_all();
+    }
+
+    {
+        let mut sys = SYSTEM.write();
+        sys.update_cartridges();
+        sys.render(true);
+    }
+
     InterruptController::init(60);
     interrupts::enable();
 
@@ -64,8 +74,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     cpu.interrupt(InterruptType::RST);
 
-    let cartridge = Cartridge::get();
-    cartridge.init();
+    Cartridge::get();
 
     let ppu = PPU::get();
     ppu.init();
@@ -73,7 +82,27 @@ pub extern "C" fn kernel_main() -> ! {
     let apu = APU::get();
     apu.init();
 
-    game_main();
+    on_system_switched();
+    loop {
+        {
+            let mut fb = SYSTEM_FB.write();
+            fb.flush(false);
+        }
+        hlt();
+    }
+}
+
+#[inline(never)]
+pub fn on_system_switched() {
+    {
+        let mut fb = SYSTEM_FB.write();
+        fb.flush_all();
+    }
+    interrupts::without_interrupts(|| {
+        let mut sys = SYSTEM.write();
+        sys.update_cartridges();
+        sys.render(true);
+    });
 }
 
 pub fn game_main() -> ! {
@@ -171,3 +200,4 @@ mod mem;
 mod nes;
 mod proc;
 mod serial;
+mod system;

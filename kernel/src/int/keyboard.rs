@@ -8,12 +8,14 @@ use crate::{
     info,
     logger::Logger,
     nes::{
+        apu::APU,
         cartridge::Cartridge,
-        cpu::CPU,
+        cpu::{InterruptType, CPU},
         pad::{PadButton, PADS},
         ppu::PPU,
     },
     proc::{ProcessMode, PROCESS_SWITCHER},
+    system::SYSTEM,
 };
 
 pub struct BKeyboard;
@@ -37,13 +39,17 @@ impl BKeyboard {
                 }
                 (KeyState::Down, KeyCode::F1, _) => {
                     let mut switcher = PROCESS_SWITCHER.write();
-                    switcher.switch_proc(ProcessMode::Game, stack_frame, false);
+                    switcher.switch_proc(ProcessMode::System, stack_frame, false);
                 }
                 (KeyState::Down, KeyCode::F2, _) => {
                     let mut switcher = PROCESS_SWITCHER.write();
-                    switcher.switch_proc(ProcessMode::Info, stack_frame, false);
+                    switcher.switch_proc(ProcessMode::Game, stack_frame, false);
                 }
                 (KeyState::Down, KeyCode::F3, _) => {
+                    let mut switcher = PROCESS_SWITCHER.write();
+                    switcher.switch_proc(ProcessMode::Info, stack_frame, false);
+                }
+                (KeyState::Down, KeyCode::F4, _) => {
                     let mut switcher = PROCESS_SWITCHER.write();
                     switcher.switch_proc(ProcessMode::Log, stack_frame, false);
                 }
@@ -60,10 +66,11 @@ impl BKeyboard {
                     if modifiers.is_ctrl() {
                         if modifiers.is_shifted() {
                             // Save the working RAM
+                            let sys = SYSTEM.read();
                             let mut fs = FILE_SYSTEM.write();
                             let cartridge = Cartridge::get();
                             match cartridge.working_ram().ok_or(()) {
-                                Ok(ram) => match fs.save_ram(ram) {
+                                Ok(ram) => match fs.save_ram(&sys, ram) {
                                     Ok(_) => info!(SYS, "Saved the working RAM successfully."),
                                     Err(_) => error!(
                                         SYS,
@@ -77,11 +84,12 @@ impl BKeyboard {
                             }
                         } else {
                             // Save the current state.
+                            let sys = SYSTEM.read();
                             let mut fs = FILE_SYSTEM.write();
                             let cpu = CPU::get();
                             let ppu = PPU::get();
                             let cartridge = Cartridge::get();
-                            match fs.save_state(cpu, ppu, cartridge) {
+                            match fs.save_state(&sys, cpu, ppu, cartridge) {
                                 Ok(_) => info!(SYS, "Saved the current state successfully."),
                                 Err(_) => error!(SYS, "Failed to save the current state."),
                             }
@@ -100,10 +108,11 @@ impl BKeyboard {
                     if modifiers.is_ctrl() {
                         if modifiers.is_shifted() {
                             // Load the working RAM
+                            let sys = SYSTEM.read();
                             let mut fs = FILE_SYSTEM.write();
                             let cartridge = Cartridge::get();
                             match cartridge.working_ram().ok_or(()) {
-                                Ok(ram) => match fs.load_ram(ram) {
+                                Ok(ram) => match fs.load_ram(&sys, ram) {
                                     Ok(_) => info!(SYS, "Load the working RAM successfully."),
                                     Err(_) => error!(
                                         SYS,
@@ -117,17 +126,18 @@ impl BKeyboard {
                             }
                         } else {
                             // Load the latest state if requested.
+                            let sys = SYSTEM.read();
                             let mut fs = FILE_SYSTEM.write();
                             let cpu = CPU::get();
                             let ppu = PPU::get();
                             let cartridge = Cartridge::get();
-                            match fs.load_state(cpu, ppu, cartridge) {
+                            match fs.load_state(&sys, cpu, ppu, cartridge) {
                                 Ok(_) => info!(SYS, "Loaded the current state successfully."),
                                 Err(_) => error!(SYS, "Failed to load the current state."),
                             }
 
                             let mut switcher = PROCESS_SWITCHER.write();
-                            switcher.reset_main(stack_frame);
+                            switcher.reset_game(stack_frame);
                         }
                     }
                 }
@@ -138,10 +148,22 @@ impl BKeyboard {
                     BKeyboard::on_pad_button(state, PadButton::Start);
                 }
                 (KeyState::Down, KeyCode::ArrowUp, _) => {
-                    Logger::scroll(-1);
+                    let switcher = PROCESS_SWITCHER.read();
+                    if switcher.mode() == ProcessMode::System {
+                        let mut sys = SYSTEM.write();
+                        sys.move_cursor_back();
+                    } else {
+                        Logger::scroll(-1);
+                    }
                 }
                 (KeyState::Down, KeyCode::ArrowDown, _) => {
-                    Logger::scroll(1);
+                    let switcher = PROCESS_SWITCHER.read();
+                    if switcher.mode() == ProcessMode::System {
+                        let mut sys = SYSTEM.write();
+                        sys.move_cursor_forward();
+                    } else {
+                        Logger::scroll(1);
+                    }
                 }
                 (KeyState::Down, KeyCode::PageUp, _) => {
                     Logger::scroll(-0x100);
@@ -154,6 +176,57 @@ impl BKeyboard {
                 }
                 (KeyState::Down, KeyCode::ArrowRight, _) => {
                     Logger::reset_scroll();
+                }
+                (KeyState::Down, KeyCode::Return, _) => {
+                    let mut switcher = PROCESS_SWITCHER.write();
+                    if switcher.mode() == ProcessMode::System {
+                        // Load the selected cartridge.
+                        {
+                            let mut sys = SYSTEM.write();
+                            sys.load_selected_cartridge();
+                        }
+
+                        // Initialize NES.
+
+                        let cpu = CPU::get();
+                        cpu.init();
+
+                        cpu.interrupt(InterruptType::RST);
+
+                        let cartridge = Cartridge::get();
+                        cartridge.init();
+
+                        let ppu = PPU::get();
+                        ppu.init();
+
+                        let apu = APU::get();
+                        apu.init();
+
+                        // Load RAM if available.
+                        {
+                            let sys = SYSTEM.read();
+                            if sys.has_ram() == Some(true) {
+                                let mut fs = FILE_SYSTEM.write();
+                                let cartridge = Cartridge::get();
+                                match cartridge.working_ram().ok_or(()) {
+                                    Ok(ram) => match fs.load_ram(&sys, ram) {
+                                        Ok(_) => info!(SYS, "Load the working RAM successfully."),
+                                        Err(_) => error!(
+                                            SYS,
+                                            "Failed to load the working RAM. Possibly no working RAM saved."
+                                        ),
+                                    },
+                                    Err(_) => error!(
+                                        SYS,
+                                        "The cartridge has no working RAM."
+                                    ),
+                                }
+                            }
+                        }
+
+                        // Start the game.
+                        switcher.switch_proc(ProcessMode::Game, stack_frame, true);
+                    }
                 }
                 (_, _, _) => {}
             }

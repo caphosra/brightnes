@@ -16,7 +16,6 @@ use crate::frame_buffer::FrameBuffer;
 use crate::fs::FileHelper;
 
 const FONT_DATA_ADDR: u64 = 0x2_000_000;
-const NES_FILE_ADDR: u64 = 0x3_000_000;
 const FILE_INFO_SIZE: usize = 0x1000;
 const STALL_TIME: usize = 1_000;
 
@@ -29,7 +28,7 @@ fn main() -> Status {
     let mut file_helper = FileHelper::new(FILE_INFO_SIZE);
 
     let kernel_file = file_helper.read_file(
-        cstr16!("kernel"),
+        cstr16!("brightnes-kernel"),
         AllocateType::AnyPages,
         MemoryType::BOOT_SERVICES_DATA,
     );
@@ -77,16 +76,6 @@ fn main() -> Status {
     }
 
     info!("Loaded the system font");
-
-    let nes_file = file_helper.read_file(
-        cstr16!("game.nes"),
-        AllocateType::Address(NES_FILE_ADDR),
-        MemoryType::BOOT_SERVICES_DATA,
-    );
-    if nes_file.is_err() {
-        error!("Failed to read the NES file: {:?}", nes_file.err());
-        return Status::NOT_FOUND;
-    }
 
     let gop_handle = get_handle_for_protocol::<GraphicsOutput>().unwrap();
 

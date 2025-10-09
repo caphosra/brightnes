@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
 use x86_64::instructions::interrupts;
 
-use crate::font::{FONT_HEIGHT, FONT_WIDTH};
+use crate::font::FontManager;
 use crate::frame_buffer::{FrameBuffer, PixelColor};
 use crate::proc::{ProcessMode, PROCESS_SWITCHER};
 
@@ -17,6 +17,7 @@ pub enum LogLocation {
     APU,
     CAT,
     BUS,
+    DSK,
 }
 
 impl LogLocation {
@@ -29,6 +30,7 @@ impl LogLocation {
             LogLocation::APU => "APU",
             LogLocation::CAT => "CAT",
             LogLocation::BUS => "BUS",
+            LogLocation::DSK => "DSK",
         }
     }
 }
@@ -97,7 +99,7 @@ static LOGGER: Lazy<RwLock<Logger>> = Lazy::new(|| {
 });
 
 pub static LOG_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
-    let (width, height) = FrameBuffer::max_size();
+    let (width, height) = FrameBuffer::max_fb_size();
     let mut frame_buffer = FrameBuffer::new(0, 0, width, height, 1);
     frame_buffer.clear(LoggerColor::bg_color());
     RwLock::new(frame_buffer)
@@ -113,7 +115,7 @@ impl Logger {
             } else {
                 // Wrap the line if it's too long.
                 // The width is reduced by 5 taking the prefix into account.
-                let width = LOG_FB.read().text_width() - Self::PREFIX_LEN;
+                let width = LOG_FB.read().max_text_length() - Self::PREFIX_LEN;
                 for chunk in line.as_bytes().chunks(width) {
                     if self.buffer.len() == self.scroll {
                         self.scroll += 1;
@@ -159,7 +161,7 @@ impl Logger {
 
     fn scroll_internal(&mut self, lines: i32) {
         // Cannot scroll if the screen is not fully filled.
-        let text_height = LOG_FB.read().text_height();
+        let text_height = LOG_FB.read().max_text_lines();
         if self.scroll < text_height {
             return;
         }
@@ -213,7 +215,7 @@ impl Logger {
         let prefix_color = LoggerColor::prefix_color();
         let fg_color = LoggerColor::fg_color();
         let bg_color = LoggerColor::bg_color();
-        let height = buffer.text_height();
+        let height = buffer.max_text_lines();
 
         if after < height {
             // The screen is not fully filled yet.
@@ -224,7 +226,7 @@ impl Logger {
                 // Draw the prefix.
                 buffer.draw_text(
                     0,
-                    idx * FONT_HEIGHT as usize,
+                    idx * FontManager::FONT_HEIGHT as usize,
                     format!("{:08X} ", idx).as_bytes(),
                     prefix_color,
                     bg_color,
@@ -232,8 +234,8 @@ impl Logger {
 
                 // Draw the prefix.
                 buffer.draw_text(
-                    9 * FONT_WIDTH as usize,
-                    idx * FONT_HEIGHT as usize,
+                    9 * FontManager::FONT_WIDTH as usize,
+                    idx * FontManager::FONT_HEIGHT as usize,
                     format!("[{}] ", entry.location.to_str()).as_bytes(),
                     LoggerColor::level_color(entry.level),
                     bg_color,
@@ -242,8 +244,8 @@ impl Logger {
                 // Draw the content.
                 let text = entry.message.as_bytes();
                 buffer.draw_text(
-                    Self::PREFIX_LEN * FONT_WIDTH as usize,
-                    idx * FONT_HEIGHT as usize,
+                    Self::PREFIX_LEN * FontManager::FONT_WIDTH as usize,
+                    idx * FontManager::FONT_HEIGHT as usize,
                     text,
                     if entry.level == LogLevel::Log {
                         LoggerColor::log_color()
@@ -260,7 +262,7 @@ impl Logger {
                 // Draw the prefix.
                 buffer.draw_text(
                     0,
-                    idx * FONT_HEIGHT as usize,
+                    idx * FontManager::FONT_HEIGHT as usize,
                     format!("{:08X} ", idx + after - height).as_bytes(),
                     prefix_color,
                     bg_color,
@@ -268,8 +270,8 @@ impl Logger {
 
                 // Draw the prefix.
                 buffer.draw_text(
-                    9 * FONT_WIDTH as usize,
-                    idx * FONT_HEIGHT as usize,
+                    9 * FontManager::FONT_WIDTH as usize,
+                    idx * FontManager::FONT_HEIGHT as usize,
                     format!("[{}] ", entry.location.to_str()).as_bytes(),
                     LoggerColor::level_color(entry.level),
                     bg_color,
@@ -278,8 +280,8 @@ impl Logger {
                 // Draw the content.
                 let text = entry.message.as_bytes();
                 buffer.draw_text(
-                    Self::PREFIX_LEN * FONT_WIDTH as usize,
-                    idx * FONT_HEIGHT as usize,
+                    Self::PREFIX_LEN * FontManager::FONT_WIDTH as usize,
+                    idx * FontManager::FONT_HEIGHT as usize,
                     text,
                     if entry.level == LogLevel::Log {
                         LoggerColor::log_color()
@@ -296,10 +298,10 @@ impl Logger {
                     if prev_text_len > current_text_len {
                         // Erase the previous text.
                         buffer.draw_rect(
-                            current_text_len * FONT_WIDTH as usize,
-                            idx * FONT_HEIGHT as usize,
-                            (prev_text_len - current_text_len) * FONT_WIDTH as usize,
-                            FONT_HEIGHT as usize,
+                            current_text_len * FontManager::FONT_WIDTH as usize,
+                            idx * FontManager::FONT_HEIGHT as usize,
+                            (prev_text_len - current_text_len) * FontManager::FONT_WIDTH as usize,
+                            FontManager::FONT_HEIGHT as usize,
                             bg_color,
                         );
                     }
@@ -317,13 +319,6 @@ impl Logger {
 
             let after = logger.scroll;
             logger.render_internal(before, after);
-
-            let switcher = PROCESS_SWITCHER.read();
-            if switcher.mode() == ProcessMode::Log {
-                // Flush the frame buffer.
-                let mut buffer = LOG_FB.write();
-                buffer.flush(false);
-            }
         });
     }
 }

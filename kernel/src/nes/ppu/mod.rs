@@ -14,19 +14,23 @@ use crate::{
     },
 };
 
-const NES_FRAME_WIDTH: usize = 256;
-const NES_FRAME_HEIGHT: usize = 240;
+pub const NES_FRAME_WIDTH: usize = 256;
+pub const NES_FRAME_HEIGHT: usize = 240;
 const NES_FRAME_TOTAL_SIZE: usize = NES_FRAME_WIDTH * NES_FRAME_HEIGHT;
 
 pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
-    let (width, height) = FrameBuffer::max_size();
+    let (width, height) = FrameBuffer::max_fb_size();
 
     let pixel_size = (width / NES_FRAME_WIDTH).min(height / NES_FRAME_HEIGHT);
     let offset_x = (width - pixel_size * NES_FRAME_WIDTH) / 2;
     let offset_y = (height - pixel_size * NES_FRAME_HEIGHT) / 2;
 
     RwLock::new(FrameBuffer::new(
-        offset_x, offset_y, width, height, pixel_size,
+        offset_x,
+        offset_y,
+        NES_FRAME_WIDTH,
+        NES_FRAME_HEIGHT,
+        pixel_size,
     ))
 });
 
@@ -93,6 +97,7 @@ impl PPU {
 
     const IRQ_CYCLE: u16 = 260;
 
+    #[inline(never)]
     pub fn get() -> &'static mut Self {
         let ppu_raw_ptr = *PPU_PTR.call_once(|| {
             // Allocate memory for PPU.
@@ -102,6 +107,7 @@ impl PPU {
         unsafe { ppu_raw_ptr.as_mut() }.unwrap()
     }
 
+    #[inline(never)]
     pub fn init(&mut self) {
         self.vram = VRAM::new();
         self.oam = OAM::new();
