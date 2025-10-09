@@ -138,6 +138,30 @@ impl System {
                 break;
             }
             let cart = &self.cartridges[cart_idx];
+
+            const INDICATOR_SIZE: usize = 16;
+            const INDICATOR_OFFSET: usize = 4;
+
+            if cart.has_savedata {
+                fb.draw_rect(
+                    INDICATOR_OFFSET,
+                    y + INDICATOR_OFFSET,
+                    INDICATOR_SIZE - INDICATOR_OFFSET * 2,
+                    INDICATOR_SIZE - INDICATOR_OFFSET * 2,
+                    FrameBuffer::make_color(0x00, 0xFF, 0x00),
+                );
+            }
+
+            if cart.has_ram {
+                fb.draw_rect(
+                    INDICATOR_SIZE + INDICATOR_OFFSET,
+                    y + INDICATOR_OFFSET,
+                    INDICATOR_SIZE - INDICATOR_OFFSET * 2,
+                    INDICATOR_SIZE - INDICATOR_OFFSET * 2,
+                    FrameBuffer::make_color(0x00, 0x00, 0xFF),
+                );
+            }
+
             let text_color = if cart_idx == self.cursor {
                 Self::bg_color()
             } else {
@@ -149,7 +173,7 @@ impl System {
                 Self::bg_color()
             };
             fb.draw_text(
-                0,
+                INDICATOR_SIZE * 2,
                 y,
                 format!("{:02}: {}", cart_idx + 1, cart.long_name).as_bytes(),
                 text_color,

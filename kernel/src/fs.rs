@@ -40,10 +40,8 @@ unsafe impl Sync for FileSystem {}
 
 impl FileSystem {
     const NES_DIR_NAME: &'static str = "nes";
-    const SAVEDATA_EXT: &'static str = "brs";
-    const RAM_EXT: &'static str = "brr";
-
-    const RAM_FILE_NAME: &'static str = "ram.brr";
+    const SAVEDATA_EXT: &'static str = "BRS";
+    const RAM_EXT: &'static str = "BRR";
 
     pub fn new() -> Self {
         let driver = BlockDeviceDriver::new();
@@ -106,10 +104,10 @@ impl FileSystem {
                             };
 
                         // Check saved files by trying to open those.
-                        let has_savedata = nes_dir
+                        let has_savedata = root_dir
                             .open_file(&format!("{}.{}", name_without_ext, Self::SAVEDATA_EXT))
                             .is_ok();
-                        let has_ram = nes_dir
+                        let has_ram = root_dir
                             .open_file(&format!("{}.{}", name_without_ext, Self::RAM_EXT))
                             .is_ok();
 
@@ -188,11 +186,13 @@ impl FileSystem {
     }
 
     pub fn state_file_name(&self, sys: &System) -> Option<String> {
-        sys.running_cartridge_name().map(|s| format!("{}.BRS", s))
+        sys.running_cartridge_name()
+            .map(|s| format!("{}.{}", s, Self::SAVEDATA_EXT))
     }
 
     pub fn ram_file_name(&self, sys: &System) -> Option<String> {
-        sys.running_cartridge_name().map(|s| format!("{}.BRR", s))
+        sys.running_cartridge_name()
+            .map(|s| format!("{}.{}", s, Self::RAM_EXT))
     }
 
     pub fn save_state(
