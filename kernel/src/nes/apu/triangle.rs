@@ -44,6 +44,7 @@ impl APUComponent for APUTriangle {
         if self.active != active {
             if !active {
                 self.length_counter = 0;
+                self.linear_counter = 0;
             }
             self.active = active;
         }

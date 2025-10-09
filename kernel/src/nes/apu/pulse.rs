@@ -114,15 +114,19 @@ impl APUComponent for APUPulse {
         } else {
             self.sweep_counter = self.sweep_period;
             if self.sweep_enabled && self.sweep_shift > 0 {
-                let change = self.timer >> self.sweep_shift;
-                if self.sweep_negate {
-                    self.timer = self.timer.checked_sub(change).unwrap_or(0);
-                } else {
-                    self.timer = self.timer.wrapping_add(change);
-                }
-                if self.timer > 0x7FF {
-                    // Mute the channel
-                    self.timer = 0;
+                if self.timer != 0 {
+                    // Perform the sweep.
+                    let change = self.timer >> self.sweep_shift;
+                    if self.sweep_negate {
+                        self.timer = self.timer.checked_sub(change).unwrap_or(0);
+                    } else {
+                        self.timer = self.timer.wrapping_add(change);
+                    }
+
+                    if self.timer > 0x7FF || self.timer < 8 {
+                        // If the timer is out of range, silence the channel.
+                        self.timer = 0;
+                    }
                 }
             }
         }
@@ -143,7 +147,12 @@ impl APUComponent for APUPulse {
     }
 
     fn get_output(&self) -> SoundSampleType {
-        if self.active && self.length_counter > 0 && self.timer >= 8 && self.volume > 0 {
+        if self.active
+            && self.length_counter > 0
+            && self.timer >= 8
+            && self.timer < 0x7FF
+            && self.volume > 0
+        {
             let duty_rate = self.duty_rate();
             let output = if (self.duty_step as f64) < (Self::MAX_DUTY_STEPS as f64 * duty_rate) {
                 self.volume
