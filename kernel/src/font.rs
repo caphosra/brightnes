@@ -16,10 +16,6 @@ pub struct PSFHeader {
 
 const FONT_ADDR: u64 = 0x2_000_000;
 
-const PSF_HEADER_MAGIC: [u8; 4] = [0x72, 0xb5, 0x4a, 0x86];
-pub const FONT_HEIGHT: u32 = 0x10;
-pub const FONT_WIDTH: u32 = 0x8;
-
 pub struct FontManager;
 
 const GLYPH_IDX_TBL_SIZE: usize = 0x100;
@@ -27,18 +23,22 @@ static GLYPH_IDX_TBL: Lazy<RwLock<[usize; GLYPH_IDX_TBL_SIZE]>> =
     Lazy::new(|| RwLock::new([0; GLYPH_IDX_TBL_SIZE]));
 
 impl FontManager {
+    const PSF_HEADER_MAGIC: [u8; 4] = [0x72, 0xb5, 0x4a, 0x86];
+    pub const FONT_HEIGHT: u32 = 0x10;
+    pub const FONT_WIDTH: u32 = 0x8;
+
     pub fn get_psf_header() -> &'static mut PSFHeader {
         unsafe { (FONT_ADDR as *mut PSFHeader).as_mut().unwrap() }
     }
 
     pub fn validate_psf_header(header: &PSFHeader) -> bool {
-        header.magic == PSF_HEADER_MAGIC
+        header.magic == Self::PSF_HEADER_MAGIC
             && header.version == 0
             && header.header_size == 0x20
             && header.flags == 1
-            && header.bytes_per_glyph == FONT_WIDTH * FONT_HEIGHT / 8
-            && header.height == FONT_HEIGHT
-            && header.width == FONT_WIDTH
+            && header.bytes_per_glyph == Self::FONT_WIDTH * Self::FONT_HEIGHT / 8
+            && header.height == Self::FONT_HEIGHT
+            && header.width == Self::FONT_WIDTH
     }
 
     pub fn init_glyph_index_table() {

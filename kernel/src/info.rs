@@ -3,7 +3,7 @@ use spin::{Lazy, RwLock};
 use x86_64::instructions::interrupts;
 
 use crate::{
-    font::FONT_HEIGHT,
+    font::FontManager,
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
         cpu::{
@@ -20,7 +20,7 @@ const PAD_WIDTH: usize = BUTTON_SIZE * 7 + PADDING * 6;
 const PAD_HEIGHT: usize = BUTTON_SIZE * 3 + PADDING * 2;
 const BUTTON_SIZE: usize = 10;
 
-const CPU_PPU_HEIGHT: usize = FONT_HEIGHT as usize * 9;
+const CPU_PPU_HEIGHT: usize = FontManager::FONT_HEIGHT as usize * 9;
 
 static PAD1_FB: Lazy<RwLock<FrameBuffer>> =
     Lazy::new(|| RwLock::new(FrameBuffer::new(PADDING, PADDING, PAD_WIDTH, PAD_HEIGHT, 1)));
@@ -36,7 +36,7 @@ static PAD2_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
 });
 
 static CPU_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
-    let half_width = FrameBuffer::max_size().0 / 2;
+    let half_width = FrameBuffer::max_fb_size().0 / 2;
 
     let offset_x = PADDING;
     let offset_y = PADDING * 2 + PAD_HEIGHT;
@@ -51,7 +51,7 @@ static CPU_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
 });
 
 static PPU_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
-    let half_width = FrameBuffer::max_size().0 / 2;
+    let half_width = FrameBuffer::max_fb_size().0 / 2;
 
     let offset_x = half_width + PADDING / 2;
     let offset_y = PADDING * 2 + PAD_HEIGHT;
@@ -66,12 +66,12 @@ static PPU_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
 });
 
 static REV_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
-    let max_width = FrameBuffer::max_size().0;
+    let max_width = FrameBuffer::max_fb_size().0;
 
     let offset_x = PADDING;
     let offset_y = PADDING * 3 + PAD_HEIGHT + CPU_PPU_HEIGHT;
     let width = max_width - PADDING * 2;
-    let height = CPU::HISTORY_SIZE * FONT_HEIGHT as usize;
+    let height = CPU::HISTORY_SIZE * FontManager::FONT_HEIGHT as usize;
     RwLock::new(FrameBuffer::new(offset_x, offset_y, width, height, 1))
 });
 
@@ -171,7 +171,7 @@ impl InfoProc {
             ($($arg:tt)*) => {
                 buffer.draw_text(
                     0,
-                    FONT_HEIGHT as usize * pos,
+                    FontManager::FONT_HEIGHT as usize * pos,
                     format!($($arg)*).as_bytes(),
                     color,
                     background,
@@ -214,7 +214,7 @@ impl InfoProc {
             ($($arg:tt)*) => {
                 buffer.draw_text(
                     0,
-                    FONT_HEIGHT as usize * pos,
+                    FontManager::FONT_HEIGHT as usize * pos,
                     format!($($arg)*).as_bytes(),
                     color,
                     background,
@@ -246,7 +246,7 @@ impl InfoProc {
             ($($arg:tt)*) => {
                 buffer.draw_text(
                     0,
-                    FONT_HEIGHT as usize * pos,
+                    FontManager::FONT_HEIGHT as usize * pos,
                     format!($($arg)*).as_bytes(),
                     color,
                     background,
