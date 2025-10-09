@@ -37,13 +37,17 @@ impl BKeyboard {
                 }
                 (KeyState::Down, KeyCode::F1, _) => {
                     let mut switcher = PROCESS_SWITCHER.write();
-                    switcher.switch_proc(ProcessMode::Game, stack_frame, false);
+                    switcher.switch_proc(ProcessMode::System, stack_frame, false);
                 }
                 (KeyState::Down, KeyCode::F2, _) => {
                     let mut switcher = PROCESS_SWITCHER.write();
-                    switcher.switch_proc(ProcessMode::Info, stack_frame, false);
+                    switcher.switch_proc(ProcessMode::Game, stack_frame, false);
                 }
                 (KeyState::Down, KeyCode::F3, _) => {
+                    let mut switcher = PROCESS_SWITCHER.write();
+                    switcher.switch_proc(ProcessMode::Info, stack_frame, false);
+                }
+                (KeyState::Down, KeyCode::F4, _) => {
                     let mut switcher = PROCESS_SWITCHER.write();
                     switcher.switch_proc(ProcessMode::Log, stack_frame, false);
                 }
@@ -127,7 +131,7 @@ impl BKeyboard {
                             }
 
                             let mut switcher = PROCESS_SWITCHER.write();
-                            switcher.reset_main(stack_frame);
+                            switcher.reset_game(stack_frame);
                         }
                     }
                 }

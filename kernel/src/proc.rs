@@ -2,13 +2,14 @@ use core::{arch::asm, ptr::null};
 
 use spin::{Lazy, RwLock};
 use x86_64::{
+    instructions::interrupts,
     structures::idt::{InterruptStackFrame, InterruptStackFrameValue},
     VirtAddr,
 };
 
 use crate::{
     game_main, info_main, log_main, on_game_switched, on_info_switched, on_log_switched,
-    on_system_switched,
+    on_system_switched, system::SYSTEM,
 };
 
 const PROC_SIZE: usize = 4;
@@ -96,7 +97,7 @@ impl ProcessSwitcher {
         }
     }
 
-    pub fn reset_main(&mut self, current_frame: &mut InterruptStackFrame) {
+    pub fn reset_game(&mut self, current_frame: &mut InterruptStackFrame) {
         let game_id = (ProcessMode::Game as u8) as usize;
 
         // Overwrite the saved state.
@@ -117,17 +118,22 @@ impl ProcessSwitcher {
         &mut self,
         new_proc: ProcessMode,
         current_frame: &mut InterruptStackFrame,
-        reset_main: bool,
+        reset_game: bool,
     ) {
         if self.safe_mode {
             // Do not allow switching processes in safety mode.
             return;
         }
 
+        if !self.is_available(new_proc) {
+            // The requested process is not available.
+            return;
+        }
+
         let old_mode_idx = self.current_proc as usize;
         let mode_idx = new_proc as usize;
 
-        if old_mode_idx == mode_idx && !reset_main {
+        if old_mode_idx == mode_idx && !reset_game {
             // No need to switch.
             return;
         }
@@ -139,7 +145,7 @@ impl ProcessSwitcher {
         // Call on_changed handler.
         (self.processes[mode_idx].switched_handler)();
 
-        if reset_main {
+        if reset_game {
             // Reset the main stack frame.
             self.processes[mode_idx].saved_state = None;
         }
@@ -173,13 +179,30 @@ impl ProcessSwitcher {
     }
 
     pub fn shift_proc(&mut self, current_frame: &mut InterruptStackFrame) {
-        let new_proc = self.current_proc.shift();
+        let mut new_proc = self.current_proc.shift();
+
+        // Switch to the next process repeatedly until an available one is found.
+        while !self.is_available(new_proc) {
+            new_proc = new_proc.shift();
+        }
         self.switch_proc(new_proc, current_frame, false);
     }
 
     pub fn enter_safe_mode(&mut self, current_frame: &mut InterruptStackFrame) {
         self.switch_proc(ProcessMode::Log, current_frame, false);
         self.safe_mode = true;
+    }
+
+    pub fn is_available(&self, mode: ProcessMode) -> bool {
+        let initialized = interrupts::without_interrupts(|| {
+            let sys = SYSTEM.read();
+            sys.game_initialized()
+        });
+        if initialized {
+            true
+        } else {
+            mode == ProcessMode::System || mode == ProcessMode::Log
+        }
     }
 
     pub fn mode(&self) -> ProcessMode {

@@ -45,6 +45,10 @@ impl System {
         }
     }
 
+    pub fn game_initialized(&self) -> bool {
+        self.running_cartridge.is_some()
+    }
+
     pub fn update_cartridges(&mut self) {
         let fs = FILE_SYSTEM.write();
         self.cartridges = fs.cartridge_infos();

@@ -319,13 +319,6 @@ impl Logger {
 
             let after = logger.scroll;
             logger.render_internal(before, after);
-
-            let switcher = PROCESS_SWITCHER.read();
-            if switcher.mode() == ProcessMode::Log {
-                // Flush the frame buffer.
-                let mut buffer = LOG_FB.write();
-                buffer.flush(false);
-            }
         });
     }
 }
