@@ -27,10 +27,10 @@ pub struct FileSystem {
 }
 
 pub struct CartridgeInfo {
-    short_name: String,
-    long_name: String,
-    has_savedata: bool,
-    has_ram: bool,
+    pub short_name: String,
+    pub long_name: String,
+    pub has_savedata: bool,
+    pub has_ram: bool,
 }
 
 unsafe impl Send for FileSystem {}

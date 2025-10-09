@@ -1,8 +1,10 @@
+use alloc::format;
 use alloc::vec::Vec;
 use spin::{Lazy, RwLock};
 
 use crate::{
-    frame_buffer::FrameBuffer,
+    font::FontManager,
+    frame_buffer::{FrameBuffer, PixelColor},
     fs::{CartridgeInfo, FILE_SYSTEM},
     nes::ppu::{NES_FRAME_HEIGHT, NES_FRAME_WIDTH},
 };
@@ -32,6 +34,9 @@ pub struct System {
 }
 
 impl System {
+    const CARTRIDGE_LIST_MAX: usize =
+        NES_FRAME_HEIGHT as usize / FontManager::FONT_HEIGHT as usize - 3;
+
     pub fn new() -> Self {
         System {
             running_cartridge: None,
@@ -46,5 +51,65 @@ impl System {
         self.cursor = 0;
     }
 
-    pub fn render(&mut self) {}
+    pub fn render(&mut self) {
+        let mut fb = SYSTEM_FB.write();
+        let mut y = 0;
+        match &self.running_cartridge {
+            Some(cart) => {
+                fb.draw_text(
+                    0,
+                    y,
+                    format!("Running: {}", cart.long_name).as_bytes(),
+                    Self::text_color(),
+                    Self::bg_color(),
+                );
+            }
+            None => {
+                fb.draw_text(
+                    0,
+                    y,
+                    b"Select a cartridge to run.",
+                    Self::text_color(),
+                    Self::bg_color(),
+                );
+            }
+        }
+        y += FontManager::FONT_HEIGHT as usize * 2;
+
+        let selected_page = self.cursor / Self::CARTRIDGE_LIST_MAX;
+        for idx in 0..Self::CARTRIDGE_LIST_MAX {
+            let cart_idx = selected_page * Self::CARTRIDGE_LIST_MAX + idx;
+            if cart_idx >= self.cartridges.len() {
+                break;
+            }
+            let cart = &self.cartridges[cart_idx];
+            let text_color = if cart_idx == self.cursor {
+                Self::bg_color()
+            } else {
+                Self::text_color()
+            };
+            let bg_color = if cart_idx == self.cursor {
+                Self::text_color()
+            } else {
+                Self::bg_color()
+            };
+            fb.draw_text(
+                0,
+                y,
+                format!("{:02}: {}", cart_idx + 1, cart.long_name).as_bytes(),
+                text_color,
+                bg_color,
+            );
+            y += FontManager::FONT_HEIGHT as usize;
+        }
+        fb.flush(false);
+    }
+
+    pub fn text_color() -> PixelColor {
+        FrameBuffer::make_color(0xFF, 0xFF, 0xFF)
+    }
+
+    pub fn bg_color() -> PixelColor {
+        FrameBuffer::make_color(0x00, 0x00, 0x00)
+    }
 }
