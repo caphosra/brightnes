@@ -8,6 +8,7 @@ use fatfs::{Error, FsOptions, Read, Write};
 use postcard::{from_bytes_crc32, to_allocvec_crc32};
 use spin::{Lazy, RwLock};
 
+use crate::system::System;
 use crate::{
     critical,
     drivers::BlockDeviceDriver,
@@ -42,7 +43,6 @@ impl FileSystem {
     const SAVEDATA_EXT: &'static str = "brs";
     const RAM_EXT: &'static str = "brr";
 
-    const STATE_FILE_NAME: &'static str = "saved.brt";
     const RAM_FILE_NAME: &'static str = "ram.brr";
 
     pub fn new() -> Self {
@@ -187,15 +187,33 @@ impl FileSystem {
         }
     }
 
-    pub fn save_state(&mut self, cpu: &CPU, ppu: &PPU, cartridge: &Cartridge) -> Result<(), ()> {
+    pub fn state_file_name(&self, sys: &System) -> Option<String> {
+        sys.running_cartridge_name().map(|s| format!("{}.BRS", s))
+    }
+
+    pub fn ram_file_name(&self, sys: &System) -> Option<String> {
+        sys.running_cartridge_name().map(|s| format!("{}.BRR", s))
+    }
+
+    pub fn save_state(
+        &mut self,
+        sys: &System,
+        cpu: &CPU,
+        ppu: &PPU,
+        cartridge: &Cartridge,
+    ) -> Result<(), ()> {
         info!(SYS, "Request to save state");
+
+        let file_name = self.state_file_name(sys);
+        if file_name.is_none() {
+            error!(SYS, "No game is running. Cannot save state.");
+            return Err(());
+        }
 
         let crc = Crc::<u32>::new(&CRC_32_ISCSI);
 
         let root_dir = self.file_system.root_dir();
-        let mut file = root_dir
-            .create_file(Self::STATE_FILE_NAME)
-            .map_err(|_| ())?;
+        let mut file = root_dir.create_file(&file_name.unwrap()).map_err(|_| ())?;
 
         // The file should be overwritten.
         file.truncate().map_err(|_| ())?;
@@ -247,16 +265,23 @@ impl FileSystem {
 
     pub fn load_state(
         &mut self,
+        sys: &System,
         cpu: &mut CPU,
         ppu: &mut PPU,
         cartridge: &mut Cartridge,
     ) -> Result<(), ()> {
         info!(SYS, "Request to load saved state");
 
+        let file_name = self.state_file_name(sys);
+        if file_name.is_none() {
+            error!(SYS, "No game is running. Cannot save state.");
+            return Err(());
+        }
+
         let crc = Crc::<u32>::new(&CRC_32_ISCSI);
 
         let root_dir = self.file_system.root_dir();
-        let mut file = root_dir.open_file(Self::STATE_FILE_NAME).map_err(|_| ())?;
+        let mut file = root_dir.open_file(&file_name.unwrap()).map_err(|_| ())?;
 
         let mut file_size_buf = [0u8; size_of::<usize>()];
 
@@ -302,11 +327,17 @@ impl FileSystem {
         Ok(())
     }
 
-    pub fn save_ram(&mut self, data: &[u8]) -> Result<(), ()> {
+    pub fn save_ram(&mut self, sys: &System, data: &[u8]) -> Result<(), ()> {
         info!(SYS, "Request to save RAM. ({} bytes)", data.len());
 
+        let file_name = self.ram_file_name(sys);
+        if file_name.is_none() {
+            error!(SYS, "No game is running. Cannot save state.");
+            return Err(());
+        }
+
         let root_dir = self.file_system.root_dir();
-        let mut file = root_dir.create_file(Self::RAM_FILE_NAME).map_err(|_| ())?;
+        let mut file = root_dir.create_file(&file_name.unwrap()).map_err(|_| ())?;
 
         // The file should be overwritten.
         file.truncate().map_err(|_| ())?;
@@ -317,11 +348,17 @@ impl FileSystem {
         Ok(())
     }
 
-    pub fn load_ram(&mut self, buffer: &mut [u8]) -> Result<(), ()> {
+    pub fn load_ram(&mut self, sys: &System, buffer: &mut [u8]) -> Result<(), ()> {
         info!(SYS, "Request to load RAM. ({} bytes)", buffer.len());
 
+        let file_name = self.ram_file_name(sys);
+        if file_name.is_none() {
+            error!(SYS, "No game is running. Cannot save state.");
+            return Err(());
+        }
+
         let root_dir = self.file_system.root_dir();
-        let mut file = root_dir.open_file(Self::RAM_FILE_NAME).map_err(|_| ())?;
+        let mut file = root_dir.open_file(&file_name.unwrap()).map_err(|_| ())?;
 
         file.read_exact(buffer).map_err(|_| ())?;
 

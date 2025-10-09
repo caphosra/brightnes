@@ -45,6 +45,20 @@ impl System {
         }
     }
 
+    pub fn has_ram(&self) -> Option<bool> {
+        if let Some(cart) = &self.running_cartridge {
+            Some(cart.has_ram)
+        } else {
+            None
+        }
+    }
+
+    pub fn running_cartridge_name(&self) -> Option<&str> {
+        self.running_cartridge
+            .as_ref()
+            .map(|c| c.short_name.as_str())
+    }
+
     pub fn game_initialized(&self) -> bool {
         self.running_cartridge.is_some()
     }
