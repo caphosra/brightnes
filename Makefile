@@ -4,7 +4,6 @@
 	resources build run run-dbg gdb
 
 OUT_DIR = ./dest
-NES_FILE = ./res/nes/$(GAME)
 
 CARGO_FLAGS =
 QEMU_FLAGS = -m 2G -bios ./OVMF.fd \
@@ -97,8 +96,6 @@ $(OUT_DIR)/efi/boot/bootx64.efi: $(BOOTLOADER_SOURCES)
 
 resources: ./res/font/Tamsyn8x16r.psf.gz
 	gzip -d < ./res/font/Tamsyn8x16r.psf.gz > $(OUT_DIR)/system_font.psf
-
-	cp $(NES_FILE) $(OUT_DIR)/game.nes
 
 build: build-kernel $(OUT_DIR)/efi/boot/bootx64.efi resources
 	@echo "Build complete."

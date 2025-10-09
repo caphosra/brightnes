@@ -74,8 +74,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     cpu.interrupt(InterruptType::RST);
 
-    let cartridge = Cartridge::get();
-    cartridge.init();
+    Cartridge::get();
 
     let ppu = PPU::get();
     ppu.init();
