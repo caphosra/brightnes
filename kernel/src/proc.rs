@@ -1,4 +1,4 @@
-use core::arch::asm;
+use core::{arch::asm, ptr::null};
 
 use spin::{Lazy, RwLock};
 use x86_64::{
@@ -6,9 +6,12 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::{game_main, info_main, log_main, on_game_switched, on_info_switched, on_log_switched};
+use crate::{
+    game_main, info_main, log_main, on_game_switched, on_info_switched, on_log_switched,
+    on_system_switched,
+};
 
-const PROC_SIZE: usize = 3;
+const PROC_SIZE: usize = 4;
 
 const MAIN_STACK_BOTTOM: usize = 0x40_000_000;
 
@@ -61,6 +64,11 @@ impl ProcessSwitcher {
         Self {
             processes: [
                 ProcessInfo::new(
+                    VirtAddr::from_ptr(null::<u8>()),
+                    || loop {},
+                    on_system_switched,
+                ),
+                ProcessInfo::new(
                     VirtAddr::from_ptr(GAME_STACK_BOTTOM),
                     game_main,
                     on_game_switched,
@@ -76,7 +84,7 @@ impl ProcessSwitcher {
                     on_log_switched,
                 ),
             ],
-            current_proc: ProcessMode::Game,
+            current_proc: ProcessMode::System,
             safe_mode: false,
         }
     }
@@ -116,8 +124,8 @@ impl ProcessSwitcher {
             return;
         }
 
-        let old_mode_idx: usize = self.current_proc.into();
-        let mode_idx: usize = new_proc.into();
+        let old_mode_idx = self.current_proc as usize;
+        let mode_idx = new_proc as usize;
 
         if old_mode_idx == mode_idx && !reset_main {
             // No need to switch.
@@ -179,30 +187,22 @@ impl ProcessSwitcher {
     }
 }
 
-#[repr(u8)]
+#[repr(usize)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ProcessMode {
+    System,
     Game,
     Info,
     Log,
 }
 
-impl From<ProcessMode> for usize {
-    fn from(mode: ProcessMode) -> Self {
-        match mode {
-            ProcessMode::Game => 0,
-            ProcessMode::Info => 1,
-            ProcessMode::Log => 2,
-        }
-    }
-}
-
 impl ProcessMode {
     pub fn shift(&self) -> ProcessMode {
         match self {
+            ProcessMode::System => ProcessMode::Game,
             ProcessMode::Game => ProcessMode::Info,
             ProcessMode::Info => ProcessMode::Log,
-            ProcessMode::Log => ProcessMode::Game,
+            ProcessMode::Log => ProcessMode::System,
         }
     }
 }

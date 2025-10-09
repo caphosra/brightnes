@@ -24,6 +24,7 @@ use crate::nes::ppu::GAME_FB;
 use crate::nes::ppu::PPU;
 use crate::proc::ProcessSwitcher;
 use crate::system::SYSTEM;
+use crate::system::SYSTEM_FB;
 
 #[no_mangle]
 #[inline(never)]
@@ -60,11 +61,6 @@ pub extern "C" fn kernel_main() -> ! {
     info!(SYS, "Interrupts are enabled.");
     log!(SYS, "It's time to enjoy BRIGHTNES!");
 
-    {
-        let mut sys = SYSTEM.write();
-        sys.update_cartridges();
-    }
-
     let cpu = CPU::get();
     cpu.init();
 
@@ -79,7 +75,19 @@ pub extern "C" fn kernel_main() -> ! {
     let apu = APU::get();
     apu.init();
 
-    game_main();
+    {
+        let mut sys = SYSTEM.write();
+        sys.update_cartridges();
+        sys.render();
+    }
+    loop {
+        hlt();
+    }
+}
+
+pub fn on_system_switched() {
+    let mut fb = SYSTEM_FB.write();
+    fb.flush_all();
 }
 
 pub fn game_main() -> ! {
