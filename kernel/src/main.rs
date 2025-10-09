@@ -36,9 +36,6 @@ pub extern "C" fn kernel_main() -> ! {
         interrupts::disable();
     }
 
-    // Initialize the frame buffer.
-    on_game_switched();
-
     // Load the font data.
     // This task is required to render texts on the screen.
     let header = FontManager::get_psf_header();
@@ -53,6 +50,17 @@ pub extern "C" fn kernel_main() -> ! {
     {
         let mut fs = FILE_SYSTEM.write();
         fs.check_root_dir();
+    }
+
+    {
+        let mut fb = SYSTEM_FB.write();
+        fb.flush_all();
+    }
+
+    {
+        let mut sys = SYSTEM.write();
+        sys.update_cartridges();
+        sys.render(true);
     }
 
     InterruptController::init(60);
@@ -85,14 +93,17 @@ pub extern "C" fn kernel_main() -> ! {
     }
 }
 
+#[inline(never)]
 pub fn on_system_switched() {
+    {
+        let mut fb = SYSTEM_FB.write();
+        fb.flush_all();
+    }
     interrupts::without_interrupts(|| {
         let mut sys = SYSTEM.write();
         sys.update_cartridges();
         sys.render(true);
     });
-    let mut fb = SYSTEM_FB.write();
-    fb.flush_all();
 }
 
 pub fn game_main() -> ! {

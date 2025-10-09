@@ -97,6 +97,7 @@ impl PPU {
 
     const IRQ_CYCLE: u16 = 260;
 
+    #[inline(never)]
     pub fn get() -> &'static mut Self {
         let ppu_raw_ptr = *PPU_PTR.call_once(|| {
             // Allocate memory for PPU.
@@ -106,6 +107,7 @@ impl PPU {
         unsafe { ppu_raw_ptr.as_mut() }.unwrap()
     }
 
+    #[inline(never)]
     pub fn init(&mut self) {
         self.vram = VRAM::new();
         self.oam = OAM::new();
