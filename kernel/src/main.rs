@@ -199,5 +199,6 @@ mod logger;
 mod mem;
 mod nes;
 mod proc;
+#[cfg(feature = "serial")]
 mod serial;
 mod system;
