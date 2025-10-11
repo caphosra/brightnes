@@ -122,7 +122,7 @@ impl APU {
                 | (self.squares[1].active as u8) << 1
                 | (self.triangle.active as u8) << 2
                 | (self.noise.active as u8) << 3
-                | (self.dmc.active as u8) << 4
+                | ((self.dmc.length_counter > 0) as u8) << 4
                 | (self.frame_counter.irq_disabled as u8) << 6
                 | (self.dmc.irq as u8) << 7
         } else {
@@ -153,7 +153,7 @@ impl APU {
             self.squares[1].set_active(((data >> 1) & 1) != 0);
             self.triangle.set_active(((data >> 2) & 1) != 0);
             self.noise.active = ((data >> 3) & 1) != 0;
-            self.dmc.active = ((data >> 4) & 1) != 0;
+            // self.dmc.active = ((data >> 4) & 1) != 0;
         } else if addr == 0x4017 {
             // Frame Counter
             self.frame_counter.write_reg(data);
