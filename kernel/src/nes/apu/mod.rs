@@ -4,7 +4,7 @@ use spin::{Lazy, Once};
 use crate::{
     critical,
     drivers::{SoundDeviceDriver, SAMPLING_RATE},
-    log,
+    info,
     mem::MemoryAllocator,
     nes::{
         apu::{dmc::DMC, noise::APUNoise, pulse::APUPulse, triangle::APUTriangle},
@@ -46,12 +46,12 @@ impl APUFrameCounter {
             APUFrameCounterMode::FourStep
         };
 
-        let new_irq_disabled = ((data >> 6) & 1) == 0;
+        let new_irq_disabled = ((data >> 6) & 1) != 0;
         if new_irq_disabled != self.irq_disabled {
             if new_irq_disabled {
-                log!(APU, "APU Frame Counter IRQ disabled.");
+                info!(APU, "APU Frame Counter IRQ disabled.");
             } else {
-                log!(APU, "APU Frame Counter IRQ enabled.");
+                info!(APU, "APU Frame Counter IRQ enabled.");
             }
             self.irq_disabled = new_irq_disabled;
         }
