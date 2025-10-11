@@ -41,9 +41,7 @@ impl APUComponent for APUPulse {
                 if self.constant_volume {
                     self.volume = data & 0b1111;
                 } else {
-                    self.volume = Self::MAX_VOLUME;
                     self.volume_period = data & 0b1111;
-                    self.volume_counter = self.volume_period;
                 }
             }
             1 => {
