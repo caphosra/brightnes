@@ -8,7 +8,7 @@ use crate::{
     mem::MemoryAllocator,
     nes::{
         apu::{dmc::DMC, noise::APUNoise, pulse::APUPulse, triangle::APUTriangle},
-        cpu::{InterruptType, CPU},
+        cpu::CPU,
     },
 };
 
@@ -25,6 +25,7 @@ pub struct APUFrameCounter {
     pub mode: APUFrameCounterMode,
     pub step: u32,
     pub frame: u8,
+    pub irq: bool,
 }
 
 impl APUFrameCounter {
@@ -34,6 +35,7 @@ impl APUFrameCounter {
             mode: APUFrameCounterMode::FourStep,
             step: 0,
             frame: 0,
+            irq: false,
         }
     }
 
@@ -50,6 +52,7 @@ impl APUFrameCounter {
         if new_irq_disabled != self.irq_disabled {
             if new_irq_disabled {
                 info!(APU, "APU Frame Counter IRQ disabled.");
+                self.irq = false;
             } else {
                 info!(APU, "APU Frame Counter IRQ enabled.");
             }
@@ -114,17 +117,22 @@ impl APU {
         };
     }
 
-    pub fn read_reg(&self, addr: u16) -> u8 {
+    pub fn read_reg(&mut self, addr: u16) -> u8 {
         if addr == 0x4015 {
             // IF-D NT21
 
-            (self.squares[0].active) as u8
+            let output = (self.squares[0].active) as u8
                 | (self.squares[1].active as u8) << 1
                 | (self.triangle.active as u8) << 2
                 | (self.noise.active as u8) << 3
                 | ((self.dmc.length_counter > 0) as u8) << 4
-                | (self.frame_counter.irq_disabled as u8) << 6
-                | (self.dmc.irq as u8) << 7
+                | (self.frame_counter.irq as u8) << 6
+                | 1 << 7;
+            //| (self.dmc.irq as u8) << 7;
+
+            self.frame_counter.irq = false;
+
+            output
         } else {
             critical!(APU, "Attempt to read unused register: {:#06X}", addr);
         }
@@ -162,12 +170,7 @@ impl APU {
         }
     }
 
-    pub fn clock(
-        &mut self,
-        cycles: u32,
-        cpu: &mut CPU,
-        sound: &mut SoundDeviceDriver<SoundSampleType>,
-    ) {
+    pub fn clock(&mut self, cycles: u32, sound: &mut SoundDeviceDriver<SoundSampleType>) {
         self.frame_counter.step += cycles;
         self.sampling_clocks_counter += cycles;
 
@@ -192,8 +195,8 @@ impl APU {
                     self.quarter_frame();
 
                     if self.frame_counter.frame == 0 && !self.frame_counter.irq_disabled {
-                        // Trigger IRQ
-                        cpu.interrupt(InterruptType::IRQ);
+                        // Activate frame IRQ.
+                        self.frame_counter.irq = true;
                     }
                 }
                 APUFrameCounterMode::FiveStep => {
@@ -273,6 +276,10 @@ impl APU {
                 critical!(APU, "Invalid length counter value: {:#04X}", length);
             }
         }
+    }
+
+    pub fn frame_irq(&self) -> bool {
+        self.frame_counter.irq
     }
 }
 

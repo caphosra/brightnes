@@ -127,7 +127,7 @@ pub fn game_main() -> ! {
 
             let cycles = cpu.clock(ppu, apu, cartridge);
             ppu.render_bg(cycles as usize * 3, &mut frame_buffer, cpu, cartridge);
-            apu.clock(cycles, cpu, &mut sound);
+            apu.clock(cycles, &mut sound);
 
             interrupts::enable();
 

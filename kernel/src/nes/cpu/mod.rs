@@ -1,5 +1,5 @@
 use alloc::format;
-use alloc::string::{String, ToString};
+use bitflags::bitflags;
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
 use spin::{Lazy, Once};
@@ -25,7 +25,7 @@ pub struct CPU {
     pub cycles: u64,
     pub inst: u64,
 
-    interrupt: Option<InterruptType>,
+    interrupt: InterruptType,
     stall_cycles: u32,
     ram: RAM,
     history: Vec<Option<Instruction>, { CPU::HISTORY_SIZE }>,
@@ -40,22 +40,14 @@ pub const ONE_FLAG: usize = 5;
 pub const OVERFLOW_FLAG: usize = 6;
 pub const NEG_FLAG: usize = 7;
 
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum InterruptType {
-    NMI,
-    BRK,
-    IRQ,
-    RST,
-}
-
-impl ToString for InterruptType {
-    fn to_string(&self) -> String {
-        match self {
-            InterruptType::NMI => "NMI".to_string(),
-            InterruptType::BRK => "BRK".to_string(),
-            InterruptType::IRQ => "IRQ".to_string(),
-            InterruptType::RST => "RST".to_string(),
-        }
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct InterruptType: u32 {
+        const NMI = 0b0001;
+        const BRK = 0b0010;
+        const IRQ = 0b0100;
+        const RST = 0b1000;
     }
 }
 
@@ -80,7 +72,7 @@ impl CPU {
 
     pub fn init(&mut self) {
         self.reg_p = 0x24;
-        self.interrupt = None;
+        self.interrupt = InterruptType::empty();
         self.ram = RAM::new();
         self.history = Vec::from_array([None; CPU::HISTORY_SIZE]);
     }
@@ -101,37 +93,15 @@ impl CPU {
     }
 
     pub fn interrupt(&mut self, int_type: InterruptType) {
-        match self.interrupt {
-            Some(int_type) => {
-                error!(
-                    CPU,
-                    "Interrupt request is already pending: {}",
-                    int_type.to_string()
-                );
-            }
-            None => {
-                self.interrupt = Some(int_type);
-            }
-        }
+        self.interrupt.insert(int_type);
     }
 
-    fn exec_interrupt(
+    fn exec_pending_interrupt(
         &mut self,
-        int_type: InterruptType,
         ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
-    ) {
-        if self.get_flag(INT_FLAG) != 0
-            && (int_type == InterruptType::BRK)
-            && (int_type == InterruptType::IRQ)
-        {
-            // Nested interrupt is not allowed for BRK and IRQ.
-            return;
-        }
-
-        self.set_flag(INT_FLAG, true);
-
+    ) -> bool {
         macro_rules! push_stack {
             ($data:expr) => {
                 self.push_stack($data, ppu, apu, cartridge)
@@ -144,8 +114,46 @@ impl CPU {
             };
         }
 
-        match int_type {
-            InterruptType::BRK => {
+        if self.interrupt.contains(InterruptType::RST) {
+            // RST
+
+            self.interrupt.remove(InterruptType::RST);
+
+            let lo = read_cpu_bus!(0xFFFC);
+            let hi = read_cpu_bus!(0xFFFD);
+            self.reg_sp = 0xFD;
+            self.reg_pc = u16::from_le_bytes([lo, hi]);
+
+            self.set_flag(INT_FLAG, true);
+
+            true
+        } else if self.interrupt.contains(InterruptType::NMI) {
+            // NMI
+
+            self.interrupt.remove(InterruptType::NMI);
+
+            push_stack!((self.reg_pc >> 8) as u8);
+            push_stack!((self.reg_pc & 0x00FF) as u8);
+
+            push_stack!((self.reg_p & 0b11001111) | 1 << 5);
+
+            let lo = read_cpu_bus!(0xFFFA);
+            let hi = read_cpu_bus!(0xFFFB);
+            self.reg_pc = u16::from_le_bytes([lo, hi]);
+
+            self.set_flag(BRK_FLAG, false);
+            self.set_flag(INT_FLAG, true);
+
+            true
+        } else if self.interrupt.contains(InterruptType::BRK) {
+            // BRK
+
+            if self.get_flag(INT_FLAG) != 0 {
+                // Nested interrupt is not allowed for BRK.
+                false
+            } else {
+                self.interrupt.remove(InterruptType::BRK);
+
                 self.reg_pc += 1;
                 push_stack!((self.reg_pc >> 8) as u8);
                 push_stack!((self.reg_pc & 0x00FF) as u8);
@@ -154,21 +162,19 @@ impl CPU {
                 let lo = read_cpu_bus!(0xFFFE);
                 let hi = read_cpu_bus!(0xFFFF);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
+
+                self.set_flag(INT_FLAG, true);
+
+                true
             }
-            InterruptType::NMI => {
-                self.set_flag(BRK_FLAG, false);
+        } else if self.interrupt.contains(InterruptType::IRQ) {
+            // IRQ
 
-                push_stack!((self.reg_pc >> 8) as u8);
-                push_stack!((self.reg_pc & 0x00FF) as u8);
-
-                push_stack!((self.reg_p & 0b11001111) | 1 << 5);
-
-                let lo = read_cpu_bus!(0xFFFA);
-                let hi = read_cpu_bus!(0xFFFB);
-                self.reg_pc = u16::from_le_bytes([lo, hi]);
-            }
-            InterruptType::IRQ => {
-                self.set_flag(BRK_FLAG, false);
+            if self.get_flag(INT_FLAG) != 0 {
+                // Nested interrupt is not allowed for IRQ.
+                false
+            } else {
+                self.interrupt.remove(InterruptType::IRQ);
 
                 push_stack!((self.reg_pc >> 8) as u8);
                 push_stack!((self.reg_pc & 0x00FF) as u8);
@@ -178,13 +184,15 @@ impl CPU {
                 let lo = read_cpu_bus!(0xFFFE);
                 let hi = read_cpu_bus!(0xFFFF);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
+
+                self.set_flag(BRK_FLAG, false);
+                self.set_flag(INT_FLAG, true);
+
+                true
             }
-            InterruptType::RST => {
-                let lo = read_cpu_bus!(0xFFFC);
-                let hi = read_cpu_bus!(0xFFFD);
-                self.reg_sp = 0xFD;
-                self.reg_pc = u16::from_le_bytes([lo, hi]);
-            }
+        } else {
+            // No interrupt pending.
+            false
         }
     }
 
@@ -202,21 +210,21 @@ impl CPU {
 
             cycles
         } else {
-            match self.interrupt {
-                Some(int_type) => {
-                    self.exec_interrupt(int_type, ppu, apu, cartridge);
-                    self.interrupt = None;
-
-                    Self::INTERRUPT_CYCLES
-                }
-                None => {
-                    // The CPU is not stalling so execute the next instruction.
-                    let cycles = self.execute(ppu, apu, cartridge);
-                    self.inst += 1;
-                    self.cycles += cycles as u64;
-                    cycles
-                }
+            // Check whether APU frame IRQ flag is set.
+            if apu.frame_irq() {
+                self.interrupt.insert(InterruptType::IRQ);
             }
+
+            // Check whether there is any pending interrupt.
+            if self.exec_pending_interrupt(ppu, apu, cartridge) {
+                return Self::INTERRUPT_CYCLES;
+            }
+
+            // The CPU is not stalling so execute the next instruction.
+            let cycles = self.execute(ppu, apu, cartridge);
+            self.inst += 1;
+            self.cycles += cycles as u64;
+            cycles
         }
     }
 

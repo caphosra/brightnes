@@ -19,3 +19,4 @@ uart_16550 = "0.4.0"
 x86_64 = "0.15.2"
 brightnes-common = { path = "../common" }
 fatfs = { git = "https://github.com/rafalh/rust-fatfs.git", rev = "4eccb50d011146fbed20e133d33b22f3c27292e7", default-features = false, features = ["alloc"]}
+bitflags = { version = "2.9.4", features = ["serde"] }
