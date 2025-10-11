@@ -21,7 +21,7 @@ pub enum APUFrameCounterMode {
 
 #[derive(Serialize, Deserialize)]
 pub struct APUFrameCounter {
-    pub irq: bool,
+    pub irq_disabled: bool,
     pub mode: APUFrameCounterMode,
     pub step: u32,
     pub frame: u8,
@@ -30,7 +30,7 @@ pub struct APUFrameCounter {
 impl APUFrameCounter {
     pub fn new() -> Self {
         Self {
-            irq: false,
+            irq_disabled: true,
             mode: APUFrameCounterMode::FourStep,
             step: 0,
             frame: 0,
@@ -46,14 +46,14 @@ impl APUFrameCounter {
             APUFrameCounterMode::FourStep
         };
 
-        let frame_counter_irq = ((data >> 6) & 1) == 0;
-        if frame_counter_irq != self.irq {
-            if frame_counter_irq {
-                log!(APU, "APU Frame Counter IRQ enabled.");
-            } else {
+        let new_irq_disabled = ((data >> 6) & 1) == 0;
+        if new_irq_disabled != self.irq_disabled {
+            if new_irq_disabled {
                 log!(APU, "APU Frame Counter IRQ disabled.");
+            } else {
+                log!(APU, "APU Frame Counter IRQ enabled.");
             }
-            self.irq = frame_counter_irq;
+            self.irq_disabled = new_irq_disabled;
         }
 
         self.step = 0;
@@ -123,7 +123,7 @@ impl APU {
                 | (self.triangle.active as u8) << 2
                 | (self.noise.active as u8) << 3
                 | (self.dmc.active as u8) << 4
-                | (self.frame_counter.irq as u8) << 6
+                | (self.frame_counter.irq_disabled as u8) << 6
                 | (self.dmc.irq as u8) << 7
         } else {
             critical!(APU, "Attempt to read unused register: {:#06X}", addr);
@@ -191,7 +191,7 @@ impl APU {
                     }
                     self.quarter_frame();
 
-                    if self.frame_counter.frame == 0 && self.frame_counter.irq {
+                    if self.frame_counter.frame == 0 && !self.frame_counter.irq_disabled {
                         // Trigger IRQ
                         cpu.interrupt(InterruptType::IRQ);
                     }
