@@ -2,7 +2,7 @@ use core::ptr::{read_volatile, write_volatile};
 
 use crate::{
     drivers::virtio::{VirtIODevice, VirtQ, VirtQDesc},
-    error, log,
+    error,
     mem::MemoryAllocator,
 };
 
@@ -180,8 +180,6 @@ impl<'a> VirtBlockDevice<'a> {
             write_volatile(&mut self.queue.desc[2].next, 0);
         }
 
-        log!(DRV, "Submitting block device request...");
-
         self.queue.push(0, self.notify_addr);
 
         loop {
@@ -192,8 +190,6 @@ impl<'a> VirtBlockDevice<'a> {
                 break;
             }
         }
-
-        log!(DRV, "Request completed.");
 
         let status = unsafe { read_volatile(&mut status) };
         if status != 0 {
