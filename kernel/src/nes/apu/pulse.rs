@@ -26,11 +26,6 @@ pub struct APUPulse {
 
     sweep_counter: u8,
 
-    last_active: bool,
-    last_volume: u8,
-    last_time: u16,
-    last_duty_cycle: u8,
-
     timer_counter: u16,
     duty_step: u8,
 }
@@ -189,11 +184,6 @@ impl APUPulse {
             sweep_counter: 0,
             volume_period: 0,
             volume_counter: 0,
-
-            last_active: false,
-            last_volume: 0,
-            last_time: 0,
-            last_duty_cycle: 0,
 
             timer_counter: 0,
             duty_step: 0,
