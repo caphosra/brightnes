@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     critical,
-    nes::apu::{APUComponent, SoundSampleType, APU},
+    nes::apu::{APUChannel, SoundSampleType, APU},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -31,7 +31,7 @@ pub struct APUPulse {
     duty_step: u8,
 }
 
-impl APUComponent for APUPulse {
+impl APUChannel for APUPulse {
     fn write_reg(&mut self, addr: u16, data: u8) {
         match addr {
             0 => {

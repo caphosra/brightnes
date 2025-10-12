@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error,
-    nes::apu::{APUComponent, SoundSampleType, APU},
+    nes::apu::{APUChannel, SoundSampleType, APU},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -19,7 +19,7 @@ pub struct APUTriangle {
     duty_step: u8,
 }
 
-impl APUComponent for APUTriangle {
+impl APUChannel for APUTriangle {
     fn write_reg(&mut self, addr: u16, data: u8) {
         match addr {
             0 => {

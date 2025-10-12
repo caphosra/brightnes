@@ -8,7 +8,9 @@ use crate::{
     mem::MemoryAllocator,
     nes::{
         apu::{dmc::DMC, noise::APUNoise, pulse::APUPulse, triangle::APUTriangle},
+        cartridge::Cartridge,
         cpu::CPU,
+        ppu::PPU,
     },
 };
 
@@ -66,7 +68,7 @@ impl APUFrameCounter {
 
 pub type SoundSampleType = i16;
 
-trait APUComponent {
+trait APUChannel {
     fn write_reg(&mut self, addr: u16, data: u8);
     fn active(&self) -> bool;
     fn set_active(&mut self, active: bool);
@@ -126,10 +128,9 @@ impl APU {
                 | (self.squares[1].active() as u8) << 1
                 | (self.triangle.active() as u8) << 2
                 | (self.noise.active() as u8) << 3
-                | ((self.dmc.length_counter > 0) as u8) << 4
+                | (self.dmc.active() as u8) << 4
                 | (self.frame_counter.irq as u8) << 6
-                | 1 << 7;
-            //| (self.dmc.irq as u8) << 7;
+                | (self.dmc.irq as u8) << 7;
 
             self.frame_counter.irq = false;
 
@@ -162,7 +163,7 @@ impl APU {
             self.squares[1].set_active(((data >> 1) & 1) != 0);
             self.triangle.set_active(((data >> 2) & 1) != 0);
             self.noise.set_active(((data >> 3) & 1) != 0);
-            // self.dmc.active = ((data >> 4) & 1) != 0;
+            self.dmc.set_active(((data >> 4) & 1) != 0);
         } else if addr == 0x4017 {
             // Frame Counter
             self.frame_counter.write_reg(data);
@@ -171,7 +172,14 @@ impl APU {
         }
     }
 
-    pub fn clock(&mut self, cycles: u32, sound: &mut SoundDeviceDriver<SoundSampleType>) {
+    pub fn clock(
+        &mut self,
+        cycles: u32,
+        sound: &mut SoundDeviceDriver<SoundSampleType>,
+        cpu: &mut CPU,
+        ppu: &mut PPU,
+        cartridge: &mut Cartridge,
+    ) {
         self.frame_counter.step += cycles;
         self.sampling_clocks_counter += cycles;
 
@@ -179,6 +187,7 @@ impl APU {
         self.squares[1].clock(cycles);
         self.triangle.clock(cycles);
         self.noise.clock(cycles);
+        self.dmc.clock(cycles, cpu, ppu, cartridge);
 
         while self.frame_counter.step >= Self::QUARTER_FRAME_CLOCKS {
             // Quarter frame comes.
@@ -224,7 +233,8 @@ impl APU {
             let output = (self.squares[0].get_output() as SoundSampleType) * Self::VOLUME
                 + (self.squares[1].get_output() as SoundSampleType) * Self::VOLUME
                 + (self.triangle.get_output() as SoundSampleType) * Self::VOLUME
-                + (self.noise.get_output() as SoundSampleType) * Self::VOLUME;
+                + (self.noise.get_output() as SoundSampleType) * Self::VOLUME
+                + (self.dmc.get_output() as SoundSampleType) * (Self::VOLUME / 8);
             sound.add_data(output, output);
         }
     }

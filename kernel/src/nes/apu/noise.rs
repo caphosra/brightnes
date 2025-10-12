@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     critical,
-    nes::apu::{APUComponent, APU},
+    nes::apu::{APUChannel, SoundSampleType, APU},
 };
 
 #[derive(Serialize, Deserialize)]
@@ -23,7 +23,7 @@ pub struct APUNoise {
     envelope_reload: bool,
 }
 
-impl APUComponent for APUNoise {
+impl APUChannel for APUNoise {
     fn write_reg(&mut self, addr: u16, data: u8) {
         match addr {
             0 => {
@@ -110,13 +110,13 @@ impl APUComponent for APUNoise {
         }
     }
 
-    fn get_output(&self) -> super::SoundSampleType {
+    fn get_output(&self) -> SoundSampleType {
         if self.length_counter == 0 || (self.shift_register & 1) != 0 {
             0
         } else if self.const_volume_enabled {
-            self.const_volume as super::SoundSampleType
+            self.const_volume as SoundSampleType
         } else {
-            self.envelope_volume as super::SoundSampleType
+            self.envelope_volume as SoundSampleType
         }
     }
 }
