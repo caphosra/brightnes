@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    critical,
+    error,
     nes::{
         apu::{SoundSampleType, APU},
         cartridge::Cartridge,
@@ -80,7 +80,7 @@ impl DMC {
                 self.length_counter = self.sample_length;
             }
             _ => {
-                critical!(APU, "DMC does not support such operation: {:#06X}", addr);
+                error!(APU, "DMC does not support such operation: {:#06X}", addr);
             }
         }
     }

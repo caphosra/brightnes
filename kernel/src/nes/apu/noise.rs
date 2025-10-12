@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    critical,
+    error,
     nes::apu::{APUChannel, SoundSampleType, APU},
 };
 
@@ -46,7 +46,7 @@ impl APUChannel for APUNoise {
                 self.envelope_reload = true;
             }
             _ => {
-                critical!(APU, "Noise does not support such operation: {:#06X}", addr);
+                error!(APU, "Noise does not support such operation: {:#06X}", addr);
             }
         }
     }
