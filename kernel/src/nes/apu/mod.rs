@@ -86,7 +86,7 @@ pub struct APU {
     dmc: DMC,
     frame_counter: APUFrameCounter,
 
-    sampling_clocks_counter: u32,
+    sampling_counter: f64,
 }
 
 static APU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
@@ -95,8 +95,7 @@ impl APU {
     pub const QUARTER_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 240;
 
     pub const CPU_CLOCKS_PER_APU_CLOCK: u8 = 2;
-
-    pub const SAMPLING_CLOCKS: u32 = CPU::CLOCK_FREQ / SAMPLING_RATE.to_hz();
+    pub const SAMPLING_INTERVAL: f64 = 1.0 / SAMPLING_RATE.to_hz() as f64;
 
     pub const VOLUME: SoundSampleType = 500;
 
@@ -116,7 +115,7 @@ impl APU {
             noise: APUNoise::new(),
             dmc: DMC::new(),
             frame_counter: APUFrameCounter::new(),
-            sampling_clocks_counter: 0,
+            sampling_counter: 0.0,
         };
     }
 
@@ -181,7 +180,7 @@ impl APU {
         cartridge: &mut Cartridge,
     ) {
         self.frame_counter.step += cycles;
-        self.sampling_clocks_counter += cycles;
+        self.sampling_counter += cycles as f64 / CPU::CLOCK_FREQ as f64;
 
         self.squares[0].clock(cycles);
         self.squares[1].clock(cycles);
@@ -225,10 +224,10 @@ impl APU {
             }
         }
 
-        while self.sampling_clocks_counter >= Self::SAMPLING_CLOCKS {
+        while self.sampling_counter >= Self::SAMPLING_INTERVAL {
             // Time to sample the sound data.
 
-            self.sampling_clocks_counter -= Self::SAMPLING_CLOCKS;
+            self.sampling_counter -= Self::SAMPLING_INTERVAL;
 
             let output = (self.squares[0].get_output() as SoundSampleType) * Self::VOLUME
                 + (self.squares[1].get_output() as SoundSampleType) * Self::VOLUME
