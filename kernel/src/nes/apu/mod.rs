@@ -4,11 +4,13 @@ use spin::{Lazy, Once};
 use crate::{
     critical,
     drivers::{SoundDeviceDriver, SAMPLING_RATE},
-    log,
+    info,
     mem::MemoryAllocator,
     nes::{
         apu::{dmc::DMC, noise::APUNoise, pulse::APUPulse, triangle::APUTriangle},
-        cpu::{InterruptType, CPU},
+        cartridge::Cartridge,
+        cpu::CPU,
+        ppu::PPU,
     },
 };
 
@@ -25,6 +27,7 @@ pub struct APUFrameCounter {
     pub mode: APUFrameCounterMode,
     pub step: u32,
     pub frame: u8,
+    pub irq: bool,
 }
 
 impl APUFrameCounter {
@@ -34,6 +37,7 @@ impl APUFrameCounter {
             mode: APUFrameCounterMode::FourStep,
             step: 0,
             frame: 0,
+            irq: false,
         }
     }
 
@@ -46,12 +50,13 @@ impl APUFrameCounter {
             APUFrameCounterMode::FourStep
         };
 
-        let new_irq_disabled = ((data >> 6) & 1) == 0;
+        let new_irq_disabled = ((data >> 6) & 1) != 0;
         if new_irq_disabled != self.irq_disabled {
             if new_irq_disabled {
-                log!(APU, "APU Frame Counter IRQ disabled.");
+                info!(APU, "APU Frame Counter IRQ disabled.");
+                self.irq = false;
             } else {
-                log!(APU, "APU Frame Counter IRQ enabled.");
+                info!(APU, "APU Frame Counter IRQ enabled.");
             }
             self.irq_disabled = new_irq_disabled;
         }
@@ -63,8 +68,9 @@ impl APUFrameCounter {
 
 pub type SoundSampleType = i16;
 
-trait APUComponent {
+trait APUChannel {
     fn write_reg(&mut self, addr: u16, data: u8);
+    fn active(&self) -> bool;
     fn set_active(&mut self, active: bool);
     fn quarter_frame(&mut self);
     fn half_frame(&mut self);
@@ -80,7 +86,7 @@ pub struct APU {
     dmc: DMC,
     frame_counter: APUFrameCounter,
 
-    sampling_clocks_counter: u32,
+    sampling_counter: f64,
 }
 
 static APU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
@@ -89,8 +95,7 @@ impl APU {
     pub const QUARTER_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 240;
 
     pub const CPU_CLOCKS_PER_APU_CLOCK: u8 = 2;
-
-    pub const SAMPLING_CLOCKS: u32 = CPU::CLOCK_FREQ / SAMPLING_RATE.to_hz();
+    pub const SAMPLING_INTERVAL: f64 = 1.0 / SAMPLING_RATE.to_hz() as f64;
 
     pub const VOLUME: SoundSampleType = 500;
 
@@ -110,21 +115,25 @@ impl APU {
             noise: APUNoise::new(),
             dmc: DMC::new(),
             frame_counter: APUFrameCounter::new(),
-            sampling_clocks_counter: 0,
+            sampling_counter: 0.0,
         };
     }
 
-    pub fn read_reg(&self, addr: u16) -> u8 {
+    pub fn read_reg(&mut self, addr: u16) -> u8 {
         if addr == 0x4015 {
             // IF-D NT21
 
-            (self.squares[0].active) as u8
-                | (self.squares[1].active as u8) << 1
-                | (self.triangle.active as u8) << 2
-                | (self.noise.active as u8) << 3
-                | ((self.dmc.length_counter > 0) as u8) << 4
-                | (self.frame_counter.irq_disabled as u8) << 6
-                | (self.dmc.irq as u8) << 7
+            let output = (self.squares[0].active()) as u8
+                | (self.squares[1].active() as u8) << 1
+                | (self.triangle.active() as u8) << 2
+                | (self.noise.active() as u8) << 3
+                | (self.dmc.active() as u8) << 4
+                | (self.frame_counter.irq as u8) << 6
+                | (self.dmc.irq as u8) << 7;
+
+            self.frame_counter.irq = false;
+
+            output
         } else {
             critical!(APU, "Attempt to read unused register: {:#06X}", addr);
         }
@@ -152,8 +161,8 @@ impl APU {
             self.squares[0].set_active((data & 1) != 0);
             self.squares[1].set_active(((data >> 1) & 1) != 0);
             self.triangle.set_active(((data >> 2) & 1) != 0);
-            self.noise.active = ((data >> 3) & 1) != 0;
-            // self.dmc.active = ((data >> 4) & 1) != 0;
+            self.noise.set_active(((data >> 3) & 1) != 0);
+            self.dmc.set_active(((data >> 4) & 1) != 0);
         } else if addr == 0x4017 {
             // Frame Counter
             self.frame_counter.write_reg(data);
@@ -165,15 +174,19 @@ impl APU {
     pub fn clock(
         &mut self,
         cycles: u32,
-        cpu: &mut CPU,
         sound: &mut SoundDeviceDriver<SoundSampleType>,
+        cpu: &mut CPU,
+        ppu: &mut PPU,
+        cartridge: &mut Cartridge,
     ) {
         self.frame_counter.step += cycles;
-        self.sampling_clocks_counter += cycles;
+        self.sampling_counter += cycles as f64 / CPU::CLOCK_FREQ as f64;
 
         self.squares[0].clock(cycles);
         self.squares[1].clock(cycles);
         self.triangle.clock(cycles);
+        self.noise.clock(cycles);
+        self.dmc.clock(cycles, cpu, ppu, cartridge);
 
         while self.frame_counter.step >= Self::QUARTER_FRAME_CLOCKS {
             // Quarter frame comes.
@@ -192,8 +205,8 @@ impl APU {
                     self.quarter_frame();
 
                     if self.frame_counter.frame == 0 && !self.frame_counter.irq_disabled {
-                        // Trigger IRQ
-                        cpu.interrupt(InterruptType::IRQ);
+                        // Activate frame IRQ.
+                        self.frame_counter.irq = true;
                     }
                 }
                 APUFrameCounterMode::FiveStep => {
@@ -211,14 +224,16 @@ impl APU {
             }
         }
 
-        while self.sampling_clocks_counter >= Self::SAMPLING_CLOCKS {
+        while self.sampling_counter >= Self::SAMPLING_INTERVAL {
             // Time to sample the sound data.
 
-            self.sampling_clocks_counter -= Self::SAMPLING_CLOCKS;
+            self.sampling_counter -= Self::SAMPLING_INTERVAL;
 
             let output = (self.squares[0].get_output() as SoundSampleType) * Self::VOLUME
                 + (self.squares[1].get_output() as SoundSampleType) * Self::VOLUME
-                + (self.triangle.get_output() as SoundSampleType) * Self::VOLUME;
+                + (self.triangle.get_output() as SoundSampleType) * Self::VOLUME
+                + (self.noise.get_output() as SoundSampleType) * Self::VOLUME
+                + (self.dmc.get_output() as SoundSampleType) * (Self::VOLUME / 8);
             sound.add_data(output, output);
         }
     }
@@ -227,12 +242,14 @@ impl APU {
         self.squares[0].quarter_frame();
         self.squares[1].quarter_frame();
         self.triangle.quarter_frame();
+        self.noise.quarter_frame();
     }
 
     fn half_frame(&mut self) {
         self.squares[0].half_frame();
         self.squares[1].half_frame();
         self.triangle.half_frame();
+        self.noise.half_frame();
     }
 
     pub fn convert_length_counter(length: u8) -> u8 {
@@ -273,6 +290,10 @@ impl APU {
                 critical!(APU, "Invalid length counter value: {:#04X}", length);
             }
         }
+    }
+
+    pub fn frame_irq(&self) -> bool {
+        self.frame_counter.irq
     }
 }
 

@@ -2,16 +2,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     critical,
-    nes::apu::{APUComponent, SoundSampleType, APU},
+    nes::apu::{APUChannel, SoundSampleType, APU},
 };
 
 #[derive(Serialize, Deserialize)]
 pub struct APUPulse {
     id: usize,
 
-    pub active: bool,
-    pub volume: u8,
-    pub constant_volume: bool,
+    pub const_volume: u8,
+    pub envelope_volume: u8,
+    pub const_volume_enabled: bool,
     pub loop_enabled: bool,
     pub duty_cycle: u8,
     pub sweep_enabled: bool,
@@ -21,8 +21,9 @@ pub struct APUPulse {
     pub timer: u16,
     pub length_counter: u8,
 
-    volume_period: u8,
-    volume_counter: u8,
+    envelope_period: u8,
+    envelope_counter: u8,
+    envelope_reload: bool,
 
     sweep_counter: u8,
 
@@ -30,20 +31,18 @@ pub struct APUPulse {
     duty_step: u8,
 }
 
-impl APUComponent for APUPulse {
+impl APUChannel for APUPulse {
     fn write_reg(&mut self, addr: u16, data: u8) {
         match addr {
             0 => {
                 self.duty_cycle = (data >> 6) & 0b11;
                 self.loop_enabled = ((data >> 5) & 1) != 0;
-                self.constant_volume = ((data >> 4) & 1) != 0;
+                self.const_volume_enabled = ((data >> 4) & 1) != 0;
 
-                if self.constant_volume {
-                    self.volume = data & 0b1111;
+                if self.const_volume_enabled {
+                    self.const_volume = data & 0b1111;
                 } else {
-                    self.volume = Self::MAX_VOLUME;
-                    self.volume_period = data & 0b1111;
-                    self.volume_counter = self.volume_period;
+                    self.envelope_period = data & 0b1111;
                 }
             }
             1 => {
@@ -62,10 +61,7 @@ impl APUComponent for APUPulse {
                 self.length_counter = APU::convert_length_counter((data >> 3) & 0b11111);
 
                 // Reset the volume envelope
-                if !self.constant_volume {
-                    self.volume = Self::MAX_VOLUME;
-                    self.volume_counter = self.volume_period;
-                }
+                self.envelope_reload = true;
             }
             _ => {
                 critical!(APU, "Pulse does not support such operation: {:#06X}", addr);
@@ -73,29 +69,37 @@ impl APUComponent for APUPulse {
         };
     }
 
+    fn active(&self) -> bool {
+        self.length_counter > 0
+    }
+
     fn set_active(&mut self, active: bool) {
-        if self.active != active {
-            if !active {
-                // Reset length counter to stop playing the sound.
-                self.length_counter = 0;
-            }
-            self.active = active;
+        if !active {
+            // Reset length counter to stop playing the sound.
+            self.length_counter = 0;
         }
     }
 
     fn quarter_frame(&mut self) {
         // Envelope
-        if !self.constant_volume {
-            if self.volume_counter > 0 {
-                self.volume_counter -= 1;
+        if self.envelope_reload {
+            // Reset the envelope.
+            self.envelope_reload = false;
+            self.envelope_volume = Self::MAX_VOLUME;
+            self.envelope_counter = self.envelope_period;
+        } else {
+            if self.envelope_counter > 0 {
+                // Decrement the envelope counter.
+                self.envelope_counter -= 1;
             } else {
-                self.volume_counter = self.volume_period;
-                if self.volume > 0 {
-                    self.volume -= 1;
+                // Update the volume.
+                self.envelope_counter = self.envelope_period;
+                if self.envelope_volume > 0 {
+                    self.envelope_volume -= 1;
                 } else {
                     if self.loop_enabled {
                         // Reset the volume if looping is enabled.
-                        self.volume = Self::MAX_VOLUME;
+                        self.envelope_volume = Self::MAX_VOLUME;
                     }
                 }
             }
@@ -108,19 +112,15 @@ impl APUComponent for APUPulse {
             self.sweep_counter -= 1;
         } else {
             self.sweep_counter = self.sweep_period;
+
             if self.sweep_enabled && self.sweep_shift > 0 {
-                if self.timer != 0 {
+                if self.timer >= 8 && self.timer <= 0x7FF {
                     // Perform the sweep.
                     let change = self.timer >> self.sweep_shift;
                     if self.sweep_negate {
                         self.timer = self.timer.checked_sub(change).unwrap_or(0);
                     } else {
                         self.timer = self.timer.wrapping_add(change);
-                    }
-
-                    if self.timer > 0x7FF || self.timer < 8 {
-                        // If the timer is out of range, silence the channel.
-                        self.timer = 0;
                     }
                 }
             }
@@ -142,15 +142,13 @@ impl APUComponent for APUPulse {
     }
 
     fn get_output(&self) -> SoundSampleType {
-        if self.active
-            && self.length_counter > 0
-            && self.timer >= 8
-            && self.timer < 0x7FF
-            && self.volume > 0
-        {
-            let duty_rate = self.duty_rate();
-            let output = if (self.duty_step as f64) < (Self::MAX_DUTY_STEPS as f64 * duty_rate) {
-                self.volume
+        if self.length_counter > 0 && self.timer >= 8 && self.timer <= 0x7FF {
+            let output = if self.output_duty() {
+                if self.const_volume_enabled {
+                    self.const_volume
+                } else {
+                    self.envelope_volume
+                }
             } else {
                 0
             };
@@ -169,9 +167,9 @@ impl APUPulse {
         Self {
             id,
 
-            active: false,
-            volume: 0,
-            constant_volume: false,
+            envelope_volume: 0,
+            const_volume: 0,
+            const_volume_enabled: false,
             loop_enabled: false,
             duty_cycle: 0,
             sweep_enabled: false,
@@ -182,20 +180,21 @@ impl APUPulse {
             length_counter: 0,
 
             sweep_counter: 0,
-            volume_period: 0,
-            volume_counter: 0,
+            envelope_period: 0,
+            envelope_counter: 0,
+            envelope_reload: false,
 
             timer_counter: 0,
             duty_step: 0,
         }
     }
 
-    pub fn duty_rate(&self) -> f64 {
+    pub fn output_duty(&self) -> bool {
         match self.duty_cycle {
-            0 => 0.125,
-            1 => 0.25,
-            2 => 0.5,
-            3 => 0.75,
+            0 => self.duty_step == 7,
+            1 => self.duty_step >= 6,
+            2 => self.duty_step >= 4,
+            3 => self.duty_step < 6,
             _ => {
                 critical!(APU, "Invalid duty cycle: {}", self.duty_cycle);
             }

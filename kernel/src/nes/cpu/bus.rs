@@ -3,7 +3,7 @@ use crate::nes::{
     cartridge::Cartridge,
     cpu::CPU,
     pad::PADS,
-    ppu::{PPU, OAM_DMA_ADDR},
+    ppu::{OAM_DMA_ADDR, PPU},
 };
 
 pub struct CPUBus;
@@ -70,6 +70,9 @@ impl CPUBus {
             // Pad 2
             let mut pad = PADS.write();
             pad[1].write(data & 1 == 1);
+
+            // APU Frame Counter
+            apu.write_reg(addr, data);
         } else {
             // Cartridge
             cartridge.write_cpu_mem(addr, data);
