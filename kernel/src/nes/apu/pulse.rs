@@ -111,9 +111,9 @@ impl APUComponent for APUPulse {
         if self.sweep_counter > 0 {
             self.sweep_counter -= 1;
         } else {
-            if self.sweep_enabled && self.sweep_shift > 0 {
-                self.sweep_counter = self.sweep_period;
+            self.sweep_counter = self.sweep_period;
 
+            if self.sweep_enabled && self.sweep_shift > 0 {
                 if self.timer >= 8 && self.timer <= 0x7FF {
                     // Perform the sweep.
                     let change = self.timer >> self.sweep_shift;
