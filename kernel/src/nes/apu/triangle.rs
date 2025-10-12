@@ -7,7 +7,6 @@ use crate::{
 
 #[derive(Serialize, Deserialize)]
 pub struct APUTriangle {
-    pub active: bool,
     pub linear_counter: u8,
     pub linear_counter_control: bool,
     pub timer: u16,
@@ -45,13 +44,14 @@ impl APUComponent for APUTriangle {
         }
     }
 
+    fn active(&self) -> bool {
+        self.length_counter > 0 && self.linear_counter > 0
+    }
+
     fn set_active(&mut self, active: bool) {
-        if self.active != active {
-            if !active {
-                self.length_counter = 0;
-                self.linear_counter = 0;
-            }
-            self.active = active;
+        if !active {
+            self.length_counter = 0;
+            self.linear_counter = 0;
         }
     }
 
@@ -81,7 +81,7 @@ impl APUComponent for APUTriangle {
     }
 
     fn get_output(&self) -> SoundSampleType {
-        if self.active && self.linear_counter > 0 && self.length_counter > 0 && self.timer >= 2 {
+        if self.linear_counter > 0 && self.length_counter > 0 && self.timer >= 2 {
             let output = if self.duty_step & 0x10 != 0 {
                 self.duty_step ^ 0x1F
             } else {
@@ -99,7 +99,6 @@ impl APUTriangle {
 
     pub fn new() -> Self {
         Self {
-            active: false,
             linear_counter: 0,
             linear_counter_control: false,
             timer: 0,

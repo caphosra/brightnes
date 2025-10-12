@@ -9,7 +9,6 @@ use crate::{
 pub struct APUPulse {
     id: usize,
 
-    pub active: bool,
     pub const_volume: u8,
     pub envelope_volume: u8,
     pub const_volume_enabled: bool,
@@ -70,13 +69,14 @@ impl APUComponent for APUPulse {
         };
     }
 
+    fn active(&self) -> bool {
+        self.length_counter > 0
+    }
+
     fn set_active(&mut self, active: bool) {
-        if self.active != active {
-            if !active {
-                // Reset length counter to stop playing the sound.
-                self.length_counter = 0;
-            }
-            self.active = active;
+        if !active {
+            // Reset length counter to stop playing the sound.
+            self.length_counter = 0;
         }
     }
 
@@ -142,7 +142,7 @@ impl APUComponent for APUPulse {
     }
 
     fn get_output(&self) -> SoundSampleType {
-        if self.active && self.length_counter > 0 && self.timer >= 8 && self.timer <= 0x7FF {
+        if self.length_counter > 0 && self.timer >= 8 && self.timer <= 0x7FF {
             let output = if self.output_duty() {
                 if self.const_volume_enabled {
                     self.const_volume
@@ -167,7 +167,6 @@ impl APUPulse {
         Self {
             id,
 
-            active: false,
             envelope_volume: 0,
             const_volume: 0,
             const_volume_enabled: false,

@@ -68,6 +68,7 @@ pub type SoundSampleType = i16;
 
 trait APUComponent {
     fn write_reg(&mut self, addr: u16, data: u8);
+    fn active(&self) -> bool;
     fn set_active(&mut self, active: bool);
     fn quarter_frame(&mut self);
     fn half_frame(&mut self);
@@ -121,10 +122,10 @@ impl APU {
         if addr == 0x4015 {
             // IF-D NT21
 
-            let output = (self.squares[0].active) as u8
-                | (self.squares[1].active as u8) << 1
-                | (self.triangle.active as u8) << 2
-                | (self.noise.active as u8) << 3
+            let output = (self.squares[0].active()) as u8
+                | (self.squares[1].active() as u8) << 1
+                | (self.triangle.active() as u8) << 2
+                | (self.noise.active() as u8) << 3
                 | ((self.dmc.length_counter > 0) as u8) << 4
                 | (self.frame_counter.irq as u8) << 6
                 | 1 << 7;
@@ -160,7 +161,7 @@ impl APU {
             self.squares[0].set_active((data & 1) != 0);
             self.squares[1].set_active(((data >> 1) & 1) != 0);
             self.triangle.set_active(((data >> 2) & 1) != 0);
-            self.noise.active = ((data >> 3) & 1) != 0;
+            self.noise.set_active(((data >> 3) & 1) != 0);
             // self.dmc.active = ((data >> 4) & 1) != 0;
         } else if addr == 0x4017 {
             // Frame Counter
@@ -177,6 +178,7 @@ impl APU {
         self.squares[0].clock(cycles);
         self.squares[1].clock(cycles);
         self.triangle.clock(cycles);
+        self.noise.clock(cycles);
 
         while self.frame_counter.step >= Self::QUARTER_FRAME_CLOCKS {
             // Quarter frame comes.
@@ -221,7 +223,8 @@ impl APU {
 
             let output = (self.squares[0].get_output() as SoundSampleType) * Self::VOLUME
                 + (self.squares[1].get_output() as SoundSampleType) * Self::VOLUME
-                + (self.triangle.get_output() as SoundSampleType) * Self::VOLUME;
+                + (self.triangle.get_output() as SoundSampleType) * Self::VOLUME
+                + (self.noise.get_output() as SoundSampleType) * Self::VOLUME;
             sound.add_data(output, output);
         }
     }
@@ -230,12 +233,14 @@ impl APU {
         self.squares[0].quarter_frame();
         self.squares[1].quarter_frame();
         self.triangle.quarter_frame();
+        self.noise.quarter_frame();
     }
 
     fn half_frame(&mut self) {
         self.squares[0].half_frame();
         self.squares[1].half_frame();
         self.triangle.half_frame();
+        self.noise.half_frame();
     }
 
     pub fn convert_length_counter(length: u8) -> u8 {
