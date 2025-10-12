@@ -12,7 +12,6 @@ QEMU_DEFAULT_FLAGS = -m 2G -bios ./OVMF.fd \
 	-drive format=raw,if=none,id=main_drive,file=./disk.img,index=1 \
 	-device virtio-blk-pci,drive=main_drive \
 	-device virtio-sound-pci \
-	-monitor stdio \
 	$(QEMU_FLAGS)
 
 COMMON_SOURCES = ./common/Cargo.toml \
