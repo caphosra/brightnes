@@ -117,10 +117,10 @@ pub fn game_main() -> ! {
 
     info!(SYS, "Start the game.");
 
+    let mut total_cycles = 0;
+
     loop {
         const FRAME_CYCLES: usize = 29780;
-
-        let mut total_cycles = 0;
 
         while total_cycles < FRAME_CYCLES {
             interrupts::disable();
@@ -133,6 +133,7 @@ pub fn game_main() -> ! {
 
             total_cycles += cycles as usize;
         }
+        total_cycles -= FRAME_CYCLES;
 
         frame_buffer.flush(false);
 
