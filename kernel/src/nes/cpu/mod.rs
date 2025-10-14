@@ -1128,7 +1128,21 @@ impl CPU {
         }
 
         self.history[Self::HISTORY_SIZE - 1] = Some(inst.clone());
+
+        self.send_inst_log(inst);
     }
+
+    #[cfg(feature = "trace")]
+    pub fn send_inst_log(&self, inst: &Instruction) {
+        use crate::serial::Serial;
+
+        Serial::communicate(|handler| {
+            handler.write(format!("{:#06X}: {}\n", inst.pc, inst.to_string()).as_bytes());
+        });
+    }
+
+    #[cfg(not(feature = "trace"))]
+    pub fn send_inst_log(&self, _inst: &Instruction) {}
 
     pub fn history_summary<F>(&self, mut handler: F)
     where

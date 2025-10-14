@@ -27,10 +27,4 @@ impl Serial {
             self.serial_port.send_raw(b);
         }
     }
-
-    pub fn _read(&mut self, data: &mut [u8]) {
-        for b in data {
-            *b = self.serial_port.receive();
-        }
-    }
 }
