@@ -1132,6 +1132,7 @@ impl CPU {
         self.send_inst_log(inst);
     }
 
+
     #[cfg(feature = "trace-cpu")]
     pub fn send_inst_log(&self, inst: &Instruction) {
         use crate::serial::Serial;

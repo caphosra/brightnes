@@ -95,18 +95,12 @@ impl APUChannel for APUNoise {
 
     fn clock(&mut self, cycles: u32) {
         self.timer_counter += cycles as u16;
-        if self.timer_counter >= self.timer {
-            self.timer_counter -= self.timer;
 
-            let feedback = if self.short_mode {
-                // Short mode
-                (self.shift_register & 1) ^ ((self.shift_register >> 6) & 1)
-            } else {
-                // Long mode
-                (self.shift_register & 1) ^ ((self.shift_register >> 1) & 1)
-            };
+        let step = self.timer_counter / (self.timer + 1);
+        self.timer_counter %= self.timer + 1;
 
-            self.shift_register = (self.shift_register >> 1) | (feedback << 14);
+        for _ in 0..step {
+            self.clock_shift_register();
         }
     }
 
@@ -146,5 +140,17 @@ impl APUNoise {
             envelope_counter: 0,
             envelope_reload: false,
         }
+    }
+
+    fn clock_shift_register(&mut self) {
+        let feedback = if self.short_mode {
+            // Short mode
+            (self.shift_register & 1) ^ ((self.shift_register >> 6) & 1)
+        } else {
+            // Long mode
+            (self.shift_register & 1) ^ ((self.shift_register >> 1) & 1)
+        };
+
+        self.shift_register = (self.shift_register >> 1) | (feedback << 14);
     }
 }
