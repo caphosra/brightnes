@@ -6,9 +6,7 @@ use crate::{
     font::FontManager,
     frame_buffer::{FrameBuffer, PixelColor},
     nes::{
-        cpu::{
-            BRK_FLAG, CARRY_FLAG, CPU, DECIMAL_FLAG, INT_FLAG, NEG_FLAG, OVERFLOW_FLAG, ZERO_FLAG,
-        },
+        cpu::{StatusFlags, CPU},
         pad::{Pad, PadButton, PADS},
         ppu::PPU,
     },
@@ -188,16 +186,16 @@ impl InfoProc {
         draw_field!("REG P:  {:#04X}", cpu.reg_p);
         draw_field!(
             "  C: {:1}, Z: {:1}, I: {:1}, D: {:1}",
-            cpu.get_flag(CARRY_FLAG),
-            cpu.get_flag(ZERO_FLAG),
-            cpu.get_flag(INT_FLAG),
-            cpu.get_flag(DECIMAL_FLAG),
+            cpu.reg_p.contains(StatusFlags::CARRY),
+            cpu.reg_p.contains(StatusFlags::ZERO),
+            cpu.reg_p.contains(StatusFlags::INT),
+            cpu.reg_p.contains(StatusFlags::DECIMAL),
         );
         draw_field!(
             "  B: {:1}, V: {:1}, N: {:1}",
-            cpu.get_flag(BRK_FLAG),
-            cpu.get_flag(OVERFLOW_FLAG),
-            cpu.get_flag(NEG_FLAG),
+            cpu.reg_p.contains(StatusFlags::BRK),
+            cpu.reg_p.contains(StatusFlags::OVERFLOW),
+            cpu.reg_p.contains(StatusFlags::NEG),
         );
         draw_field!("CYCLES: {:#018X}", cpu.cycles);
     }
