@@ -56,13 +56,13 @@ pub struct Logger {
 
 struct LoggerColor;
 
-#[cfg(feature = "logging")]
+#[cfg(feature = "verbose")]
 #[macro_export]
 macro_rules! log {
     ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Log, alloc::format!($($arg)*)));
 }
 
-#[cfg(not(feature = "logging"))]
+#[cfg(not(feature = "verbose"))]
 #[macro_export]
 macro_rules! log {
     ($loc:tt, $($arg:tt)*) => {};
@@ -127,7 +127,7 @@ impl Logger {
         }
     }
 
-    #[cfg(feature = "serial")]
+    #[cfg(feature = "logging")]
     fn send_serial(&self, location: LogLocation, level: LogLevel, chunk: &[u8]) {
         use crate::serial::Serial;
 
@@ -145,7 +145,7 @@ impl Logger {
         });
     }
 
-    #[cfg(not(feature = "serial"))]
+    #[cfg(not(feature = "logging"))]
     fn send_serial(&self, _location: LogLocation, _level: LogLevel, _chunk: &[u8]) {}
 
     fn add_buffer(&mut self, location: LogLocation, level: LogLevel, message: String) {
