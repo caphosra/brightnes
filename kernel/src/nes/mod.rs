@@ -1,6 +1,7 @@
 use alloc::string::ToString;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Mirroring {
     Horizontal,
