@@ -156,7 +156,7 @@ impl CPU {
             } else {
                 self.interrupt.remove(InterruptType::BRK);
 
-                self.reg_pc += 1;
+                self.reg_pc += 2;
                 push_stack!((self.reg_pc >> 8) as u8);
                 push_stack!((self.reg_pc & 0x00FF) as u8);
                 push_stack!((self.reg_p | StatusFlags::BRK | StatusFlags::ONE).bits());
@@ -1132,13 +1132,24 @@ impl CPU {
         self.send_inst_log(inst);
     }
 
-
     #[cfg(feature = "trace-cpu")]
     pub fn send_inst_log(&self, inst: &Instruction) {
         use crate::serial::Serial;
 
         Serial::communicate(|handler| {
-            handler.write(format!("{:#06X}: {}\n", inst.pc, inst.to_string()).as_bytes());
+            handler.write(
+                format!(
+                    "{:#06X}: {:30} A={:02X} X={:02X} Y={:02X} P={:02X} SP={:02X}\n",
+                    inst.pc,
+                    inst.to_string(),
+                    self.reg_a,
+                    self.reg_x,
+                    self.reg_y,
+                    self.reg_p,
+                    self.reg_sp,
+                )
+                .as_bytes(),
+            );
         });
     }
 
