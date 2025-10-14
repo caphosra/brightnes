@@ -200,6 +200,6 @@ mod logger;
 mod mem;
 mod nes;
 mod proc;
-#[cfg(any(feature = "serial", feature = "trace"))]
+#[cfg(feature = "serial")]
 mod serial;
 mod system;

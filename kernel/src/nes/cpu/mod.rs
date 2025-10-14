@@ -1132,7 +1132,8 @@ impl CPU {
         self.send_inst_log(inst);
     }
 
-    #[cfg(feature = "trace")]
+
+    #[cfg(feature = "trace-cpu")]
     pub fn send_inst_log(&self, inst: &Instruction) {
         use crate::serial::Serial;
 
@@ -1141,7 +1142,7 @@ impl CPU {
         });
     }
 
-    #[cfg(not(feature = "trace"))]
+    #[cfg(not(feature = "trace-cpu"))]
     pub fn send_inst_log(&self, _inst: &Instruction) {}
 
     pub fn history_summary<F>(&self, mut handler: F)
