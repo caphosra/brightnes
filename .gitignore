@@ -3,6 +3,7 @@
 #
 # Excluded
 #
+.venv/
 dest/
 OVMF.fd
 .gdb_history
