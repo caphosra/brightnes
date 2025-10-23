@@ -1139,7 +1139,7 @@ impl CPU {
         Serial::communicate(|handler| {
             handler.write(
                 format!(
-                    "{:#06X}: {:30} A={:02X} X={:02X} Y={:02X} P={:02X} SP={:02X}\n",
+                    "${:04X}: {:30} A={:02X} X={:02X} Y={:02X} P={:02X} SP={:02X}\n",
                     inst.pc,
                     inst.to_string(),
                     self.reg_a,
@@ -1164,9 +1164,9 @@ impl CPU {
             match self.history[i] {
                 Some(inst) => {
                     if i == Self::HISTORY_SIZE - 1 {
-                        handler(&format!("--> {:#06X}: {}", inst.pc, inst.to_string()));
+                        handler(&format!("--> ${:04X}: {}", inst.pc, inst.to_string()));
                     } else {
-                        handler(&format!("    {:#06X}: {}", inst.pc, inst.to_string()));
+                        handler(&format!("    ${:04X}: {}", inst.pc, inst.to_string()));
                     }
                 }
                 None => {
