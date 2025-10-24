@@ -143,6 +143,7 @@ impl CPU {
             let lo = read_cpu_bus!(0xFFFA);
             let hi = read_cpu_bus!(0xFFFB);
             self.reg_pc = u16::from_le_bytes([lo, hi]);
+
             self.reg_p.remove(StatusFlags::BRK);
             self.reg_p.insert(StatusFlags::INT);
 
@@ -165,6 +166,7 @@ impl CPU {
                 let hi = read_cpu_bus!(0xFFFF);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
 
+                self.reg_p.remove(StatusFlags::BRK);
                 self.reg_p.insert(StatusFlags::INT);
 
                 true
@@ -411,7 +413,6 @@ impl CPU {
                 }
             }
             InstrType::BRK => {
-                self.reg_p.insert(StatusFlags::BRK);
                 self.interrupt(InterruptType::BRK);
 
                 inst.cycles - 1
@@ -691,7 +692,6 @@ impl CPU {
             }
             InstrType::PLP => {
                 self.reg_p = (StatusFlags::from_bits_retain(pop_stack!()) & !StatusFlags::BRK)
-                    | (self.reg_p & StatusFlags::BRK)
                     | StatusFlags::ONE;
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
@@ -746,7 +746,6 @@ impl CPU {
             }
             InstrType::RTI => {
                 self.reg_p = (StatusFlags::from_bits_retain(pop_stack!()) & !StatusFlags::BRK)
-                    | (self.reg_p & StatusFlags::BRK)
                     | StatusFlags::ONE;
 
                 let lo = pop_stack!();
