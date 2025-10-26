@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
 pub enum APUFrameCounterMode {
     FourStep = 0,
     FiveStep = 1,
@@ -44,11 +44,23 @@ impl APUFrameCounter {
     pub fn write_reg(&mut self, data: u8) {
         // SD-- ----
 
-        self.mode = if ((data >> 7) & 1) != 0 {
+        let mode = if ((data >> 7) & 1) != 0 {
             APUFrameCounterMode::FiveStep
         } else {
             APUFrameCounterMode::FourStep
         };
+
+        if mode != self.mode {
+            match mode {
+                APUFrameCounterMode::FourStep => {
+                    info!(APU, "APU Frame Counter mode set to Four-Step.");
+                }
+                APUFrameCounterMode::FiveStep => {
+                    info!(APU, "APU Frame Counter mode set to Five-Step.");
+                }
+            }
+        }
+        self.mode = mode;
 
         let new_irq_disabled = ((data >> 6) & 1) != 0;
         if new_irq_disabled != self.irq_disabled {
