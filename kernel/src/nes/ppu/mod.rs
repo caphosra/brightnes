@@ -3,6 +3,7 @@ use heapless::Vec;
 use serde::{Deserialize, Serialize};
 use spin::{Lazy, Once, RwLock};
 
+use crate::info;
 use crate::mem::MemoryAllocator;
 use crate::nes::ppu::color::NESColorConverter;
 use crate::{
@@ -186,7 +187,18 @@ impl PPU {
         let addr = 0x2000 + ((addr - 0x2000) & 0x7);
         if addr == PPU_CTRL_ADDR {
             // PPU_CTRL
+
+            let prev_nmi_enabled = self.reg_ctrl.contains(PPUCtrl::NMI_ENABLE);
             self.reg_ctrl = PPUCtrl::from_bits_retain(val);
+
+            if !prev_nmi_enabled && self.reg_ctrl.contains(PPUCtrl::NMI_ENABLE) {
+                if self.reg_status.contains(PPUStatus::VBLANK) {
+                    // Enabling NMI while VBLANK flag is set triggers it immediately.
+                    cpu.interrupt(InterruptType::NMI);
+
+                    info!(PPU, "NMI triggered by PPU_CTRL write");
+                }
+            }
 
             self.reg_t = (self.reg_t & !Self::NAME_TABLE_MASK) | (((val as u16) & 0x03) << 10);
         } else if addr == PPU_MASK_ADDR {
