@@ -688,11 +688,11 @@ impl Instruction {
                 format!("{} (${:02X}),Y", self.instr_type.to_str(), addr)
             }
             AddrMode::Relative(offset) => {
-                if *offset >= 0 {
-                    format!("{} +${:02X}", self.instr_type.to_str(), offset)
-                } else {
-                    format!("{} -${:02X}", self.instr_type.to_str(), -offset)
-                }
+                format!(
+                    "{} ${:04X}",
+                    self.instr_type.to_str(),
+                    self.pc.wrapping_add(*offset as u16).wrapping_add(2)
+                )
             }
         }
     }
