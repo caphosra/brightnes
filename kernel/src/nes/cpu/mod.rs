@@ -168,6 +168,7 @@ impl CPU {
                 let hi = read_cpu_bus!(0xFFFF);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
 
+                self.reg_p.remove(StatusFlags::BRK);
                 self.reg_p.insert(StatusFlags::INT);
 
                 true
@@ -696,7 +697,8 @@ impl CPU {
             }
             InstrType::PLP => {
                 self.reg_p = StatusFlags::from_bits_retain(pop_stack!());
-                self.reg_p.remove(StatusFlags::BRK);
+                self.reg_p.insert(StatusFlags::ONE);
+                self.reg_p.insert(StatusFlags::BRK);
 
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
@@ -751,6 +753,7 @@ impl CPU {
             }
             InstrType::RTI => {
                 self.reg_p = StatusFlags::from_bits_retain(pop_stack!());
+                self.reg_p.insert(StatusFlags::ONE);
                 self.reg_p.remove(StatusFlags::BRK);
 
                 let lo = pop_stack!();
