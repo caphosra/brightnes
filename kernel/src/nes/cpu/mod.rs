@@ -136,15 +136,16 @@ impl CPU {
 
             self.interrupt.remove(InterruptType::NMI);
 
+            self.reg_p.remove(StatusFlags::BRK);
+
             push_stack!((self.reg_pc >> 8) as u8);
             push_stack!((self.reg_pc & 0x00FF) as u8);
-            push_stack!(((self.reg_p & !StatusFlags::BRK) | StatusFlags::ONE).bits());
+            push_stack!(self.reg_p.bits());
 
             let lo = read_cpu_bus!(0xFFFA);
             let hi = read_cpu_bus!(0xFFFB);
             self.reg_pc = u16::from_le_bytes([lo, hi]);
 
-            self.reg_p.remove(StatusFlags::BRK);
             self.reg_p.insert(StatusFlags::INT);
 
             true
@@ -157,16 +158,16 @@ impl CPU {
             } else {
                 self.interrupt.remove(InterruptType::BRK);
 
-                self.reg_pc += 2;
+                self.reg_p.insert(StatusFlags::BRK);
+
                 push_stack!((self.reg_pc >> 8) as u8);
                 push_stack!((self.reg_pc & 0x00FF) as u8);
-                push_stack!((self.reg_p | StatusFlags::BRK | StatusFlags::ONE).bits());
+                push_stack!(self.reg_p.bits());
 
                 let lo = read_cpu_bus!(0xFFFE);
                 let hi = read_cpu_bus!(0xFFFF);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
 
-                self.reg_p.remove(StatusFlags::BRK);
                 self.reg_p.insert(StatusFlags::INT);
 
                 true
@@ -180,15 +181,16 @@ impl CPU {
             } else {
                 self.interrupt.remove(InterruptType::IRQ);
 
+                self.reg_p.remove(StatusFlags::BRK);
+
                 push_stack!((self.reg_pc >> 8) as u8);
                 push_stack!((self.reg_pc & 0x00FF) as u8);
-                push_stack!(((self.reg_p & !StatusFlags::BRK) | StatusFlags::ONE).bits());
+                push_stack!(self.reg_p.bits());
 
                 let lo = read_cpu_bus!(0xFFFE);
                 let hi = read_cpu_bus!(0xFFFF);
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
 
-                self.reg_p.remove(StatusFlags::BRK);
                 self.reg_p.insert(StatusFlags::INT);
 
                 true
@@ -415,6 +417,7 @@ impl CPU {
             InstrType::BRK => {
                 self.interrupt(InterruptType::BRK);
 
+                self.reg_pc += 2;
                 inst.cycles - 1
             }
             InstrType::BVC => {
@@ -677,7 +680,8 @@ impl CPU {
                 inst.cycles
             }
             InstrType::PHP => {
-                push_stack!((self.reg_p | StatusFlags::BRK | StatusFlags::ONE).bits());
+                self.reg_p.insert(StatusFlags::BRK);
+                push_stack!(self.reg_p.bits());
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
@@ -691,8 +695,9 @@ impl CPU {
                 inst.cycles
             }
             InstrType::PLP => {
-                self.reg_p = (StatusFlags::from_bits_retain(pop_stack!()) & !StatusFlags::BRK)
-                    | StatusFlags::ONE;
+                self.reg_p = StatusFlags::from_bits_retain(pop_stack!());
+                self.reg_p.remove(StatusFlags::BRK);
+
                 self.reg_pc += inst.addr_mode.size();
                 inst.cycles
             }
@@ -745,8 +750,8 @@ impl CPU {
                 inst.cycles
             }
             InstrType::RTI => {
-                self.reg_p = (StatusFlags::from_bits_retain(pop_stack!()) & !StatusFlags::BRK)
-                    | StatusFlags::ONE;
+                self.reg_p = StatusFlags::from_bits_retain(pop_stack!());
+                self.reg_p.remove(StatusFlags::BRK);
 
                 let lo = pop_stack!();
                 let hi = pop_stack!();
