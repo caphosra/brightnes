@@ -16,6 +16,7 @@ use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
 use crate::int::SLEEP;
 use crate::logger::LOG_FB;
+use crate::mem::MemoryAllocator;
 use crate::nes::apu::APU;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::InterruptType;
@@ -31,6 +32,9 @@ use crate::system::SYSTEM_FB;
 pub extern "C" fn kernel_main() -> ! {
     // Set the stack pointer.
     ProcessSwitcher::reset_main_stack();
+
+    // Initialize the memory allocator.
+    MemoryAllocator::init();
 
     if interrupts::are_enabled() {
         interrupts::disable();
