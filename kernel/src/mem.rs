@@ -3,6 +3,7 @@ use core::{
     cell::UnsafeCell,
     cmp::max,
     ptr::{null_mut, write_bytes},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use spin::{Lazy, Mutex};
@@ -114,14 +115,14 @@ impl ReleasedMem {
 pub struct MemoryAllocator {
     arena: *mut u8,
     used: Lazy<Mutex<usize>>,
-    mem_error_notified: Lazy<Mutex<bool>>,
+    mem_error_notified: AtomicBool,
 }
 
 #[global_allocator]
 static MEM_ALLOC: MemoryAllocator = MemoryAllocator {
     arena: HEAP_START_ADDR as *mut u8,
     used: Lazy::new(|| Mutex::new(0)),
-    mem_error_notified: Lazy::new(|| Mutex::new(false)),
+    mem_error_notified: AtomicBool::new(false),
 };
 
 unsafe impl Sync for MemoryAllocator {}
@@ -198,18 +199,18 @@ impl MemoryAllocator {
     }
 
     pub fn check_mem_error() -> bool {
-        let mut mem_error_notified = MEM_ALLOC.mem_error_notified.lock();
-        if *mem_error_notified {
-            false
-        } else {
-            let used = MEM_ALLOC.used.lock();
-            if *used >= HEAP_SIZE - HEAP_SAFE_MARGIN {
-                *mem_error_notified = true;
-                true
-            } else {
-                false
-            }
-        }
+        MEM_ALLOC
+            .mem_error_notified
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |notified| {
+                if !notified {
+                    let used = MEM_ALLOC.used.lock();
+                    if *used >= HEAP_SIZE - HEAP_SAFE_MARGIN {
+                        return Some(true);
+                    }
+                }
+                None
+            })
+            .is_ok()
     }
 
     pub fn alloc<T>() -> *mut T {
