@@ -7,18 +7,19 @@ use x86_64::{
     VirtAddr,
 };
 
+use crate::proc::monitor::Monitor;
 use crate::{
     game_main, info_main, log_main, on_game_switched, on_info_switched, on_log_switched,
-    on_system_switched, system::SYSTEM,
+    on_system_switched, proc::system::SYSTEM,
 };
 
-const PROC_SIZE: usize = 4;
+const PROC_SIZE: usize = 5;
 
-const MAIN_STACK_BOTTOM: usize = 0x40_000_000;
-
-const GAME_STACK_BOTTOM: *const u8 = 0x50_000_000 as *const u8;
-const INFO_STACK_BOTTOM: *const u8 = 0x680_0000 as *const u8;
-const LOG_STACK_BOTTOM: *const u8 = 0x700_0000 as *const u8;
+const MAIN_STACK_BOTTOM: usize = 0x4000_0000;
+const GAME_STACK_BOTTOM: *const u8 = 0x5000_0000 as *const u8;
+const INFO_STACK_BOTTOM: *const u8 = 0x0680_0000 as *const u8;
+const MONITOR_STACK_BOTTOM: *const u8 = 0x0700_0000 as *const u8;
+const LOG_STACK_BOTTOM: *const u8 = 0x0780_0000 as *const u8;
 
 #[repr(C, align(16))]
 pub struct ProcessInfo {
@@ -78,6 +79,11 @@ impl ProcessSwitcher {
                     VirtAddr::from_ptr(INFO_STACK_BOTTOM),
                     info_main,
                     on_info_switched,
+                ),
+                ProcessInfo::new(
+                    VirtAddr::from_ptr(MONITOR_STACK_BOTTOM),
+                    Monitor::main,
+                    Monitor::switched,
                 ),
                 ProcessInfo::new(
                     VirtAddr::from_ptr(LOG_STACK_BOTTOM),
@@ -201,7 +207,7 @@ impl ProcessSwitcher {
         if initialized {
             true
         } else {
-            mode == ProcessMode::System || mode == ProcessMode::Log
+            mode == ProcessMode::System || mode == ProcessMode::Monitor || mode == ProcessMode::Log
         }
     }
 
@@ -216,6 +222,7 @@ pub enum ProcessMode {
     System,
     Game,
     Info,
+    Monitor,
     Log,
 }
 
@@ -224,8 +231,14 @@ impl ProcessMode {
         match self {
             ProcessMode::System => ProcessMode::Game,
             ProcessMode::Game => ProcessMode::Info,
-            ProcessMode::Info => ProcessMode::Log,
+            ProcessMode::Info => ProcessMode::Monitor,
+            ProcessMode::Monitor => ProcessMode::Log,
             ProcessMode::Log => ProcessMode::System,
         }
     }
 }
+
+pub mod info;
+pub mod logger;
+pub mod monitor;
+pub mod system;
