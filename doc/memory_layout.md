@@ -6,7 +6,8 @@
 |0x280_0000|Beginning of the framebuffer info|
 |0x300_0000|Beginning of the NES file|
 |0x680_0000|End of the info stack|
-|0x700_0000|End of the log stack|
+|0x700_0000|End of the monitor stack|
+|0x780_0000|End of the log stack|
 |0x800_0000|Beginning of the kernel|
 |0x1000_0000|Beginning of the heap|
 |0x3000_0000|End of the heap|
