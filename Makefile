@@ -51,6 +51,7 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/proc/info.rs \
 	./kernel/src/proc/logger.rs \
 	./kernel/src/proc/mod.rs \
+	./kernel/src/proc/monitor.rs \
 	./kernel/src/proc/system.rs \
 	./kernel/src/font.rs \
 	./kernel/src/frame_buffer.rs \

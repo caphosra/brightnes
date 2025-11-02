@@ -51,6 +51,10 @@ impl BKeyboard {
                 }
                 (KeyState::Down, KeyCode::F4, _) => {
                     let mut switcher = PROCESS_SWITCHER.write();
+                    switcher.switch_proc(ProcessMode::Monitor, stack_frame, false);
+                }
+                (KeyState::Down, KeyCode::F5, _) => {
+                    let mut switcher = PROCESS_SWITCHER.write();
                     switcher.switch_proc(ProcessMode::Log, stack_frame, false);
                 }
                 (state, KeyCode::L, _) => {

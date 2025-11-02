@@ -105,12 +105,95 @@ impl ReleasedMem {
         self.chunk_lists[index].get_mem()
     }
 
-    pub fn insert_mem(&self, ptr: *mut u8, size: usize) {
+    pub fn insert_mem(&self, ptr: *mut u8, size: usize) -> Result<(), ()> {
         if let Some(index) = self.index_by_size(size) {
             self.chunk_lists[index].insert_mem(ptr);
+            Ok(())
+        } else {
+            Err(())
         }
     }
 }
+
+pub struct MemStatistics {
+    in_use: UnsafeCell<usize>,
+    padding: UnsafeCell<usize>,
+    cached: UnsafeCell<usize>,
+    dead: UnsafeCell<usize>,
+    reused_total: UnsafeCell<usize>,
+}
+
+unsafe impl Send for MemStatistics {}
+unsafe impl Sync for MemStatistics {}
+
+impl MemStatistics {
+    pub fn init(&self) {
+        unsafe {
+            *self.in_use.get() = 0;
+            *self.padding.get() = 0;
+            *self.cached.get() = 0;
+            *self.dead.get() = 0;
+            *self.reused_total.get() = 0;
+        }
+    }
+
+    pub fn notify_allocated(size: usize, padding: usize) {
+        unsafe {
+            *MEM_STATS.in_use.get() += size;
+            *MEM_STATS.padding.get() += padding;
+        }
+    }
+
+    pub fn notify_reused(size: usize) {
+        unsafe {
+            *MEM_STATS.in_use.get() += size;
+            *MEM_STATS.cached.get() -= size;
+            *MEM_STATS.reused_total.get() += size;
+        }
+    }
+
+    pub fn notify_cached(size: usize) {
+        unsafe {
+            *MEM_STATS.in_use.get() -= size;
+            *MEM_STATS.cached.get() += size;
+        }
+    }
+
+    pub fn notify_dead(size: usize) {
+        unsafe {
+            *MEM_STATS.in_use.get() -= size;
+            *MEM_STATS.dead.get() += size;
+        }
+    }
+
+    pub fn in_use() -> usize {
+        unsafe { *MEM_STATS.in_use.get() }
+    }
+
+    pub fn padding() -> usize {
+        unsafe { *MEM_STATS.padding.get() }
+    }
+
+    pub fn cached() -> usize {
+        unsafe { *MEM_STATS.cached.get() }
+    }
+
+    pub fn dead() -> usize {
+        unsafe { *MEM_STATS.dead.get() }
+    }
+
+    pub fn reused_total() -> usize {
+        unsafe { *MEM_STATS.reused_total.get() }
+    }
+}
+
+static MEM_STATS: MemStatistics = MemStatistics {
+    in_use: UnsafeCell::new(0),
+    padding: UnsafeCell::new(0),
+    cached: UnsafeCell::new(0),
+    dead: UnsafeCell::new(0),
+    reused_total: UnsafeCell::new(0),
+};
 
 pub struct MemoryAllocator {
     arena: *mut u8,
@@ -139,6 +222,8 @@ unsafe impl GlobalAlloc for MemoryAllocator {
         // Try to get memory from chunk lists.
         if let Some(mem) = RELEASED_MEM.get_mem(size) {
             if mem as usize % layout.align() == 0 {
+                MemStatistics::notify_reused(size);
+
                 // The memory is following the alignment constraint.
                 if int_enabled {
                     interrupts::enable();
@@ -146,7 +231,7 @@ unsafe impl GlobalAlloc for MemoryAllocator {
                 return mem;
             } else {
                 // Re-insert the memory to chunk lists.
-                RELEASED_MEM.insert_mem(mem, size);
+                let _ = RELEASED_MEM.insert_mem(mem, size);
             }
         }
 
@@ -161,7 +246,10 @@ unsafe impl GlobalAlloc for MemoryAllocator {
             if end_offset >= HEAP_SIZE {
                 return null_mut();
             }
+            let padding = start_offset - *used;
             *used = end_offset;
+
+            MemStatistics::notify_allocated(size, padding);
 
             unsafe { self.arena.add(start_offset) }
         };
@@ -179,7 +267,15 @@ unsafe impl GlobalAlloc for MemoryAllocator {
 
         // Assume that the size is a power of two.
         let size = max(layout.size().next_power_of_two(), MemoryAllocator::MIN_SIZE);
-        RELEASED_MEM.insert_mem(ptr, size);
+        match RELEASED_MEM.insert_mem(ptr, size) {
+            Ok(()) => {
+                MemStatistics::notify_cached(size);
+            }
+            Err(()) => {
+                // Cannot be inserted to chunk lists. Mark as dead.
+                MemStatistics::notify_dead(size);
+            }
+        }
 
         if int_enabled {
             interrupts::enable();
@@ -195,6 +291,7 @@ impl MemoryAllocator {
     pub fn init() {
         interrupts::without_interrupts(|| {
             RELEASED_MEM.init();
+            MEM_STATS.init();
         });
     }
 
