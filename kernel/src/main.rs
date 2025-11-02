@@ -11,26 +11,30 @@ use x86_64::instructions::{hlt, interrupts};
 use crate::drivers::SoundDeviceDriver;
 use crate::font::FontManager;
 use crate::fs::FILE_SYSTEM;
-use crate::info::InfoProc;
 use crate::int::InterruptController;
 use crate::int::PANIC_INT_IDX;
 use crate::int::SLEEP;
-use crate::logger::LOG_FB;
+use crate::mem::MemoryAllocator;
 use crate::nes::apu::APU;
 use crate::nes::cartridge::Cartridge;
 use crate::nes::cpu::InterruptType;
 use crate::nes::cpu::CPU;
 use crate::nes::ppu::GAME_FB;
 use crate::nes::ppu::PPU;
+use crate::proc::info::InfoProc;
+use crate::proc::logger::LOG_FB;
+use crate::proc::system::SYSTEM;
+use crate::proc::system::SYSTEM_FB;
 use crate::proc::ProcessSwitcher;
-use crate::system::SYSTEM;
-use crate::system::SYSTEM_FB;
 
 #[no_mangle]
 #[inline(never)]
 pub extern "C" fn kernel_main() -> ! {
     // Set the stack pointer.
     ProcessSwitcher::reset_main_stack();
+
+    // Initialize the memory allocator.
+    MemoryAllocator::init();
 
     if interrupts::are_enabled() {
         interrupts::disable();
@@ -194,12 +198,9 @@ mod drivers;
 mod font;
 mod frame_buffer;
 mod fs;
-mod info;
 mod int;
-mod logger;
 mod mem;
 mod nes;
 mod proc;
 #[cfg(feature = "serial")]
 mod serial;
-mod system;

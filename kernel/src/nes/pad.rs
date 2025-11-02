@@ -2,7 +2,7 @@ use spin::{Lazy, RwLock};
 use x86_64::instructions::interrupts;
 
 use crate::{
-    info::InfoProc,
+    proc::info::InfoProc,
     proc::{ProcessMode, PROCESS_SWITCHER},
 };
 

@@ -59,7 +59,7 @@ struct LoggerColor;
 #[cfg(feature = "verbose")]
 #[macro_export]
 macro_rules! log {
-    ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Log, alloc::format!($($arg)*)));
+    ($loc:tt, $($arg:tt)*) => ($crate::proc::logger::Logger::log($crate::proc::logger::LogLocation::$loc, $crate::proc::logger::LogLevel::Log, alloc::format!($($arg)*)));
 }
 
 #[cfg(not(feature = "verbose"))]
@@ -70,23 +70,23 @@ macro_rules! log {
 
 #[macro_export]
 macro_rules! info {
-    ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Info, alloc::format!($($arg)*)));
+    ($loc:tt, $($arg:tt)*) => ($crate::proc::logger::Logger::log($crate::proc::logger::LogLocation::$loc, $crate::proc::logger::LogLevel::Info, alloc::format!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! warn {
-    ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Warn, alloc::format!($($arg)*)));
+    ($loc:tt, $($arg:tt)*) => ($crate::proc::logger::Logger::log($crate::proc::logger::LogLocation::$loc, $crate::proc::logger::LogLevel::Warn, alloc::format!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! error {
-    ($loc:tt, $($arg:tt)*) => ($crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Error, alloc::format!($($arg)*)));
+    ($loc:tt, $($arg:tt)*) => ($crate::proc::logger::Logger::log($crate::proc::logger::LogLocation::$loc, $crate::proc::logger::LogLevel::Error, alloc::format!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! critical {
     ($loc:tt, $($arg:tt)*) => {
-        $crate::logger::Logger::log($crate::logger::LogLocation::$loc, $crate::logger::LogLevel::Error, alloc::format!($($arg)*));
+        $crate::proc::logger::Logger::log($crate::proc::logger::LogLocation::$loc, $crate::proc::logger::LogLevel::Error, alloc::format!($($arg)*));
         panic!("Critical error occurred.");
     }
 }

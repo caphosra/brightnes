@@ -48,16 +48,17 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/nes/ppu/vram.rs \
 	./kernel/src/nes/mod.rs \
 	./kernel/src/nes/pad.rs \
+	./kernel/src/proc/info.rs \
+	./kernel/src/proc/logger.rs \
+	./kernel/src/proc/mod.rs \
+	./kernel/src/proc/monitor.rs \
+	./kernel/src/proc/system.rs \
 	./kernel/src/font.rs \
 	./kernel/src/frame_buffer.rs \
 	./kernel/src/fs.rs \
-	./kernel/src/info.rs \
-	./kernel/src/logger.rs \
 	./kernel/src/main.rs \
 	./kernel/src/mem.rs \
-	./kernel/src/proc.rs \
-	./kernel/src/serial.rs \
-	./kernel/src/system.rs
+	./kernel/src/serial.rs
 BOOTLOADER_SOURCES = ./bootloader/Cargo.toml \
 	./bootloader/src/elf.rs \
 	./bootloader/src/frame_buffer.rs \
