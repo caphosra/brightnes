@@ -9,16 +9,15 @@ use x86_64::{
 
 use crate::{
     game_main, info_main, log_main, on_game_switched, on_info_switched, on_log_switched,
-    on_system_switched, system::SYSTEM,
+    on_system_switched, proc::system::SYSTEM,
 };
 
 const PROC_SIZE: usize = 4;
 
-const MAIN_STACK_BOTTOM: usize = 0x40_000_000;
-
-const GAME_STACK_BOTTOM: *const u8 = 0x50_000_000 as *const u8;
-const INFO_STACK_BOTTOM: *const u8 = 0x680_0000 as *const u8;
-const LOG_STACK_BOTTOM: *const u8 = 0x700_0000 as *const u8;
+const MAIN_STACK_BOTTOM: usize = 0x4000_0000;
+const GAME_STACK_BOTTOM: *const u8 = 0x5000_0000 as *const u8;
+const INFO_STACK_BOTTOM: *const u8 = 0x0680_0000 as *const u8;
+const LOG_STACK_BOTTOM: *const u8 = 0x0700_0000 as *const u8;
 
 #[repr(C, align(16))]
 pub struct ProcessInfo {
@@ -229,3 +228,7 @@ impl ProcessMode {
         }
     }
 }
+
+pub mod info;
+pub mod logger;
+pub mod system;

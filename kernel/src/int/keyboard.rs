@@ -6,7 +6,6 @@ use crate::{
     error,
     fs::FILE_SYSTEM,
     info,
-    logger::Logger,
     nes::{
         apu::APU,
         cartridge::Cartridge,
@@ -14,8 +13,9 @@ use crate::{
         pad::{PadButton, PADS},
         ppu::PPU,
     },
+    proc::logger::Logger,
+    proc::system::SYSTEM,
     proc::{ProcessMode, PROCESS_SWITCHER},
-    system::SYSTEM,
 };
 
 pub struct BKeyboard;

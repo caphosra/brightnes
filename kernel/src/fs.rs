@@ -8,7 +8,7 @@ use fatfs::{Error, FsOptions, Read, Write};
 use postcard::{from_bytes_crc32, to_allocvec_crc32};
 use spin::{Lazy, RwLock};
 
-use crate::system::System;
+use crate::proc::system::System;
 use crate::{
     critical,
     drivers::BlockDeviceDriver,
