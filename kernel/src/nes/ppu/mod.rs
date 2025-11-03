@@ -154,14 +154,20 @@ impl PPU {
         self.sprites_layer = Vec::from_array([None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]);
     }
 
-    pub fn read_reg(&mut self, addr: u16, cartridge: &mut Cartridge) -> u8 {
+    pub fn read_reg(&mut self, addr: u16, cpu: &mut CPU, cartridge: &mut Cartridge) -> u8 {
         // Mirroring every 8 bytes.
         let addr = 0x2000 + ((addr - 0x2000) & 0x7);
         if addr == PPU_STATUS_ADDR {
             // PPU_STATUS
             self.reg_w = false;
 
-            self.reg_status.bits()
+            let prev_status = self.reg_status.bits();
+
+            // Remove VBLANK flag and cancel NMI if it was set.
+            self.reg_status.remove(PPUStatus::VBLANK);
+            cpu.cancel_interrupt(InterruptType::NMI);
+
+            prev_status
         } else if addr == PPU_DATA_ADDR {
             // PPU_DATA
             let data = self.reg_data_buffer;

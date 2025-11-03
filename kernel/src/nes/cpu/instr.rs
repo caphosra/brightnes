@@ -244,7 +244,7 @@ pub struct Instruction {
 impl Instruction {
     pub fn fetch(
         pc: u16,
-        cpu: &CPU,
+        cpu: &mut CPU,
         ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
@@ -718,7 +718,7 @@ impl AddrMode {
 
     pub fn resolve(
         &self,
-        cpu: &CPU,
+        cpu: &mut CPU,
         ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
@@ -799,7 +799,7 @@ impl AddrMode {
 
     pub fn resolve_addr(
         &self,
-        cpu: &CPU,
+        cpu: &mut CPU,
         ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,

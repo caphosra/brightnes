@@ -101,6 +101,10 @@ impl CPU {
         self.interrupt.insert(int_type);
     }
 
+    pub fn cancel_interrupt(&mut self, int_type: InterruptType) {
+        self.interrupt.remove(int_type);
+    }
+
     fn exec_pending_interrupt(
         &mut self,
         ppu: &mut PPU,

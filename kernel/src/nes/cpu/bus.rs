@@ -11,7 +11,7 @@ pub struct CPUBus;
 impl CPUBus {
     pub fn read(
         addr: u16,
-        cpu: &CPU,
+        cpu: &mut CPU,
         ppu: &mut PPU,
         apu: &mut APU,
         cartridge: &mut Cartridge,
@@ -21,10 +21,10 @@ impl CPUBus {
             cpu.ram.read(addr & 0x7FF)
         } else if addr < 0x4000 {
             // PPU
-            ppu.read_reg(addr, cartridge)
+            ppu.read_reg(addr, cpu, cartridge)
         } else if addr == OAM_DMA_ADDR {
             // OAM DMA
-            ppu.read_reg(addr, cartridge)
+            ppu.read_reg(addr, cpu, cartridge)
         } else if addr < 0x4016 {
             // APU
             apu.read_reg(addr)
