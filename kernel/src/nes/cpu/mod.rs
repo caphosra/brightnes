@@ -202,11 +202,16 @@ impl CPU {
         }
     }
 
-    pub fn clock(&mut self, ppu: &mut PPU, apu: &mut APU, cartridge: &mut Cartridge) -> u32 {
+    pub fn resolve_stall(
+        &mut self,
+        ppu: &mut PPU,
+        apu: &mut APU,
+        cartridge: &mut Cartridge,
+    ) -> Option<u32> {
         if self.stall_cycles > Self::MAX_STALL_CYCLES {
             // The CPU is stalling for external reasons.
             self.stall_cycles -= Self::MAX_STALL_CYCLES;
-            Self::MAX_STALL_CYCLES
+            Some(Self::MAX_STALL_CYCLES)
         } else if self.stall_cycles > 0 {
             // DMA transfer ends.
             let cycles = self.stall_cycles;
@@ -214,24 +219,43 @@ impl CPU {
 
             self.do_dma_transfer(ppu, apu, cartridge);
 
-            cycles
+            Some(cycles)
         } else {
-            // Check whether APU frame IRQ flag is set.
-            if apu.frame_irq() {
-                self.interrupt.insert(InterruptType::IRQ);
-            }
-
-            // Check whether there is any pending interrupt.
-            if self.exec_pending_interrupt(ppu, apu, cartridge) {
-                return Self::INTERRUPT_CYCLES;
-            }
-
-            // The CPU is not stalling so execute the next instruction.
-            let cycles = self.execute(ppu, apu, cartridge);
-            self.inst += 1;
-            self.cycles += cycles as u64;
-            cycles
+            None
         }
+    }
+
+    pub fn resolve_interrupt(
+        &mut self,
+        ppu: &mut PPU,
+        apu: &mut APU,
+        cartridge: &mut Cartridge,
+    ) -> Option<u32> {
+        // Check whether APU frame IRQ flag is set.
+        if apu.frame_irq() {
+            self.interrupt.insert(InterruptType::IRQ);
+        }
+
+        // Check whether there is any pending interrupt.
+        if self.exec_pending_interrupt(ppu, apu, cartridge) {
+            Some(Self::INTERRUPT_CYCLES)
+        } else {
+            None
+        }
+    }
+
+    pub fn fetch_instr(
+        &mut self,
+        ppu: &mut PPU,
+        apu: &mut APU,
+        cartridge: &mut Cartridge,
+    ) -> Instruction {
+        let instr = Instruction::fetch(self.reg_pc, self, ppu, apu, cartridge);
+
+        // Record instruction to history.
+        self.update_history(&instr);
+
+        instr
     }
 
     pub fn push_stack(
@@ -252,29 +276,31 @@ impl CPU {
         CPUBus::read(addr, self, ppu, apu, cartridge)
     }
 
-    pub fn execute(&mut self, ppu: &mut PPU, apu: &mut APU, cartridge: &mut Cartridge) -> u32 {
-        let inst = Instruction::fetch(self.reg_pc, self, ppu, apu, cartridge);
-
-        // Record instruction to history.
-        self.update_history(&inst);
-
-        macro_rules! inst_resolve {
+    pub fn exec_instr(
+        &mut self,
+        instr: &Instruction,
+        ppu: &mut PPU,
+        apu: &mut APU,
+        cartridge: &mut Cartridge,
+    ) -> u32 {
+        macro_rules! instr_resolve {
             () => {
-                inst.addr_mode.resolve(self, ppu, apu, cartridge)
+                instr.addr_mode.resolve(self, ppu, apu, cartridge)
             };
         }
 
-        macro_rules! inst_resolve_addr {
+        macro_rules! instr_resolve_addr {
             () => {
-                inst.addr_mode
+                instr
+                    .addr_mode
                     .resolve_addr(self, ppu, apu, cartridge)
                     .unwrap()
             };
         }
 
-        macro_rules! inst_write {
+        macro_rules! instr_write {
             ($data:expr) => {
-                inst.addr_mode.write($data, self, ppu, apu, cartridge)
+                instr.addr_mode.write($data, self, ppu, apu, cartridge)
             };
         }
 
@@ -290,9 +316,9 @@ impl CPU {
             };
         }
 
-        let cycles = match inst.instr_type {
+        let additional_cycles = match instr.instr_type {
             InstrType::ADC => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 let (sum, carry1) = mem.overflowing_add(self.reg_a);
                 let (sum, carry2) =
                     sum.overflowing_add(self.reg_p.contains(StatusFlags::CARRY) as u8);
@@ -309,23 +335,23 @@ impl CPU {
                 self.reg_p.set(StatusFlags::NEG, sum & 0x80 != 0);
 
                 self.reg_a = sum;
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::AND => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 self.reg_a &= mem;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::ASL => {
-                let (val, _) = match inst.addr_mode {
+                let (val, _) = match instr.addr_mode {
                     AddrMode::Implied => (self.reg_a, 0),
-                    _ => inst_resolve!(),
+                    _ => instr_resolve!(),
                 };
                 let result = val << 1;
 
@@ -333,183 +359,183 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, result == 0);
                 self.reg_p.set(StatusFlags::NEG, result & 0x80 != 0);
 
-                match inst.addr_mode {
+                match instr.addr_mode {
                     AddrMode::Implied => {
                         self.reg_a = result;
                     }
                     _ => {
-                        inst_write!(result);
+                        instr_write!(result);
                     }
                 };
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::BCC => {
-                let (addr, additional_cycle) = inst_resolve_addr!();
+                let (addr, additional_cycle) = instr_resolve_addr!();
                 if !self.reg_p.contains(StatusFlags::CARRY) {
                     self.reg_pc = addr;
-                    inst.cycles + additional_cycle + 1
+                    additional_cycle + 1
                 } else {
-                    self.reg_pc += inst.addr_mode.size();
-                    inst.cycles
+                    self.reg_pc += instr.addr_mode.size();
+                    0
                 }
             }
             InstrType::BCS => {
-                let (addr, additional_cycle) = inst_resolve_addr!();
+                let (addr, additional_cycle) = instr_resolve_addr!();
                 if self.reg_p.contains(StatusFlags::CARRY) {
                     self.reg_pc = addr;
-                    inst.cycles + additional_cycle + 1
+                    additional_cycle + 1
                 } else {
-                    self.reg_pc += inst.addr_mode.size();
-                    inst.cycles
+                    self.reg_pc += instr.addr_mode.size();
+                    0
                 }
             }
             InstrType::BEQ => {
-                let (addr, additional_cycle) = inst_resolve_addr!();
+                let (addr, additional_cycle) = instr_resolve_addr!();
                 if self.reg_p.contains(StatusFlags::ZERO) {
                     self.reg_pc = addr;
-                    inst.cycles + additional_cycle + 1
+                    additional_cycle + 1
                 } else {
-                    self.reg_pc += inst.addr_mode.size();
-                    inst.cycles
+                    self.reg_pc += instr.addr_mode.size();
+                    0
                 }
             }
             InstrType::BIT => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
 
                 self.reg_p.set(StatusFlags::NEG, mem & 0x80 != 0);
                 self.reg_p.set(StatusFlags::OVERFLOW, mem & 0x40 != 0);
                 self.reg_p.set(StatusFlags::ZERO, (self.reg_a & mem) == 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::BMI => {
-                let (addr, additional_cycle) = inst_resolve_addr!();
+                let (addr, additional_cycle) = instr_resolve_addr!();
                 if self.reg_p.contains(StatusFlags::NEG) {
                     self.reg_pc = addr;
-                    inst.cycles + additional_cycle + 1
+                    additional_cycle + 1
                 } else {
-                    self.reg_pc += inst.addr_mode.size();
-                    inst.cycles
+                    self.reg_pc += instr.addr_mode.size();
+                    0
                 }
             }
             InstrType::BNE => {
-                let (addr, additional_cycle) = inst_resolve_addr!();
+                let (addr, additional_cycle) = instr_resolve_addr!();
                 if !self.reg_p.contains(StatusFlags::ZERO) {
                     self.reg_pc = addr;
-                    inst.cycles + additional_cycle + 1
+                    additional_cycle + 1
                 } else {
-                    self.reg_pc += inst.addr_mode.size();
-                    inst.cycles
+                    self.reg_pc += instr.addr_mode.size();
+                    0
                 }
             }
             InstrType::BPL => {
-                let (addr, additional_cycle) = inst_resolve_addr!();
+                let (addr, additional_cycle) = instr_resolve_addr!();
                 if !self.reg_p.contains(StatusFlags::NEG) {
                     self.reg_pc = addr;
-                    inst.cycles + additional_cycle + 1
+                    additional_cycle + 1
                 } else {
-                    self.reg_pc += inst.addr_mode.size();
-                    inst.cycles
+                    self.reg_pc += instr.addr_mode.size();
+                    0
                 }
             }
             InstrType::BRK => {
                 self.interrupt(InterruptType::BRK);
 
                 self.reg_pc += 2;
-                inst.cycles - 1
+                0
             }
             InstrType::BVC => {
-                let (addr, additional_cycle) = inst_resolve_addr!();
+                let (addr, additional_cycle) = instr_resolve_addr!();
                 if !self.reg_p.contains(StatusFlags::OVERFLOW) {
                     self.reg_pc = addr;
-                    inst.cycles + additional_cycle + 1
+                    additional_cycle + 1
                 } else {
-                    self.reg_pc += inst.addr_mode.size();
-                    inst.cycles
+                    self.reg_pc += instr.addr_mode.size();
+                    0
                 }
             }
             InstrType::BVS => {
-                let (addr, additional_cycle) = inst_resolve_addr!();
+                let (addr, additional_cycle) = instr_resolve_addr!();
                 if self.reg_p.contains(StatusFlags::OVERFLOW) {
                     self.reg_pc = addr;
-                    inst.cycles + additional_cycle + 1
+                    additional_cycle + 1
                 } else {
-                    self.reg_pc += inst.addr_mode.size();
-                    inst.cycles
+                    self.reg_pc += instr.addr_mode.size();
+                    0
                 }
             }
             InstrType::CLC => {
                 self.reg_p.remove(StatusFlags::CARRY);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::CLD => {
                 self.reg_p.remove(StatusFlags::DECIMAL);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::CLI => {
                 self.reg_p.remove(StatusFlags::INT);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::CLV => {
                 self.reg_p.remove(StatusFlags::OVERFLOW);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::CMP => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 let (res, borrow) = self.reg_a.overflowing_sub(mem);
 
                 self.reg_p.set(StatusFlags::CARRY, !borrow);
                 self.reg_p.set(StatusFlags::ZERO, res == 0);
                 self.reg_p.set(StatusFlags::NEG, res & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::CPX => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
                 let (res, borrow) = self.reg_x.overflowing_sub(mem);
 
                 self.reg_p.set(StatusFlags::CARRY, !borrow);
                 self.reg_p.set(StatusFlags::ZERO, res == 0);
                 self.reg_p.set(StatusFlags::NEG, res & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::CPY => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
                 let (res, borrow) = self.reg_y.overflowing_sub(mem);
 
                 self.reg_p.set(StatusFlags::CARRY, !borrow);
                 self.reg_p.set(StatusFlags::ZERO, res == 0);
                 self.reg_p.set(StatusFlags::NEG, res & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::DEC => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
 
                 let result = mem.wrapping_sub(1);
 
                 self.reg_p.set(StatusFlags::ZERO, result == 0);
                 self.reg_p.set(StatusFlags::NEG, result & 0x80 != 0);
 
-                inst_write!(result);
+                instr_write!(result);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::DEX => {
                 self.reg_x = self.reg_x.wrapping_sub(1);
@@ -517,8 +543,8 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_x == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_x & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::DEY => {
                 self.reg_y = self.reg_y.wrapping_sub(1);
@@ -526,30 +552,30 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_y == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_y & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::EOR => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 self.reg_a ^= mem;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::INC => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
                 let result = mem.wrapping_add(1);
 
                 self.reg_p.set(StatusFlags::ZERO, result == 0);
                 self.reg_p.set(StatusFlags::NEG, result & 0x80 != 0);
 
-                inst_write!(result);
+                instr_write!(result);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::INX => {
                 self.reg_x = self.reg_x.wrapping_add(1);
@@ -557,8 +583,8 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_x == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_x & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::INY => {
                 self.reg_y = self.reg_y.wrapping_add(1);
@@ -566,13 +592,13 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_y == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_y & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
-            InstrType::JMP => match inst.addr_mode {
+            InstrType::JMP => match instr.addr_mode {
                 AddrMode::Absolute(addr) => {
                     self.reg_pc = addr;
-                    inst.cycles
+                    0
                 }
                 AddrMode::Indirect(addr) => {
                     let lo = CPUBus::read(addr, self, ppu, apu, cartridge);
@@ -587,59 +613,59 @@ impl CPU {
                     );
 
                     self.reg_pc = u16::from_le_bytes([lo, hi]);
-                    inst.cycles
+                    0
                 }
                 _ => {
                     critical!(CPU, "Illegal JMP at PC={:#06x}", self.reg_pc);
                 }
             },
-            InstrType::JSR => match inst.addr_mode {
+            InstrType::JSR => match instr.addr_mode {
                 AddrMode::Absolute(addr) => {
                     let return_addr = self.reg_pc + 2;
                     push_stack!((return_addr >> 8) as u8);
                     push_stack!((return_addr & 0x00FF) as u8);
 
                     self.reg_pc = addr;
-                    inst.cycles
+                    0
                 }
                 _ => {
                     critical!(CPU, "Illegal JSR at PC={:#06x}", self.reg_pc);
                 }
             },
             InstrType::LDA => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 self.reg_a = mem;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::LDX => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 self.reg_x = mem;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_x == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_x & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::LDY => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 self.reg_y = mem;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_y == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_y & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::LSR => {
-                let (val, _) = match inst.addr_mode {
+                let (val, _) = match instr.addr_mode {
                     AddrMode::Implied => (self.reg_a, 0),
-                    _ => inst_resolve!(),
+                    _ => instr_resolve!(),
                 };
                 let result = val >> 1;
 
@@ -647,44 +673,44 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, result == 0);
                 self.reg_p.set(StatusFlags::NEG, result & 0x80 != 0);
 
-                match inst.addr_mode {
+                match instr.addr_mode {
                     AddrMode::Implied => {
                         self.reg_a = result;
                     }
                     _ => {
-                        inst_write!(result);
+                        instr_write!(result);
                     }
                 };
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::NOP => {
-                let (_, additional_cycle) = inst_resolve!();
+                let (_, additional_cycle) = instr_resolve!();
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::ORA => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 self.reg_a |= mem;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::PHA => {
                 push_stack!(self.reg_a);
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::PHP => {
                 self.reg_p.insert(StatusFlags::BRK);
                 push_stack!(self.reg_p.bits());
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::PLA => {
                 self.reg_a = pop_stack!();
@@ -692,21 +718,21 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::PLP => {
                 self.reg_p = StatusFlags::from_bits_retain(pop_stack!());
                 self.reg_p.insert(StatusFlags::ONE);
                 self.reg_p.insert(StatusFlags::BRK);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::ROL => {
-                let (val, _) = match inst.addr_mode {
+                let (val, _) = match instr.addr_mode {
                     AddrMode::Implied => (self.reg_a, 0),
-                    _ => inst_resolve!(),
+                    _ => instr_resolve!(),
                 };
                 let carry = self.reg_p.contains(StatusFlags::CARRY) as u8;
                 let result = (val << 1) | carry;
@@ -715,22 +741,22 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, result == 0);
                 self.reg_p.set(StatusFlags::NEG, result & 0x80 != 0);
 
-                match inst.addr_mode {
+                match instr.addr_mode {
                     AddrMode::Implied => {
                         self.reg_a = result;
                     }
                     _ => {
-                        inst_write!(result);
+                        instr_write!(result);
                     }
                 };
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::ROR => {
-                let (val, _) = match inst.addr_mode {
+                let (val, _) = match instr.addr_mode {
                     AddrMode::Implied => (self.reg_a, 0),
-                    _ => inst_resolve!(),
+                    _ => instr_resolve!(),
                 };
                 let carry = (self.reg_p.contains(StatusFlags::CARRY) as u8) << 7;
                 let result = (val >> 1) | carry;
@@ -739,17 +765,17 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, result == 0);
                 self.reg_p.set(StatusFlags::NEG, result & 0x80 != 0);
 
-                match inst.addr_mode {
+                match instr.addr_mode {
                     AddrMode::Implied => {
                         self.reg_a = result;
                     }
                     _ => {
-                        inst_write!(result);
+                        instr_write!(result);
                     }
                 };
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::RTI => {
                 self.reg_p = StatusFlags::from_bits_retain(pop_stack!());
@@ -760,17 +786,17 @@ impl CPU {
                 let hi = pop_stack!();
 
                 self.reg_pc = u16::from_le_bytes([lo, hi]);
-                inst.cycles
+                0
             }
             InstrType::RTS => {
                 let lo = pop_stack!();
                 let hi = pop_stack!();
 
                 self.reg_pc = u16::from_le_bytes([lo, hi]) + 1;
-                inst.cycles
+                0
             }
             InstrType::SBC => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
                 let (diff, borrow2) =
                     diff.overflowing_sub(1 - self.reg_p.contains(StatusFlags::CARRY) as u8);
@@ -787,44 +813,44 @@ impl CPU {
                 self.reg_p.set(StatusFlags::NEG, diff & 0x80 != 0);
 
                 self.reg_a = diff;
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::SEC => {
                 self.reg_p.insert(StatusFlags::CARRY);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::SED => {
                 self.reg_p.insert(StatusFlags::DECIMAL);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::SEI => {
                 self.reg_p.insert(StatusFlags::INT);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::STA => {
-                inst_write!(self.reg_a);
+                instr_write!(self.reg_a);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::STX => {
-                inst_write!(self.reg_x);
+                instr_write!(self.reg_x);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::STY => {
-                inst_write!(self.reg_y);
+                instr_write!(self.reg_y);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::TAX => {
                 self.reg_x = self.reg_a;
@@ -832,8 +858,8 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_x == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_x & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::TAY => {
                 self.reg_y = self.reg_a;
@@ -841,8 +867,8 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_y == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_y & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::TSX => {
                 self.reg_x = self.reg_sp;
@@ -850,8 +876,8 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_x == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_x & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::TXA => {
                 self.reg_a = self.reg_x;
@@ -859,14 +885,14 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::TXS => {
                 self.reg_sp = self.reg_x;
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::TYA => {
                 self.reg_a = self.reg_y;
@@ -874,11 +900,11 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::ALR => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
 
                 let carry = (self.reg_a & mem) & 1;
                 self.reg_a = (self.reg_a & mem) >> 1;
@@ -887,11 +913,11 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::CARRY, carry != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::ANC => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
 
                 let carry = self.reg_a & 0x80;
                 self.reg_a = self.reg_a & mem;
@@ -900,14 +926,14 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::CARRY, carry != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::ANE => {
                 critical!(CPU, "ANE is highly unstable.");
             }
             InstrType::ARR => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
 
                 let ans = (self.reg_a & mem) as i16 + mem as i16;
                 self.reg_p
@@ -921,13 +947,13 @@ impl CPU {
                 // I'm not sure
                 self.reg_p.set(StatusFlags::CARRY, carry != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::DCP => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
                 let mem = mem.wrapping_add_signed(-1);
-                inst_write!(mem);
+                instr_write!(mem);
 
                 let (res, borrow) = self.reg_a.overflowing_sub(mem);
 
@@ -935,13 +961,13 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, res == 0);
                 self.reg_p.set(StatusFlags::NEG, res & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::ISC => {
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
                 let mem = mem.wrapping_add(1);
-                inst_write!(mem);
+                instr_write!(mem);
 
                 let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
                 let (diff, borrow2) =
@@ -958,11 +984,11 @@ impl CPU {
                 self.reg_p.set(StatusFlags::NEG, diff & 0x80 != 0);
 
                 self.reg_a = diff;
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::LAS => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 self.reg_a = mem & self.reg_sp;
                 self.reg_x = self.reg_a;
                 self.reg_sp = self.reg_a;
@@ -970,29 +996,29 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::LAX => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 self.reg_a = mem;
                 self.reg_x = self.reg_a;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::LXA => {
                 critical!(CPU, "LXA is highly unstable.");
             }
             InstrType::RLA => {
-                let (val, _) = inst_resolve!();
+                let (val, _) = instr_resolve!();
                 let carry = self.reg_p.contains(StatusFlags::CARRY) as u8;
                 let result = (val << 1) | carry;
 
-                inst_write!(result);
+                instr_write!(result);
 
                 self.reg_p.set(StatusFlags::CARRY, val & 0x80 != 0);
 
@@ -1001,15 +1027,15 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::RRA => {
-                let (val, _) = inst_resolve!();
+                let (val, _) = instr_resolve!();
                 let carry = self.reg_p.contains(StatusFlags::CARRY) as u8;
                 let result = (val >> 1) | (carry << 7);
 
-                inst_write!(result);
+                instr_write!(result);
 
                 let carry = val & 0x1;
                 let (sum, carry1) = result.overflowing_add(self.reg_a);
@@ -1024,19 +1050,19 @@ impl CPU {
                 self.reg_p.set(StatusFlags::NEG, sum & 0x80 != 0);
 
                 self.reg_a = sum;
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::SAX => {
                 let val = self.reg_a & self.reg_x;
-                inst_write!(val);
+                instr_write!(val);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::SBX => {
                 let val = self.reg_a & self.reg_x;
-                let (mem, _) = inst_resolve!();
+                let (mem, _) = instr_resolve!();
                 let (res, borrow) = val.overflowing_sub(mem);
 
                 self.reg_x = res;
@@ -1045,29 +1071,29 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, res == 0);
                 self.reg_p.set(StatusFlags::NEG, res & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::SHA => {
                 error!(CPU, "SHA is unstable.");
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::SHX => {
                 error!(CPU, "SHX is unstable.");
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::SHY => {
                 error!(CPU, "SHY is unstable.");
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::SLO => {
-                let (val, _) = inst_resolve!();
+                let (val, _) = instr_resolve!();
                 let result = val << 1;
 
-                inst_write!(result);
+                instr_write!(result);
 
                 self.reg_p.set(StatusFlags::CARRY, val & 0x80 != 0);
 
@@ -1076,14 +1102,14 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::SRE => {
-                let (val, _) = inst_resolve!();
+                let (val, _) = instr_resolve!();
                 let result = val >> 1;
 
-                inst_write!(result);
+                instr_write!(result);
 
                 self.reg_p.set(StatusFlags::CARRY, val & 0x01 != 0);
 
@@ -1092,16 +1118,16 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
 
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::TAS => {
                 error!(CPU, "TAS is unstable.");
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles
+                self.reg_pc += instr.addr_mode.size();
+                0
             }
             InstrType::USBC => {
-                let (mem, additional_cycle) = inst_resolve!();
+                let (mem, additional_cycle) = instr_resolve!();
                 let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
                 let (diff, borrow2) =
                     diff.overflowing_sub(1 - self.reg_p.contains(StatusFlags::CARRY) as u8);
@@ -1118,15 +1144,18 @@ impl CPU {
                 self.reg_p.set(StatusFlags::NEG, diff & 0x80 != 0);
 
                 self.reg_a = diff;
-                self.reg_pc += inst.addr_mode.size();
-                inst.cycles + additional_cycle
+                self.reg_pc += instr.addr_mode.size();
+                additional_cycle
             }
             InstrType::JAM => {
                 critical!(CPU, "JAM encountered at PC={:#06X}", self.reg_pc);
             }
         };
 
-        cycles as u32
+        self.inst += 1;
+        self.cycles += (instr.cycles + additional_cycles) as u64;
+
+        additional_cycles as u32
     }
 
     fn update_history(&mut self, inst: &Instruction) {
