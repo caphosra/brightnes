@@ -1,5 +1,6 @@
 use core::ptr::slice_from_raw_parts_mut;
 
+use alloc::boxed::Box;
 use alloc::string::ToString;
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
@@ -75,11 +76,11 @@ pub struct Cartridge {
 
 #[derive(Serialize, Deserialize)]
 pub enum CartridgeKind {
-    Mapper0(Mapper0),
-    Mapper1(Mapper1),
-    Mapper2(Mapper2),
-    Mapper3(Mapper3),
-    Mapper4(Mapper4),
+    Mapper0(Box<Mapper0>),
+    Mapper1(Box<Mapper1>),
+    Mapper2(Box<Mapper2>),
+    Mapper3(Box<Mapper3>),
+    Mapper4(Box<Mapper4>),
 }
 
 static CARTRIDGE_PTR: Lazy<Once<usize>> = Lazy::new(Once::new);
@@ -108,11 +109,11 @@ impl Cartridge {
         info!(CAT, "Mirroring: {}", mirroring.to_string());
 
         let kind = match mapper {
-            0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_size)),
-            1 => CartridgeKind::Mapper1(Mapper1::new(prg_rom_size, chr_size, mirroring)),
-            2 => CartridgeKind::Mapper2(Mapper2::new(prg_rom_size, chr_size)),
-            3 => CartridgeKind::Mapper3(Mapper3::new(prg_rom_size, chr_size)),
-            4 => CartridgeKind::Mapper4(Mapper4::new(prg_rom_size, chr_size)),
+            0 => CartridgeKind::Mapper0(Box::new(Mapper0::new(prg_rom_size, chr_size))),
+            1 => CartridgeKind::Mapper1(Box::new(Mapper1::new(prg_rom_size, chr_size, mirroring))),
+            2 => CartridgeKind::Mapper2(Box::new(Mapper2::new(prg_rom_size, chr_size))),
+            3 => CartridgeKind::Mapper3(Box::new(Mapper3::new(prg_rom_size, chr_size))),
+            4 => CartridgeKind::Mapper4(Box::new(Mapper4::new(prg_rom_size, chr_size))),
             _ => {
                 critical!(CAT, "Unsupported mapper: {}", mapper);
             }

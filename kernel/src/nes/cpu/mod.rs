@@ -1220,13 +1220,7 @@ impl CPU {
             handler.write(
                 format!(
                     "${:04X}: {:30} A={:02X} X={:02X} Y={:02X} P={:02X} SP={:02X}\n",
-                    inst.pc,
-                    inst.to_string(),
-                    self.reg_a,
-                    self.reg_x,
-                    self.reg_y,
-                    self.reg_p,
-                    self.reg_sp,
+                    inst.pc, inst, self.reg_a, self.reg_x, self.reg_y, self.reg_p, self.reg_sp,
                 )
                 .as_bytes(),
             );
@@ -1244,9 +1238,9 @@ impl CPU {
             match self.history[i] {
                 Some(inst) => {
                     if i == Self::HISTORY_SIZE - 1 {
-                        handler(&format!("--> ${:04X}: {}", inst.pc, inst.to_string()));
+                        handler(&format!("--> ${:04X}: {}", inst.pc, inst));
                     } else {
-                        handler(&format!("    ${:04X}: {}", inst.pc, inst.to_string()));
+                        handler(&format!("    ${:04X}: {}", inst.pc, inst));
                     }
                 }
                 None => {

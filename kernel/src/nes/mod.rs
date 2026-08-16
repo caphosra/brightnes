@@ -1,4 +1,5 @@
-use alloc::string::ToString;
+use core::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -20,13 +21,13 @@ impl From<u8> for Mirroring {
     }
 }
 
-impl ToString for Mirroring {
-    fn to_string(&self) -> alloc::string::String {
+impl Display for Mirroring {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Mirroring::Horizontal => "Horizontal".to_string(),
-            Mirroring::Vertical => "Vertical".to_string(),
-            Mirroring::SingleScreenLower => "Single Screen Lower".to_string(),
-            Mirroring::SingleScreenUpper => "Single Screen Upper".to_string(),
+            Mirroring::Horizontal => write!(f, "Horizontal"),
+            Mirroring::Vertical => write!(f, "Vertical"),
+            Mirroring::SingleScreenLower => write!(f, "Single Screen Lower"),
+            Mirroring::SingleScreenUpper => write!(f, "Single Screen Upper"),
         }
     }
 }

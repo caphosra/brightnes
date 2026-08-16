@@ -21,7 +21,7 @@ pub enum LogLocation {
 }
 
 impl LogLocation {
-    pub fn to_str(&self) -> &str {
+    pub fn to_str(self) -> &'static str {
         match self {
             LogLocation::SYS => "SYS",
             LogLocation::DRV => "DRV",
