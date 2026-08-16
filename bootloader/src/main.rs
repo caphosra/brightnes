@@ -104,3 +104,12 @@ fn main() -> Status {
 mod elf;
 mod frame_buffer;
 mod fs;
+
+#[no_mangle]
+pub unsafe extern "C" fn wcslen(string: *const u16) -> usize {
+    let mut length = 0;
+    while unsafe { *string.add(length) } != 0 {
+        length += 1;
+    }
+    length
+}
