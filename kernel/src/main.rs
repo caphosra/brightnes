@@ -129,13 +129,48 @@ pub fn game_main() -> ! {
         while total_cycles < FRAME_CYCLES {
             interrupts::disable();
 
-            let cycles = cpu.clock(ppu, apu, cartridge);
-            ppu.render_bg(cycles as usize * 3, &mut frame_buffer, cpu, cartridge);
-            apu.clock(cycles, &mut sound, cpu, ppu, cartridge);
+            let cycles = match cpu.resolve_stall(ppu, apu, cartridge) {
+                Some(cycles) => {
+                    // CPU is stalling.
+                    ppu.render_bg(cycles as usize * 3, &mut frame_buffer, cpu, cartridge);
+                    apu.clock(cycles, &mut sound, cpu, cartridge);
+                    cycles as usize
+                }
+                None => match cpu.resolve_interrupt(ppu, apu, cartridge) {
+                    Some(cycles) => {
+                        // CPU is in an interrupt state.
+                        ppu.render_bg(cycles as usize * 3, &mut frame_buffer, cpu, cartridge);
+                        apu.clock(cycles, &mut sound, cpu, cartridge);
+                        cycles as usize
+                    }
+                    None => {
+                        // Fetch the next instruction.
+                        let instr = cpu.fetch_instr(ppu, apu, cartridge);
 
-            interrupts::enable();
+                        // Run PPU and APU before the instruction execution.
+                        ppu.render_bg(instr.cycles as usize * 3, &mut frame_buffer, cpu, cartridge);
+                        apu.clock(instr.cycles as u32, &mut sound, cpu, cartridge);
+
+                        // Execute the instruction.
+                        let additional_cycles = cpu.exec_instr(&instr, ppu, apu, cartridge);
+
+                        // Run PPU and APU for the additional cycles.
+                        ppu.render_bg(
+                            additional_cycles as usize * 3,
+                            &mut frame_buffer,
+                            cpu,
+                            cartridge,
+                        );
+                        apu.clock(additional_cycles as u32, &mut sound, cpu, cartridge);
+
+                        instr.cycles as usize + additional_cycles as usize
+                    }
+                },
+            };
 
             total_cycles += cycles as usize;
+
+            interrupts::enable();
         }
         total_cycles -= FRAME_CYCLES;
 

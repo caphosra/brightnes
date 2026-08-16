@@ -3,16 +3,16 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error,
     nes::{
-        apu::{SoundSampleType, APU},
+        apu::SoundSampleType,
         cartridge::Cartridge,
-        cpu::{bus::CPUBus, InterruptType, CPU},
-        ppu::PPU,
+        cpu::{InterruptType, CPU},
     },
 };
 
 #[derive(Serialize, Deserialize)]
 pub struct DMC {
     pub irq: bool,
+    irq_enabled: bool,
     loop_enabled: bool,
     sample_address: u16,
     sample_length: u16,
@@ -36,6 +36,7 @@ impl DMC {
     pub fn new() -> Self {
         Self {
             irq: false,
+            irq_enabled: false,
             loop_enabled: false,
             timer: 0,
             sample_address: 0,
@@ -57,7 +58,12 @@ impl DMC {
     }
 
     pub fn set_active(&mut self, active: bool) {
-        if !active {
+        self.irq = false;
+
+        if active && self.length_counter == 0 {
+            self.current_address = self.sample_address;
+            self.length_counter = self.sample_length;
+        } else if !active {
             self.length_counter = 0;
         }
     }
@@ -65,7 +71,10 @@ impl DMC {
     pub fn write_reg(&mut self, addr: u16, data: u8) {
         match addr {
             0 => {
-                self.irq = ((data >> 7) & 1) != 0;
+                self.irq_enabled = ((data >> 7) & 1) != 0;
+                if !self.irq_enabled {
+                    self.irq = false;
+                }
                 self.loop_enabled = ((data >> 6) & 1) != 0;
                 self.timer = Self::RATE_TABLE[(data & 0b1111) as usize];
             }
@@ -77,7 +86,6 @@ impl DMC {
             }
             3 => {
                 self.sample_length = ((data as u16) << 4) + 1;
-                self.length_counter = self.sample_length;
             }
             _ => {
                 error!(APU, "DMC does not support such operation: {:#06X}", addr);
@@ -85,12 +93,10 @@ impl DMC {
         }
     }
 
-    pub fn clock(&mut self, cycles: u32, cpu: &mut CPU, ppu: &mut PPU, cartridge: &mut Cartridge) {
+    pub fn clock(&mut self, cycles: u32, cpu: &mut CPU, cartridge: &mut Cartridge) {
         if self.timer == 0 {
             return;
         }
-
-        let apu = APU::get();
 
         self.timer_counter += cycles as u16;
         while self.timer_counter >= self.timer {
@@ -99,25 +105,29 @@ impl DMC {
             if self.sample_buffer_index == 0 {
                 // Sample buffer is empty.
                 if self.length_counter > 0 {
-                    self.length_counter -= 1;
-
                     // Read sample data.
-                    self.sample_buffer =
-                        CPUBus::read(self.current_address, cpu, ppu, apu, cartridge);
+                    self.sample_buffer = cartridge.read_cpu_mem(self.current_address);
                     self.sample_buffer_index = 8;
+                    self.length_counter -= 1;
+                    cpu.dmc_stall();
 
                     if self.current_address == 0xFFFF {
                         self.current_address = 0x8000;
                     } else {
                         self.current_address += 1;
                     }
-                } else if self.loop_enabled {
-                    // Restart sample.
-                    self.current_address = self.sample_address;
-                    self.length_counter = self.sample_length;
-                } else if self.irq {
-                    // Trigger DMC IRQ.
-                    cpu.interrupt(InterruptType::IRQ);
+
+                    if self.length_counter == 0 {
+                        if self.loop_enabled {
+                            // Restart after fetching the final sample byte.
+                            self.current_address = self.sample_address;
+                            self.length_counter = self.sample_length;
+                        } else if self.irq_enabled && !self.irq {
+                            // The IRQ is asserted only when an active sample ends.
+                            self.irq = true;
+                            cpu.interrupt(InterruptType::IRQ);
+                        }
+                    }
                 }
             } else {
                 // Output sample bit.

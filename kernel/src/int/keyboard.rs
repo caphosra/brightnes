@@ -92,8 +92,9 @@ impl BKeyboard {
                             let mut fs = FILE_SYSTEM.write();
                             let cpu = CPU::get();
                             let ppu = PPU::get();
+                            let apu = APU::get();
                             let cartridge = Cartridge::get();
-                            match fs.save_state(&sys, cpu, ppu, cartridge) {
+                            match fs.save_state(&sys, cpu, ppu, apu, cartridge) {
                                 Ok(_) => info!(SYS, "Saved the current state successfully."),
                                 Err(_) => error!(SYS, "Failed to save the current state."),
                             }
@@ -134,8 +135,9 @@ impl BKeyboard {
                             let mut fs = FILE_SYSTEM.write();
                             let cpu = CPU::get();
                             let ppu = PPU::get();
+                            let apu = APU::get();
                             let cartridge = Cartridge::get();
-                            match fs.load_state(&sys, cpu, ppu, cartridge) {
+                            match fs.load_state(&sys, cpu, ppu, apu, cartridge) {
                                 Ok(_) => info!(SYS, "Loaded the current state successfully."),
                                 Err(_) => error!(SYS, "Failed to load the current state."),
                             }

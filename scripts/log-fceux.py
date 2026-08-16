@@ -39,7 +39,7 @@ with open(log_path, "r") as log:
                         p_reg |= (1 << i)
 
                 inst = f"{opcode} {operand}".strip()
-                output_line = f"0x{addr}: {inst:30} A:{a_reg} X:{x_reg} Y:{y_reg} S:{s_reg} P:{p_reg:02X}\n"
+                output_line = f"${addr}: {inst:30} A={a_reg} X={x_reg} Y={y_reg} P={p_reg:02X} SP={s_reg}\n"
                 output.write(output_line)
             else:
                 print(f"[!] Not matched: {line}")

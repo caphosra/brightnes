@@ -16,6 +16,8 @@ impl PPUBus {
                 match cartridge.mirroring() {
                     Mirroring::Horizontal => addr & !0x400,
                     Mirroring::Vertical => addr & !0x800,
+                    Mirroring::SingleScreenLower => 0x2000 | (addr & 0x03FF),
+                    Mirroring::SingleScreenUpper => 0x2400 | (addr & 0x03FF),
                 }
             };
 
@@ -25,13 +27,13 @@ impl PPUBus {
             Self::read(addr - 0x1000, vram, cartridge)
         } else if addr < 0x3F10 {
             // Background Palette
-            vram.read(addr)
+            vram.read(addr) & 0x3F
         } else if addr < 0x3F20 {
             // Sprite Palette
             if addr & 0b11 == 0 {
                 Self::read(addr - 0x10, vram, cartridge)
             } else {
-                vram.read(addr)
+                vram.read(addr) & 0x3F
             }
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F
@@ -51,6 +53,8 @@ impl PPUBus {
                 match cartridge.mirroring() {
                     Mirroring::Horizontal => addr & !0x400,
                     Mirroring::Vertical => addr & !0x800,
+                    Mirroring::SingleScreenLower => 0x2000 | (addr & 0x03FF),
+                    Mirroring::SingleScreenUpper => 0x2400 | (addr & 0x03FF),
                 }
             };
 
@@ -60,13 +64,13 @@ impl PPUBus {
             Self::write(addr - 0x1000, val, vram, cartridge);
         } else if addr < 0x3F10 {
             // Background Palette
-            vram.write(addr, val);
+            vram.write(addr, val & 0x3F);
         } else if addr < 0x3F20 {
             // Sprite Palette
             if addr & 0b11 == 0 {
                 Self::write(addr - 0x10, val, vram, cartridge);
             } else {
-                vram.write(addr, val);
+                vram.write(addr, val & 0x3F);
             }
         } else if addr < 0x4000 {
             // Mirrors of $3F00-$3F1F

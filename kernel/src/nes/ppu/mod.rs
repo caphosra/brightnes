@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
 use spin::{Lazy, Once, RwLock};
@@ -34,12 +35,50 @@ pub static GAME_FB: Lazy<RwLock<FrameBuffer>> = Lazy::new(|| {
     ))
 });
 
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct PPUCtrl: u8 {
+        const INCREMENT = 0b0000_0100;
+        const SPRITE_PATTERN_TABLE = 0b0000_1000;
+        const BG_PATTERN_TABLE = 0b0001_0000;
+        const SPRITE_SIZE = 0b0010_0000;
+        const MASTER_SLAVE = 0b0100_0000;
+        const NMI_ENABLE = 0b1000_0000;
+    }
+}
+
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct PPUMask: u8 {
+        const GREY_SCALE = 0b0000_0001;
+        const BG_VISIBLE_LEFT8 = 0b0000_0010;
+        const SPRITE_VISIBLE_LEFT8 = 0b0000_0100;
+        const BG_VISIBLE = 0b0000_1000;
+        const SPRITE_VISIBLE = 0b0001_0000;
+        const EMPHASIZE_RED = 0b0010_0000;
+        const EMPHASIZE_GREEN = 0b0100_0000;
+        const EMPHASIZE_BLUE = 0b1000_0000;
+    }
+}
+
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct PPUStatus: u8 {
+        const SPRITE_OVERFLOW = 0b0010_0000;
+        const SPRITE0_HIT = 0b0100_0000;
+        const VBLANK = 0b1000_0000;
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct PPU {
-    pub reg_ctrl: u8,
-    pub reg_mask: u8,
+    pub reg_ctrl: PPUCtrl,
+    pub reg_mask: PPUMask,
     pub reg_oam_addr: u8,
-    pub reg_status: u8,
+    pub reg_status: PPUStatus,
     pub reg_data: u16,
     pub reg_data_is_lo: bool,
 
@@ -86,6 +125,9 @@ const PATTERN_SIZE: u16 = 16;
 
 const PPU_CYCLE: u16 = 341;
 const PPU_VBLANK: u16 = 22;
+const PPU_POST_RENDER_SCANLINE: u16 = NES_FRAME_HEIGHT as u16;
+const PPU_VBLANK_START_SCANLINE: u16 = PPU_POST_RENDER_SCANLINE + 1;
+const PPU_PRE_RENDER_SCANLINE: u16 = NES_FRAME_HEIGHT as u16 + PPU_VBLANK - 1;
 
 static PPU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 
@@ -115,86 +157,36 @@ impl PPU {
         self.sprites_layer = Vec::from_array([None; NES_FRAME_WIDTH * NES_FRAME_HEIGHT]);
     }
 
-    #[inline(always)]
-    pub fn ctrl_increment(&self) -> u16 {
-        if self.reg_ctrl & 0x04 != 0 {
-            32
-        } else {
-            1
-        }
-    }
-
-    #[inline(always)]
-    pub fn ctrl_sprite_pattern_table(&self) -> u16 {
-        if self.reg_ctrl & 0x08 != 0 {
-            0x1000
-        } else {
-            0x0000
-        }
-    }
-
-    #[inline(always)]
-    pub fn ctrl_bg_pattern_table(&self) -> u16 {
-        if self.reg_ctrl & 0x10 != 0 {
-            0x1000
-        } else {
-            0x0000
-        }
-    }
-
-    #[inline(always)]
-    pub fn ctrl_sprite_size(&self) -> u8 {
-        if self.reg_ctrl & 0x20 != 0 {
-            16
-        } else {
-            8
-        }
-    }
-
-    #[inline(always)]
-    pub fn ctrl_nmi_enable(&self) -> bool {
-        self.reg_ctrl & 0x80 != 0
-    }
-
-    #[inline(always)]
-    pub fn mask_grey_scale(&self) -> bool {
-        self.reg_mask & 0x01 != 0
-    }
-
-    #[inline(always)]
-    pub fn mask_bg_visible_left8(&self) -> bool {
-        self.reg_mask & 0x02 != 0
-    }
-
-    #[inline(always)]
-    pub fn mask_sprite_visible_left8(&self) -> bool {
-        self.reg_mask & 0x04 != 0
-    }
-
-    #[inline(always)]
-    pub fn mask_bg_visible(&self) -> bool {
-        self.reg_mask & 0x08 != 0
-    }
-
-    #[inline(always)]
-    pub fn mask_sprite_visible(&self) -> bool {
-        self.reg_mask & 0x10 != 0
-    }
-
-    pub fn read_reg(&mut self, addr: u16, cartridge: &mut Cartridge) -> u8 {
+    pub fn read_reg(&mut self, addr: u16, cpu: &mut CPU, cartridge: &mut Cartridge) -> u8 {
         // Mirroring every 8 bytes.
         let addr = 0x2000 + ((addr - 0x2000) & 0x7);
         if addr == PPU_STATUS_ADDR {
             // PPU_STATUS
             self.reg_w = false;
+            self.reg_data_is_lo = false;
 
-            self.reg_status
+            let prev_status = self.reg_status.bits();
+
+            // Remove VBLANK flag and cancel NMI if it was set.
+            self.reg_status.remove(PPUStatus::VBLANK);
+            if (prev_status & PPUStatus::VBLANK.bits()) != 0 {
+                cpu.cancel_interrupt(InterruptType::NMI);
+            }
+
+            prev_status
         } else if addr == PPU_DATA_ADDR {
             // PPU_DATA
-            let data = self.reg_data_buffer;
-            self.reg_data_buffer = PPUBus::read(self.reg_data, &self.vram, cartridge);
+            let addr = self.reg_data & 0x3FFF;
+            let data = if addr >= PALETTE_BASE_ADDR {
+                self.reg_data_buffer = PPUBus::read(addr - 0x1000, &self.vram, cartridge);
+                PPUBus::read(addr, &self.vram, cartridge)
+            } else {
+                let data = self.reg_data_buffer;
+                self.reg_data_buffer = PPUBus::read(addr, &self.vram, cartridge);
+                data
+            };
 
-            self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
+            self.reg_data = self.reg_data.wrapping_add(self.reg_ctrl.increment()) & 0x7FFF;
 
             data
         } else {
@@ -213,12 +205,21 @@ impl PPU {
         let addr = 0x2000 + ((addr - 0x2000) & 0x7);
         if addr == PPU_CTRL_ADDR {
             // PPU_CTRL
-            self.reg_ctrl = val;
+            let prev_nmi_enabled = self.reg_ctrl.contains(PPUCtrl::NMI_ENABLE);
+            self.reg_ctrl = PPUCtrl::from_bits_retain(val);
+
+            if !prev_nmi_enabled
+                && self.reg_ctrl.contains(PPUCtrl::NMI_ENABLE)
+                && self.reg_status.contains(PPUStatus::VBLANK)
+            {
+                // Trigger NMI immediately.
+                cpu.interrupt(InterruptType::NMI);
+            }
 
             self.reg_t = (self.reg_t & !Self::NAME_TABLE_MASK) | (((val as u16) & 0x03) << 10);
         } else if addr == PPU_MASK_ADDR {
             // PPU_MASK
-            self.reg_mask = val;
+            self.reg_mask = PPUMask::from_bits_retain(val);
 
             self.reg_w = false;
         } else if addr == PPU_OAM_ADDR {
@@ -244,29 +245,24 @@ impl PPU {
             }
         } else if addr == PPU_ADDR {
             // PPU_ADDR
-            if self.reg_data_is_lo {
-                self.reg_data = (self.reg_data & 0xFF00) | val as u16;
-                self.reg_data_is_lo = false;
-            } else {
-                self.reg_data = ((val as u16) << 8) | (self.reg_data & 0x00FF);
-                self.reg_data_is_lo = true;
-            }
-
             if self.reg_w {
                 // Second write
                 self.reg_t = (self.reg_t & 0xFF00) | val as u16;
                 self.reg_v = self.reg_t;
+                self.reg_data = self.reg_v;
+                self.reg_data_is_lo = false;
                 self.reg_w = false;
             } else {
                 // First write
                 self.reg_t = (self.reg_t & 0x00FF) | (((val as u16) & 0b111111) << 8);
+                self.reg_data_is_lo = true;
                 self.reg_w = true;
             }
         } else if addr == PPU_DATA_ADDR {
-            let addr = self.reg_data;
+            let addr = self.reg_data & 0x3FFF;
             PPUBus::write(addr, val, &mut self.vram, cartridge);
 
-            self.reg_data = self.reg_data.wrapping_add(self.ctrl_increment());
+            self.reg_data = self.reg_data.wrapping_add(self.reg_ctrl.increment()) & 0x7FFF;
         } else {
             critical!(PPU, "Invalid register writing: {:#06X}", addr);
         }
@@ -327,7 +323,9 @@ impl PPU {
     }
 
     fn get_bg_color(&self, cartridge: &mut Cartridge) -> Option<PixelColor> {
-        if !self.mask_bg_visible() || (self.x < 8 && !self.mask_bg_visible_left8()) {
+        if !self.reg_mask.contains(PPUMask::BG_VISIBLE)
+            || (self.x < 8 && !self.reg_mask.contains(PPUMask::BG_VISIBLE_LEFT8))
+        {
             // The background is not visible.
             return None;
         }
@@ -341,7 +339,7 @@ impl PPU {
         let relative_y = (self.reg_v & Self::FINE_Y_MASK) >> 12;
 
         let pattern_idx = PPUBus::read(tile_addr, &self.vram, cartridge);
-        let bg_pattern_base_addr = self.ctrl_bg_pattern_table();
+        let bg_pattern_base_addr = self.reg_ctrl.bg_pattern_table();
 
         let lo = PPUBus::read(
             bg_pattern_base_addr + pattern_idx as u16 * PATTERN_SIZE + relative_y,
@@ -369,7 +367,10 @@ impl PPU {
                 &self.vram,
                 cartridge,
             );
-            Some(PixelColor::from_nes_color(color, self.mask_grey_scale()))
+            Some(PixelColor::from_nes_color(
+                color,
+                self.reg_mask.contains(PPUMask::GREY_SCALE),
+            ))
         }
     }
 
@@ -397,7 +398,10 @@ impl PPU {
 
                     if !req.background() {
                         // Sprite is over background.
-                        let color = PixelColor::from_nes_color(req.color, self.mask_grey_scale());
+                        let color = PixelColor::from_nes_color(
+                            req.color,
+                            self.reg_mask.contains(PPUMask::GREY_SCALE),
+                        );
                         frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
 
                         if self.sprite0_hit[self.y as usize * NES_FRAME_WIDTH + self.x as usize] {
@@ -406,7 +410,7 @@ impl PPU {
 
                             if self.get_bg_color(cartridge).is_some() {
                                 // Sprite 0 hit is occurred.
-                                self.reg_status |= 0x40;
+                                self.reg_status.insert(PPUStatus::SPRITE0_HIT);
                             }
                         }
                     } else {
@@ -419,13 +423,15 @@ impl PPU {
                             if self.sprite0_hit[self.y as usize * NES_FRAME_WIDTH + self.x as usize]
                             {
                                 // Sprite 0 hit is occurred.
-                                self.reg_status |= 0x40;
+                                self.reg_status.insert(PPUStatus::SPRITE0_HIT);
                             }
                         } else {
                             // The background color is transparent.
                             // Sprite is visible.
-                            let color =
-                                PixelColor::from_nes_color(req.color, self.mask_grey_scale());
+                            let color = PixelColor::from_nes_color(
+                                req.color,
+                                self.reg_mask.contains(PPUMask::GREY_SCALE),
+                            );
                             frame_buffer.set_chunk(self.x as usize, self.y as usize, color);
                         }
                     }
@@ -444,7 +450,7 @@ impl PPU {
                                 // It is not initialized.
                                 let color = PixelColor::from_nes_color(
                                     PPUBus::read(PALETTE_BASE_ADDR, &self.vram, cartridge),
-                                    self.mask_grey_scale(),
+                                    self.reg_mask.contains(PPUMask::GREY_SCALE),
                                 );
                                 bg_color = Some(color);
                                 color
@@ -471,14 +477,14 @@ impl PPU {
             if self.x == NES_FRAME_WIDTH as u16 + 1 && self.y < NES_FRAME_HEIGHT as u16 {
                 self.update_horizontal_v();
             }
-            if 280 <= self.x && self.x <= 304 && self.y == NES_FRAME_HEIGHT as u16 + PPU_VBLANK - 1
-            {
+            if 280 <= self.x && self.x <= 304 && self.y == PPU_PRE_RENDER_SCANLINE {
                 self.update_vertical_v();
             }
 
             if self.x == Self::IRQ_CYCLE && self.y < NES_FRAME_HEIGHT as u16 {
-                if self.ctrl_bg_pattern_table() != self.ctrl_sprite_pattern_table()
-                    && (self.mask_bg_visible() || self.mask_sprite_visible())
+                if self.reg_ctrl.bg_pattern_table() != self.reg_ctrl.sprite_pattern_table()
+                    && (self.reg_mask.contains(PPUMask::BG_VISIBLE)
+                        || self.reg_mask.contains(PPUMask::SPRITE_VISIBLE))
                 {
                     // https://www.nesdev.org/wiki/MMC3
 
@@ -489,13 +495,22 @@ impl PPU {
                 }
             }
 
-            if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
+            if self.x == 1 && self.y == PPU_VBLANK_START_SCANLINE {
                 // Set VBLANK flag
-                self.reg_status |= 0x80;
+                self.reg_status.insert(PPUStatus::VBLANK);
 
-                if self.ctrl_nmi_enable() {
+                if self.reg_ctrl.contains(PPUCtrl::NMI_ENABLE) {
                     cpu.interrupt(InterruptType::NMI);
                 }
+            }
+
+            if self.x == 1 && self.y == PPU_PRE_RENDER_SCANLINE {
+                // Clear VBLANK flag at the start of the pre-render line.
+                self.reg_status.remove(PPUStatus::VBLANK);
+
+                // Clear sprite 0 hit flag for the next frame.
+                self.reg_status.remove(PPUStatus::SPRITE0_HIT);
+                self.clear_sprite0_hit_flags();
             }
 
             self.x += 1;
@@ -505,13 +520,6 @@ impl PPU {
             }
             if self.y >= NES_FRAME_HEIGHT as u16 + PPU_VBLANK {
                 self.y = 0;
-
-                // Clear VBLANK flag
-                self.reg_status &= !0x80;
-
-                // Clear sprite 0 hit flag
-                self.reg_status &= !0x40;
-                self.clear_sprite0_hit_flags();
 
                 // One frame is rendered.
                 self.frame_counter += 1;
@@ -540,7 +548,7 @@ impl PPU {
             }
         }
 
-        if !self.mask_sprite_visible() {
+        if !self.reg_mask.contains(PPUMask::SPRITE_VISIBLE) {
             // Sprites are not visible.
             return;
         }
@@ -557,13 +565,13 @@ impl PPU {
 
             let pattern_idx = sprite.pattern_index;
 
-            let sprite_pattern_base_addr = if self.ctrl_sprite_size() == 16 {
+            let sprite_pattern_base_addr = if self.reg_ctrl.sprite_size() == 16 {
                 (pattern_idx as u16 & 1) * 0x1000
             } else {
-                self.ctrl_sprite_pattern_table()
+                self.reg_ctrl.sprite_pattern_table()
             };
 
-            for y in top..top + self.ctrl_sprite_size() as u16 {
+            for y in top..top + self.reg_ctrl.sprite_size() as u16 {
                 if y >= NES_FRAME_HEIGHT as u16 {
                     // Detect overflow.
                     break;
@@ -571,13 +579,13 @@ impl PPU {
 
                 // Calculate the relative Y position.
                 let relative_y = if sprite.flip_vertical() {
-                    self.ctrl_sprite_size() as u16 - 1 + top - y
+                    self.reg_ctrl.sprite_size() as u16 - 1 + top - y
                 } else {
                     y - top
                 };
 
                 // Read pattern data.
-                let pattern_idx = if self.ctrl_sprite_size() == 16 {
+                let pattern_idx = if self.reg_ctrl.sprite_size() == 16 {
                     (pattern_idx & !0x1) | ((relative_y >= 8) as u8)
                 } else {
                     pattern_idx
@@ -604,7 +612,7 @@ impl PPU {
                         break;
                     }
 
-                    if x < 8 && !self.mask_sprite_visible_left8() {
+                    if x < 8 && !self.reg_mask.contains(PPUMask::SPRITE_VISIBLE_LEFT8) {
                         // Left 8 pixels of the screen are not visible.
                         continue;
                     }
@@ -664,6 +672,40 @@ impl PPU {
     pub fn clear_sprite0_hit_flags(&mut self) {
         for v in self.sprite0_hit.iter_mut() {
             *v = false;
+        }
+    }
+}
+
+impl PPUCtrl {
+    pub fn increment(&self) -> u16 {
+        if self.contains(PPUCtrl::INCREMENT) {
+            32
+        } else {
+            1
+        }
+    }
+
+    pub fn sprite_pattern_table(&self) -> u16 {
+        if self.contains(PPUCtrl::SPRITE_PATTERN_TABLE) {
+            0x1000
+        } else {
+            0x0000
+        }
+    }
+
+    pub fn bg_pattern_table(&self) -> u16 {
+        if self.contains(PPUCtrl::BG_PATTERN_TABLE) {
+            0x1000
+        } else {
+            0x0000
+        }
+    }
+
+    pub fn sprite_size(&self) -> u8 {
+        if self.contains(PPUCtrl::SPRITE_SIZE) {
+            16
+        } else {
+            8
         }
     }
 }
