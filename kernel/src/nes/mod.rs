@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub enum Mirroring {
     Horizontal,
     Vertical,
+    SingleScreenLower,
+    SingleScreenUpper,
 }
 
 impl From<u8> for Mirroring {
@@ -23,6 +25,8 @@ impl ToString for Mirroring {
         match self {
             Mirroring::Horizontal => "Horizontal".to_string(),
             Mirroring::Vertical => "Vertical".to_string(),
+            Mirroring::SingleScreenLower => "Single Screen Lower".to_string(),
+            Mirroring::SingleScreenUpper => "Single Screen Upper".to_string(),
         }
     }
 }

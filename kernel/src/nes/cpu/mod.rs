@@ -26,6 +26,8 @@ pub struct CPU {
     pub inst: u64,
 
     interrupt: InterruptType,
+    #[serde(skip)]
+    defer_irq: bool,
     stall_cycles: u32,
     ram: RAM,
     history: Vec<Option<Instruction>, { CPU::HISTORY_SIZE }>,
@@ -78,12 +80,17 @@ impl CPU {
 
     pub fn init(&mut self) {
         self.interrupt = InterruptType::empty();
+        self.defer_irq = false;
         self.ram = RAM::new();
         self.history = Vec::from_array([None; CPU::HISTORY_SIZE]);
     }
 
     pub fn dma_stall(&mut self) {
         self.stall_cycles += OAM_DMA_CYCLES;
+    }
+
+    pub fn dmc_stall(&mut self) {
+        self.stall_cycles += 4;
     }
 
     fn do_dma_transfer(&mut self, ppu: &mut PPU, apu: &mut APU, cartridge: &mut Cartridge) {
@@ -240,6 +247,16 @@ impl CPU {
             self.interrupt.insert(InterruptType::IRQ);
         }
 
+        let suppress_irq = self.defer_irq;
+        self.defer_irq = false;
+
+        if suppress_irq && self.interrupt.contains(InterruptType::IRQ) {
+            self.interrupt.remove(InterruptType::IRQ);
+            let interrupted = self.exec_pending_interrupt(ppu, apu, cartridge);
+            self.interrupt.insert(InterruptType::IRQ);
+            return interrupted.then_some(Self::INTERRUPT_CYCLES);
+        }
+
         // Check whether there is any pending interrupt.
         if self.exec_pending_interrupt(ppu, apu, cartridge) {
             Some(Self::INTERRUPT_CYCLES)
@@ -254,6 +271,7 @@ impl CPU {
         apu: &mut APU,
         cartridge: &mut Cartridge,
     ) -> Instruction {
+        cartridge.begin_cpu_instruction();
         let instr = Instruction::fetch(self.reg_pc, self, ppu, apu, cartridge);
 
         // Record instruction to history.
@@ -305,6 +323,14 @@ impl CPU {
         macro_rules! instr_write {
             ($data:expr) => {
                 instr.addr_mode.write($data, self, ppu, apu, cartridge)
+            };
+        }
+
+        macro_rules! instr_rmw_write {
+            ($before:expr, $after:expr) => {
+                instr
+                    .addr_mode
+                    .write_read_modify($before, $after, self, ppu, apu, cartridge)
             };
         }
 
@@ -368,7 +394,7 @@ impl CPU {
                         self.reg_a = result;
                     }
                     _ => {
-                        instr_write!(result);
+                        instr_rmw_write!(val, result);
                     }
                 };
 
@@ -484,6 +510,9 @@ impl CPU {
                 0
             }
             InstrType::CLI => {
+                if self.reg_p.contains(StatusFlags::INT) {
+                    self.defer_irq = true;
+                }
                 self.reg_p.remove(StatusFlags::INT);
 
                 self.reg_pc += instr.addr_mode.size();
@@ -536,7 +565,7 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, result == 0);
                 self.reg_p.set(StatusFlags::NEG, result & 0x80 != 0);
 
-                instr_write!(result);
+                instr_rmw_write!(mem, result);
 
                 self.reg_pc += instr.addr_mode.size();
                 0
@@ -576,7 +605,7 @@ impl CPU {
                 self.reg_p.set(StatusFlags::ZERO, result == 0);
                 self.reg_p.set(StatusFlags::NEG, result & 0x80 != 0);
 
-                instr_write!(result);
+                instr_rmw_write!(mem, result);
 
                 self.reg_pc += instr.addr_mode.size();
                 0
@@ -682,7 +711,7 @@ impl CPU {
                         self.reg_a = result;
                     }
                     _ => {
-                        instr_write!(result);
+                        instr_rmw_write!(val, result);
                     }
                 };
 
@@ -711,8 +740,7 @@ impl CPU {
                 0
             }
             InstrType::PHP => {
-                self.reg_p.insert(StatusFlags::BRK);
-                push_stack!(self.reg_p.bits());
+                push_stack!((self.reg_p | StatusFlags::BRK | StatusFlags::ONE).bits());
                 self.reg_pc += instr.addr_mode.size();
                 0
             }
@@ -726,9 +754,15 @@ impl CPU {
                 0
             }
             InstrType::PLP => {
+                let prev_interrupt_disabled = self.reg_p.contains(StatusFlags::INT);
+
                 self.reg_p = StatusFlags::from_bits_retain(pop_stack!());
                 self.reg_p.insert(StatusFlags::ONE);
-                self.reg_p.insert(StatusFlags::BRK);
+                self.reg_p.remove(StatusFlags::BRK);
+
+                if prev_interrupt_disabled && !self.reg_p.contains(StatusFlags::INT) {
+                    self.defer_irq = true;
+                }
 
                 self.reg_pc += instr.addr_mode.size();
                 0
@@ -750,7 +784,7 @@ impl CPU {
                         self.reg_a = result;
                     }
                     _ => {
-                        instr_write!(result);
+                        instr_rmw_write!(val, result);
                     }
                 };
 
@@ -774,7 +808,7 @@ impl CPU {
                         self.reg_a = result;
                     }
                     _ => {
-                        instr_write!(result);
+                        instr_rmw_write!(val, result);
                     }
                 };
 
@@ -782,9 +816,15 @@ impl CPU {
                 0
             }
             InstrType::RTI => {
+                let prev_interrupt_disabled = self.reg_p.contains(StatusFlags::INT);
+
                 self.reg_p = StatusFlags::from_bits_retain(pop_stack!());
                 self.reg_p.insert(StatusFlags::ONE);
                 self.reg_p.remove(StatusFlags::BRK);
+
+                if prev_interrupt_disabled && !self.reg_p.contains(StatusFlags::INT) {
+                    self.defer_irq = true;
+                }
 
                 let lo = pop_stack!();
                 let hi = pop_stack!();
@@ -957,7 +997,7 @@ impl CPU {
             InstrType::DCP => {
                 let (mem, _) = instr_resolve!();
                 let mem = mem.wrapping_add_signed(-1);
-                instr_write!(mem);
+                instr_rmw_write!(mem.wrapping_add(1), mem);
 
                 let (res, borrow) = self.reg_a.overflowing_sub(mem);
 
@@ -971,7 +1011,7 @@ impl CPU {
             InstrType::ISC => {
                 let (mem, _) = instr_resolve!();
                 let mem = mem.wrapping_add(1);
-                instr_write!(mem);
+                instr_rmw_write!(mem.wrapping_sub(1), mem);
 
                 let (diff, borrow1) = self.reg_a.overflowing_sub(mem);
                 let (diff, borrow2) =
@@ -1022,7 +1062,7 @@ impl CPU {
                 let carry = self.reg_p.contains(StatusFlags::CARRY) as u8;
                 let result = (val << 1) | carry;
 
-                instr_write!(result);
+                instr_rmw_write!(val, result);
 
                 self.reg_p.set(StatusFlags::CARRY, val & 0x80 != 0);
 
@@ -1039,7 +1079,7 @@ impl CPU {
                 let carry = self.reg_p.contains(StatusFlags::CARRY) as u8;
                 let result = (val >> 1) | (carry << 7);
 
-                instr_write!(result);
+                instr_rmw_write!(val, result);
 
                 let carry = val & 0x1;
                 let (sum, carry1) = result.overflowing_add(self.reg_a);
@@ -1097,7 +1137,7 @@ impl CPU {
                 let (val, _) = instr_resolve!();
                 let result = val << 1;
 
-                instr_write!(result);
+                instr_rmw_write!(val, result);
 
                 self.reg_p.set(StatusFlags::CARRY, val & 0x80 != 0);
 
@@ -1113,7 +1153,7 @@ impl CPU {
                 let (val, _) = instr_resolve!();
                 let result = val >> 1;
 
-                instr_write!(result);
+                instr_rmw_write!(val, result);
 
                 self.reg_p.set(StatusFlags::CARRY, val & 0x01 != 0);
 

@@ -133,14 +133,14 @@ pub fn game_main() -> ! {
                 Some(cycles) => {
                     // CPU is stalling.
                     ppu.render_bg(cycles as usize * 3, &mut frame_buffer, cpu, cartridge);
-                    apu.clock(cycles, &mut sound, cpu, ppu, cartridge);
+                    apu.clock(cycles, &mut sound, cpu, cartridge);
                     cycles as usize
                 }
                 None => match cpu.resolve_interrupt(ppu, apu, cartridge) {
                     Some(cycles) => {
                         // CPU is in an interrupt state.
                         ppu.render_bg(cycles as usize * 3, &mut frame_buffer, cpu, cartridge);
-                        apu.clock(cycles, &mut sound, cpu, ppu, cartridge);
+                        apu.clock(cycles, &mut sound, cpu, cartridge);
                         cycles as usize
                     }
                     None => {
@@ -149,7 +149,7 @@ pub fn game_main() -> ! {
 
                         // Run PPU and APU before the instruction execution.
                         ppu.render_bg(instr.cycles as usize * 3, &mut frame_buffer, cpu, cartridge);
-                        apu.clock(instr.cycles as u32, &mut sound, cpu, ppu, cartridge);
+                        apu.clock(instr.cycles as u32, &mut sound, cpu, cartridge);
 
                         // Execute the instruction.
                         let additional_cycles = cpu.exec_instr(&instr, ppu, apu, cartridge);
@@ -161,7 +161,7 @@ pub fn game_main() -> ! {
                             cpu,
                             cartridge,
                         );
-                        apu.clock(additional_cycles as u32, &mut sound, cpu, ppu, cartridge);
+                        apu.clock(additional_cycles as u32, &mut sound, cpu, cartridge);
 
                         instr.cycles as usize + additional_cycles as usize
                     }

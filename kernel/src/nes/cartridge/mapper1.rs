@@ -26,6 +26,8 @@ pub struct Mapper1 {
     chr_bank_mode: ChrRomBankMode,
 
     prg_ram_disabled: bool,
+    #[serde(skip)]
+    wrote_register_this_instruction: bool,
 
     mirroring: Mirroring,
 }
@@ -74,7 +76,8 @@ impl Mapper1 {
             shift_register: 0x10,
             prg_rom_bank_mode: PrgRomBankMode::FixLast,
             chr_bank_mode: ChrRomBankMode::SwitchTwo,
-            prg_ram_disabled: true,
+            prg_ram_disabled: false,
+            wrote_register_this_instruction: false,
             mirroring,
         }
     }
@@ -85,6 +88,8 @@ impl Mapper1 {
             // CPPMM
 
             self.mirroring = match data & 0b11 {
+                0 => Mirroring::SingleScreenLower,
+                1 => Mirroring::SingleScreenUpper,
                 2 => Mirroring::Vertical,
                 3 => Mirroring::Horizontal,
                 _ => {
@@ -188,12 +193,16 @@ impl Mapper1 {
         }
     }
 
-    pub fn _mirroring(&self) -> Mirroring {
+    pub fn mirroring(&self) -> Mirroring {
         self.mirroring
     }
 
     pub fn working_ram(&mut self) -> &mut [u8] {
         &mut self.prg_ram
+    }
+
+    pub fn begin_cpu_instruction(&mut self) {
+        self.wrote_register_this_instruction = false;
     }
 }
 
@@ -231,6 +240,13 @@ impl CartridgeOperations for Mapper1 {
             }
         } else {
             // Writing to the shift register.
+
+            // MMC1 ignores a write on the CPU cycle immediately following a register write.
+            if self.wrote_register_this_instruction {
+                return;
+            }
+
+            self.wrote_register_this_instruction = true;
 
             let data_bit = data & 1;
             let reset = (data >> 7) & 1;

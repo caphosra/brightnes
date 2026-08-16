@@ -109,7 +109,7 @@ impl Cartridge {
 
         let kind = match mapper {
             0 => CartridgeKind::Mapper0(Mapper0::new(prg_rom_size, chr_size)),
-            1 => CartridgeKind::Mapper1(Mapper1::new(prg_rom_size, chr_size, self.mirroring())),
+            1 => CartridgeKind::Mapper1(Mapper1::new(prg_rom_size, chr_size, mirroring)),
             2 => CartridgeKind::Mapper2(Mapper2::new(prg_rom_size, chr_size)),
             3 => CartridgeKind::Mapper3(Mapper3::new(prg_rom_size, chr_size)),
             4 => CartridgeKind::Mapper4(Mapper4::new(prg_rom_size, chr_size)),
@@ -178,7 +178,16 @@ impl Cartridge {
 
     #[inline(always)]
     pub fn mirroring(&self) -> Mirroring {
-        (self.header.flag6 & 1).into()
+        match &self.kind {
+            CartridgeKind::Mapper1(mapper) => mapper.mirroring(),
+            _ => (self.header.flag6 & 1).into(),
+        }
+    }
+
+    pub fn begin_cpu_instruction(&mut self) {
+        if let CartridgeKind::Mapper1(mapper) = &mut self.kind {
+            mapper.begin_cpu_instruction();
+        }
     }
 
     pub fn read_cpu_mem(&mut self, addr: u16) -> u8 {

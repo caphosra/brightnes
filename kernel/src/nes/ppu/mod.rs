@@ -125,6 +125,9 @@ const PATTERN_SIZE: u16 = 16;
 
 const PPU_CYCLE: u16 = 341;
 const PPU_VBLANK: u16 = 22;
+const PPU_POST_RENDER_SCANLINE: u16 = NES_FRAME_HEIGHT as u16;
+const PPU_VBLANK_START_SCANLINE: u16 = PPU_POST_RENDER_SCANLINE + 1;
+const PPU_PRE_RENDER_SCANLINE: u16 = NES_FRAME_HEIGHT as u16 + PPU_VBLANK - 1;
 
 static PPU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
 
@@ -160,20 +163,30 @@ impl PPU {
         if addr == PPU_STATUS_ADDR {
             // PPU_STATUS
             self.reg_w = false;
+            self.reg_data_is_lo = false;
 
             let prev_status = self.reg_status.bits();
 
             // Remove VBLANK flag and cancel NMI if it was set.
             self.reg_status.remove(PPUStatus::VBLANK);
-            cpu.cancel_interrupt(InterruptType::NMI);
+            if (prev_status & PPUStatus::VBLANK.bits()) != 0 {
+                cpu.cancel_interrupt(InterruptType::NMI);
+            }
 
             prev_status
         } else if addr == PPU_DATA_ADDR {
             // PPU_DATA
-            let data = self.reg_data_buffer;
-            self.reg_data_buffer = PPUBus::read(self.reg_data, &self.vram, cartridge);
+            let addr = self.reg_data & 0x3FFF;
+            let data = if addr >= PALETTE_BASE_ADDR {
+                self.reg_data_buffer = PPUBus::read(addr - 0x1000, &self.vram, cartridge);
+                PPUBus::read(addr, &self.vram, cartridge)
+            } else {
+                let data = self.reg_data_buffer;
+                self.reg_data_buffer = PPUBus::read(addr, &self.vram, cartridge);
+                data
+            };
 
-            self.reg_data = self.reg_data.wrapping_add(self.reg_ctrl.increment());
+            self.reg_data = self.reg_data.wrapping_add(self.reg_ctrl.increment()) & 0x7FFF;
 
             data
         } else {
@@ -232,29 +245,24 @@ impl PPU {
             }
         } else if addr == PPU_ADDR {
             // PPU_ADDR
-            if self.reg_data_is_lo {
-                self.reg_data = (self.reg_data & 0xFF00) | val as u16;
-                self.reg_data_is_lo = false;
-            } else {
-                self.reg_data = ((val as u16) << 8) | (self.reg_data & 0x00FF);
-                self.reg_data_is_lo = true;
-            }
-
             if self.reg_w {
                 // Second write
                 self.reg_t = (self.reg_t & 0xFF00) | val as u16;
                 self.reg_v = self.reg_t;
+                self.reg_data = self.reg_v;
+                self.reg_data_is_lo = false;
                 self.reg_w = false;
             } else {
                 // First write
                 self.reg_t = (self.reg_t & 0x00FF) | (((val as u16) & 0b111111) << 8);
+                self.reg_data_is_lo = true;
                 self.reg_w = true;
             }
         } else if addr == PPU_DATA_ADDR {
-            let addr = self.reg_data;
+            let addr = self.reg_data & 0x3FFF;
             PPUBus::write(addr, val, &mut self.vram, cartridge);
 
-            self.reg_data = self.reg_data.wrapping_add(self.reg_ctrl.increment());
+            self.reg_data = self.reg_data.wrapping_add(self.reg_ctrl.increment()) & 0x7FFF;
         } else {
             critical!(PPU, "Invalid register writing: {:#06X}", addr);
         }
@@ -469,8 +477,7 @@ impl PPU {
             if self.x == NES_FRAME_WIDTH as u16 + 1 && self.y < NES_FRAME_HEIGHT as u16 {
                 self.update_horizontal_v();
             }
-            if 280 <= self.x && self.x <= 304 && self.y == NES_FRAME_HEIGHT as u16 + PPU_VBLANK - 1
-            {
+            if 280 <= self.x && self.x <= 304 && self.y == PPU_PRE_RENDER_SCANLINE {
                 self.update_vertical_v();
             }
 
@@ -488,13 +495,22 @@ impl PPU {
                 }
             }
 
-            if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
+            if self.x == 1 && self.y == PPU_VBLANK_START_SCANLINE {
                 // Set VBLANK flag
                 self.reg_status.insert(PPUStatus::VBLANK);
 
                 if self.reg_ctrl.contains(PPUCtrl::NMI_ENABLE) {
                     cpu.interrupt(InterruptType::NMI);
                 }
+            }
+
+            if self.x == 1 && self.y == PPU_PRE_RENDER_SCANLINE {
+                // Clear VBLANK flag at the start of the pre-render line.
+                self.reg_status.remove(PPUStatus::VBLANK);
+
+                // Clear sprite 0 hit flag for the next frame.
+                self.reg_status.remove(PPUStatus::SPRITE0_HIT);
+                self.clear_sprite0_hit_flags();
             }
 
             self.x += 1;
@@ -504,13 +520,6 @@ impl PPU {
             }
             if self.y >= NES_FRAME_HEIGHT as u16 + PPU_VBLANK {
                 self.y = 0;
-
-                // Clear VBLANK flag
-                self.reg_status.remove(PPUStatus::VBLANK);
-
-                // Clear sprite 0 hit flag
-                self.reg_status.remove(PPUStatus::SPRITE0_HIT);
-                self.clear_sprite0_hit_flags();
 
                 // One frame is rendered.
                 self.frame_counter += 1;

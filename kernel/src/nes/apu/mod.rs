@@ -10,7 +10,6 @@ use crate::{
         apu::{dmc::DMC, noise::APUNoise, pulse::APUPulse, triangle::APUTriangle},
         cartridge::Cartridge,
         cpu::CPU,
-        ppu::PPU,
     },
 };
 
@@ -188,7 +187,6 @@ impl APU {
         cycles: u32,
         sound: &mut SoundDeviceDriver<SoundSampleType>,
         cpu: &mut CPU,
-        ppu: &mut PPU,
         cartridge: &mut Cartridge,
     ) {
         self.frame_counter.step += cycles;
@@ -198,7 +196,7 @@ impl APU {
         self.squares[1].clock(cycles);
         self.triangle.clock(cycles);
         self.noise.clock(cycles);
-        self.dmc.clock(cycles, cpu, ppu, cartridge);
+        self.dmc.clock(cycles, cpu, cartridge);
 
         while self.frame_counter.step >= Self::QUARTER_FRAME_CLOCKS {
             // Quarter frame comes.

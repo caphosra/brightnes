@@ -888,4 +888,55 @@ impl AddrMode {
             AddrMode::Relative(_) => {}
         }
     }
+
+    pub fn write_read_modify(
+        &self,
+        before: u8,
+        after: u8,
+        cpu: &mut CPU,
+        ppu: &mut PPU,
+        apu: &mut APU,
+        cartridge: &mut Cartridge,
+    ) {
+        macro_rules! read_cpu_bus {
+            ($addr:expr) => {
+                CPUBus::read($addr, cpu, ppu, apu, cartridge)
+            };
+        }
+
+        macro_rules! write_cpu_bus {
+            ($addr:expr, $data:expr) => {
+                CPUBus::write($addr, $data, cpu, ppu, apu, cartridge)
+            };
+        }
+
+        let addr = match self {
+            AddrMode::Implied => None,
+            AddrMode::Immediate(_) => None,
+            AddrMode::ZeroPage(addr) => Some(*addr as u16),
+            AddrMode::ZeroPageX(addr) => Some(addr.wrapping_add(cpu.reg_x) as u16),
+            AddrMode::ZeroPageY(addr) => Some(addr.wrapping_add(cpu.reg_y) as u16),
+            AddrMode::Absolute(addr) => Some(*addr),
+            AddrMode::AbsoluteX(addr) => Some(addr.wrapping_add(cpu.reg_x as u16)),
+            AddrMode::AbsoluteY(addr) => Some(addr.wrapping_add(cpu.reg_y as u16)),
+            AddrMode::Indirect(_) => None,
+            AddrMode::IndirectX(addr) => {
+                let ptr = addr.wrapping_add(cpu.reg_x);
+                let lo = read_cpu_bus!(ptr as u16);
+                let hi = read_cpu_bus!(ptr.wrapping_add(1) as u16);
+                Some(u16::from_le_bytes([lo, hi]))
+            }
+            AddrMode::IndirectY(addr) => {
+                let lo = read_cpu_bus!(*addr as u16);
+                let hi = read_cpu_bus!(addr.wrapping_add(1) as u16);
+                Some(u16::from_le_bytes([lo, hi]).wrapping_add(cpu.reg_y as u16))
+            }
+            AddrMode::Relative(_) => None,
+        };
+
+        if let Some(addr) = addr {
+            write_cpu_bus!(addr, before);
+            write_cpu_bus!(addr, after);
+        }
+    }
 }
