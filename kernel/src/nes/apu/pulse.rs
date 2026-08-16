@@ -113,24 +113,21 @@ impl APUChannel for APUPulse {
         } else {
             self.sweep_counter = self.sweep_period;
 
-            if self.sweep_enabled && self.sweep_shift > 0 {
-                if self.timer >= 8 && self.timer <= 0x7FF {
-                    // Perform the sweep.
-                    let change = self.timer >> self.sweep_shift;
-                    if self.sweep_negate {
-                        self.timer = self.timer.checked_sub(change).unwrap_or(0);
-                    } else {
-                        self.timer = self.timer.wrapping_add(change);
-                    }
+            if self.sweep_enabled && self.sweep_shift > 0 && self.timer >= 8 && self.timer <= 0x7FF
+            {
+                // Perform the sweep.
+                let change = self.timer >> self.sweep_shift;
+                if self.sweep_negate {
+                    self.timer = self.timer.saturating_sub(change);
+                } else {
+                    self.timer = self.timer.wrapping_add(change);
                 }
             }
         }
 
         // Length counter
-        if !self.loop_enabled {
-            if self.length_counter > 0 {
-                self.length_counter -= 1;
-            }
+        if !self.loop_enabled && self.length_counter > 0 {
+            self.length_counter -= 1;
         }
     }
 
