@@ -59,74 +59,70 @@ impl FileSystem {
             );
         });
         let mut infos = Vec::new();
-        for file in nes_dir.iter() {
-            if let Ok(file) = file {
-                if file.is_file() {
-                    let short_name = file.short_file_name_as_bytes();
-                    if short_name.ends_with(b".NES") {
-                        // Found a NES file.
+        for file in nes_dir.iter().flatten() {
+            if file.is_file() {
+                let short_name = file.short_file_name_as_bytes();
+                if short_name.ends_with(b".NES") {
+                    // Found a NES file.
 
-                        // Remove the extension.
-                        let name_without_ext =
-                            str::from_utf8(&short_name[..short_name.len() - b".NES".len()])
-                                .unwrap();
+                    // Remove the extension.
+                    let name_without_ext =
+                        str::from_utf8(&short_name[..short_name.len() - b".NES".len()]).unwrap();
 
-                        // Look up a file with ".TXT" to retrieve the long name.
-                        // If not found, use the short name as the long name.
-                        let long_name =
-                            match nes_dir.open_file(&format!("{}.TXT", name_without_ext)) {
-                                Ok(mut file) => {
-                                    let mut long_name = Vec::new();
-                                    let mut buf = [0u8; 64];
-                                    let mut length = 0;
-                                    loop {
-                                        match file.read(&mut buf) {
-                                            Ok(0) => break,
-                                            Ok(n) => {
-                                                long_name.extend_from_slice(&buf[..n]);
-                                                length += n;
-                                            }
-                                            Err(_) => break,
-                                        }
+                    // Look up a file with ".TXT" to retrieve the long name.
+                    // If not found, use the short name as the long name.
+                    let long_name = match nes_dir.open_file(&format!("{}.TXT", name_without_ext)) {
+                        Ok(mut file) => {
+                            let mut long_name = Vec::new();
+                            let mut buf = [0u8; 64];
+                            let mut length = 0;
+                            loop {
+                                match file.read(&mut buf) {
+                                    Ok(0) => break,
+                                    Ok(n) => {
+                                        long_name.extend_from_slice(&buf[..n]);
+                                        length += n;
                                     }
-                                    match str::from_utf8(&long_name[..length]) {
-                                        Ok(s) => s.to_string(),
-                                        Err(_) => name_without_ext.to_string(),
-                                    }
+                                    Err(_) => break,
                                 }
-                                Err(Error::NotFound) => name_without_ext.to_string(),
-                                _ => {
-                                    critical!(
-                                        DSK,
-                                        "Failed to find cartridges. The disk might be corrupted."
-                                    );
-                                }
-                            };
+                            }
+                            match str::from_utf8(&long_name[..length]) {
+                                Ok(s) => s.to_string(),
+                                Err(_) => name_without_ext.to_string(),
+                            }
+                        }
+                        Err(Error::NotFound) => name_without_ext.to_string(),
+                        _ => {
+                            critical!(
+                                DSK,
+                                "Failed to find cartridges. The disk might be corrupted."
+                            );
+                        }
+                    };
 
-                        // Check saved files by trying to open those.
-                        let has_savedata = root_dir
-                            .open_file(&format!("{}.{}", name_without_ext, Self::SAVEDATA_EXT))
-                            .is_ok();
-                        let has_ram = root_dir
-                            .open_file(&format!("{}.{}", name_without_ext, Self::RAM_EXT))
-                            .is_ok();
+                    // Check saved files by trying to open those.
+                    let has_savedata = root_dir
+                        .open_file(&format!("{}.{}", name_without_ext, Self::SAVEDATA_EXT))
+                        .is_ok();
+                    let has_ram = root_dir
+                        .open_file(&format!("{}.{}", name_without_ext, Self::RAM_EXT))
+                        .is_ok();
 
-                        info!(
-                            DSK,
-                            "A cartridge found: {} ({}), savedata={}, ram={}",
-                            long_name,
-                            name_without_ext,
-                            has_savedata,
-                            has_ram
-                        );
+                    info!(
+                        DSK,
+                        "A cartridge found: {} ({}), savedata={}, ram={}",
+                        long_name,
+                        name_without_ext,
+                        has_savedata,
+                        has_ram
+                    );
 
-                        infos.push(CartridgeInfo {
-                            short_name: name_without_ext.to_string(),
-                            long_name,
-                            has_savedata,
-                            has_ram,
-                        });
-                    }
+                    infos.push(CartridgeInfo {
+                        short_name: name_without_ext.to_string(),
+                        long_name,
+                        has_savedata,
+                        has_ram,
+                    });
                 }
             }
         }
@@ -178,10 +174,8 @@ impl FileSystem {
     pub fn check_root_dir(&mut self) {
         let root_dir = self.file_system.root_dir();
         let entries = root_dir.iter();
-        for entry in entries {
-            if let Ok(entry) = entry {
-                info!(SYS, "Found file: {}", entry.file_name());
-            }
+        for entry in entries.flatten() {
+            info!(SYS, "Found file: {}", entry.file_name());
         }
     }
 
@@ -221,7 +215,6 @@ impl FileSystem {
         let serialized_cpu = to_allocvec_crc32(cpu, crc.digest());
         let serialized_cpu = serialized_cpu.map_err(|_| {
             error!(SYS, "Failed to serialize CPU state");
-            ()
         })?;
 
         file.write_all(&serialized_cpu.len().to_le_bytes())
@@ -233,7 +226,6 @@ impl FileSystem {
         let serialized_ppu = to_allocvec_crc32(ppu, crc.digest());
         let serialized_ppu = serialized_ppu.map_err(|_| {
             error!(SYS, "Failed to serialize CPU state");
-            ()
         })?;
 
         file.write_all(&serialized_ppu.len().to_le_bytes())
@@ -245,7 +237,6 @@ impl FileSystem {
         let serialized_cartridge = to_allocvec_crc32(cartridge, crc.digest());
         let serialized_cartridge = serialized_cartridge.map_err(|_| {
             error!(SYS, "Failed to serialize cartridge state");
-            ()
         })?;
 
         file.write_all(&serialized_cartridge.len().to_le_bytes())
@@ -295,7 +286,6 @@ impl FileSystem {
 
         *cpu = from_bytes_crc32(&cpu_buf, crc.digest()).map_err(|_| {
             error!(SYS, "Failed to deserialize CPU state");
-            ()
         })?;
 
         file.read_exact(&mut file_size_buf).map_err(|_| ())?;
@@ -308,7 +298,6 @@ impl FileSystem {
 
         *ppu = from_bytes_crc32(&ppu_buf, crc.digest()).map_err(|_| {
             error!(SYS, "Failed to deserialize PPU state");
-            ()
         })?;
 
         file.read_exact(&mut file_size_buf).map_err(|_| ())?;
@@ -321,7 +310,6 @@ impl FileSystem {
 
         *cartridge = from_bytes_crc32(&cart_buf, crc.digest()).map_err(|_| {
             error!(SYS, "Failed to deserialize cartridge state");
-            ()
         })?;
 
         Ok(())

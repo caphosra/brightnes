@@ -1,6 +1,8 @@
 #![no_main]
 #![no_std]
 #![feature(abi_x86_interrupt)]
+#![allow(clippy::upper_case_acronyms)]
+#![allow(clippy::enum_variant_names)]
 
 extern crate alloc;
 

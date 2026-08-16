@@ -57,7 +57,7 @@ bitflags! {
     }
 }
 
-static CPU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
+static CPU_PTR: Lazy<Once<usize>> = Lazy::new(Once::new);
 
 impl CPU {
     pub const CLOCK_FREQ: u32 = 1789773;
@@ -88,12 +88,12 @@ impl CPU {
 
     fn do_dma_transfer(&mut self, ppu: &mut PPU, apu: &mut APU, cartridge: &mut Cartridge) {
         let mut data = [9; 0x100];
-        for i in 0..=0xFF {
+        for (i, d) in data.iter_mut().enumerate() {
             let addr = ppu.oam.dma_request_addr + i as u16;
-            data[i] = CPUBus::read(addr, self, ppu, apu, cartridge);
+            *d = CPUBus::read(addr, self, ppu, apu, cartridge);
         }
-        for i in 0..=0xFF {
-            ppu.oam.write(i as u8, data[i]);
+        for (i, d) in data.iter().enumerate() {
+            ppu.oam.write(i as u8, *d);
         }
     }
 
@@ -297,7 +297,7 @@ impl CPU {
                     + (self.reg_a as i8) as i16
                     + self.reg_p.contains(StatusFlags::CARRY) as i16;
                 self.reg_p
-                    .set(StatusFlags::OVERFLOW, ans > 0x7F || ans < -0x80);
+                    .set(StatusFlags::OVERFLOW, !(-0x80..=0x7F).contains(&ans));
 
                 self.reg_p.set(StatusFlags::CARRY, carry1 || carry2);
                 self.reg_p.set(StatusFlags::ZERO, sum == 0);
@@ -773,7 +773,7 @@ impl CPU {
                     - (mem as i8) as i16
                     - (1 - self.reg_p.contains(StatusFlags::CARRY) as u8) as i16;
                 self.reg_p
-                    .set(StatusFlags::OVERFLOW, ans > 0x7F || ans < -0x80);
+                    .set(StatusFlags::OVERFLOW, !(-0x80..=0x7F).contains(&ans));
 
                 self.reg_p.set(StatusFlags::CARRY, !(borrow1 || borrow2));
                 self.reg_p.set(StatusFlags::ZERO, diff == 0);
@@ -887,7 +887,7 @@ impl CPU {
                 let (mem, _) = inst_resolve!();
 
                 let carry = self.reg_a & 0x80;
-                self.reg_a = self.reg_a & mem;
+                self.reg_a &= mem;
 
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
@@ -904,7 +904,7 @@ impl CPU {
 
                 let ans = (self.reg_a & mem) as i16 + mem as i16;
                 self.reg_p
-                    .set(StatusFlags::OVERFLOW, ans > 0x7F || ans < -0x80);
+                    .set(StatusFlags::OVERFLOW, !(-0x80..=0x7F).contains(&ans));
 
                 let carry = (self.reg_a & mem) & 1;
                 self.reg_a = ((self.reg_a & mem) >> 1) & (carry << 7);
@@ -944,7 +944,7 @@ impl CPU {
                     - (mem as i8) as i16
                     - (1 - self.reg_p.contains(StatusFlags::CARRY) as u8) as i16;
                 self.reg_p
-                    .set(StatusFlags::OVERFLOW, ans > 0x7F || ans < -0x80);
+                    .set(StatusFlags::OVERFLOW, !(-0x80..=0x7F).contains(&ans));
 
                 self.reg_p.set(StatusFlags::CARRY, !(borrow1 || borrow2));
                 self.reg_p.set(StatusFlags::ZERO, diff == 0);
@@ -989,7 +989,7 @@ impl CPU {
 
                 self.reg_p.set(StatusFlags::CARRY, val & 0x80 != 0);
 
-                self.reg_a = self.reg_a & result;
+                self.reg_a &= result;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
@@ -1011,7 +1011,7 @@ impl CPU {
                 // Calculate overflow
                 let ans = (result as i8) as i16 + (self.reg_a as i8) as i16 + carry as i16;
                 self.reg_p
-                    .set(StatusFlags::OVERFLOW, ans > 0x7F || ans < -0x80);
+                    .set(StatusFlags::OVERFLOW, !(-0x80..=0x7F).contains(&ans));
                 self.reg_p.set(StatusFlags::CARRY, carry1 || carry2);
                 self.reg_p.set(StatusFlags::ZERO, sum == 0);
                 self.reg_p.set(StatusFlags::NEG, sum & 0x80 != 0);
@@ -1064,7 +1064,7 @@ impl CPU {
 
                 self.reg_p.set(StatusFlags::CARRY, val & 0x80 != 0);
 
-                self.reg_a = self.reg_a | result;
+                self.reg_a |= result;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
@@ -1080,7 +1080,7 @@ impl CPU {
 
                 self.reg_p.set(StatusFlags::CARRY, val & 0x01 != 0);
 
-                self.reg_a = self.reg_a ^ result;
+                self.reg_a ^= result;
 
                 self.reg_p.set(StatusFlags::ZERO, self.reg_a == 0);
                 self.reg_p.set(StatusFlags::NEG, self.reg_a & 0x80 != 0);
@@ -1104,7 +1104,7 @@ impl CPU {
                     - (mem as i8) as i16
                     - (1 - self.reg_p.contains(StatusFlags::CARRY) as u8) as i16;
                 self.reg_p
-                    .set(StatusFlags::OVERFLOW, ans > 0x7F || ans < -0x80);
+                    .set(StatusFlags::OVERFLOW, !(-0x80..=0x7F).contains(&ans));
 
                 self.reg_p.set(StatusFlags::CARRY, !(borrow1 || borrow2));
                 self.reg_p.set(StatusFlags::ZERO, diff == 0);
@@ -1127,18 +1127,17 @@ impl CPU {
             self.history[i] = self.history[i + 1];
         }
 
-        self.history[Self::HISTORY_SIZE - 1] = Some(inst.clone());
+        self.history[Self::HISTORY_SIZE - 1] = Some(*inst);
 
         self.send_inst_log(inst);
     }
-
 
     #[cfg(feature = "trace-cpu")]
     pub fn send_inst_log(&self, inst: &Instruction) {
         use crate::serial::Serial;
 
         Serial::communicate(|handler| {
-            handler.write(format!("{:#06X}: {}\n", inst.pc, inst.to_string()).as_bytes());
+            handler.write(format!("{:#06X}: {}\n", inst.pc, inst).as_bytes());
         });
     }
 
@@ -1153,9 +1152,9 @@ impl CPU {
             match self.history[i] {
                 Some(inst) => {
                     if i == Self::HISTORY_SIZE - 1 {
-                        handler(&format!("--> {:#06X}: {}", inst.pc, inst.to_string()));
+                        handler(&format!("--> {:#06X}: {}", inst.pc, inst));
                     } else {
-                        handler(&format!("    {:#06X}: {}", inst.pc, inst.to_string()));
+                        handler(&format!("    {:#06X}: {}", inst.pc, inst));
                     }
                 }
                 None => {

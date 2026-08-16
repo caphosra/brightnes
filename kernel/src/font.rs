@@ -1,4 +1,4 @@
-use core::{mem::transmute, slice::from_raw_parts};
+use core::{ptr::with_exposed_provenance_mut, slice::from_raw_parts};
 
 use spin::{Lazy, RwLock};
 
@@ -43,13 +43,11 @@ impl FontManager {
 
     pub fn init_glyph_index_table() {
         let header = Self::get_psf_header();
-        let glyph_tbl: *const u8 = unsafe {
-            transmute(
-                FONT_ADDR
-                    + header.header_size as u64
-                    + header.bytes_per_glyph as u64 * header.num_glyph as u64,
-            )
-        };
+        let glyph_tbl: *const u8 = with_exposed_provenance_mut(
+            FONT_ADDR as usize
+                + header.header_size as usize
+                + header.bytes_per_glyph as usize * header.num_glyph as usize,
+        );
         let mut current = 0;
         let mut glyph = 0;
         while glyph < header.num_glyph {
@@ -87,7 +85,6 @@ impl FontManager {
             glyph += 1;
             current += 2;
         }
-        ()
     }
 
     pub fn get_glyph(index: usize) -> &'static [u8] {

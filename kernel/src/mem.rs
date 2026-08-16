@@ -221,7 +221,7 @@ unsafe impl GlobalAlloc for MemoryAllocator {
 
         // Try to get memory from chunk lists.
         if let Some(mem) = RELEASED_MEM.get_mem(size) {
-            if mem as usize % layout.align() == 0 {
+            if (mem as usize).is_multiple_of(layout.align()) {
                 MemStatistics::notify_reused(size);
 
                 // The memory is following the alignment constraint.
@@ -241,7 +241,7 @@ unsafe impl GlobalAlloc for MemoryAllocator {
 
             let align = layout.align();
 
-            let start_offset = ((*used + align - 1) / align) * align;
+            let start_offset = (*used).div_ceil(align) * align;
             let end_offset = start_offset + size;
             if end_offset >= HEAP_SIZE {
                 return null_mut();
@@ -298,7 +298,7 @@ impl MemoryAllocator {
     pub fn check_mem_error() -> bool {
         MEM_ALLOC
             .mem_error_notified
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |notified| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |notified| {
                 if !notified {
                     let used = MEM_ALLOC.used.lock();
                     if *used >= HEAP_SIZE - HEAP_SAFE_MARGIN {

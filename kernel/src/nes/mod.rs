@@ -1,4 +1,4 @@
-use alloc::string::ToString;
+use core::fmt::Display;
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -17,11 +17,11 @@ impl From<u8> for Mirroring {
     }
 }
 
-impl ToString for Mirroring {
-    fn to_string(&self) -> alloc::string::String {
+impl Display for Mirroring {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Mirroring::Horizontal => "Horizontal".to_string(),
-            Mirroring::Vertical => "Vertical".to_string(),
+            Mirroring::Horizontal => write!(f, "Horizontal"),
+            Mirroring::Vertical => write!(f, "Vertical"),
         }
     }
 }

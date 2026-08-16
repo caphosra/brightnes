@@ -87,7 +87,7 @@ const PATTERN_SIZE: u16 = 16;
 const PPU_CYCLE: u16 = 341;
 const PPU_VBLANK: u16 = 22;
 
-static PPU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
+static PPU_PTR: Lazy<Once<usize>> = Lazy::new(Once::new);
 
 impl PPU {
     const COARSE_X_MASK: u16 = 0b00000000_00011111;
@@ -476,17 +476,17 @@ impl PPU {
                 self.update_vertical_v();
             }
 
-            if self.x == Self::IRQ_CYCLE && self.y < NES_FRAME_HEIGHT as u16 {
-                if self.ctrl_bg_pattern_table() != self.ctrl_sprite_pattern_table()
-                    && (self.mask_bg_visible() || self.mask_sprite_visible())
-                {
-                    // https://www.nesdev.org/wiki/MMC3
+            if self.x == Self::IRQ_CYCLE
+                && self.y < NES_FRAME_HEIGHT as u16
+                && self.ctrl_bg_pattern_table() != self.ctrl_sprite_pattern_table()
+                && (self.mask_bg_visible() || self.mask_sprite_visible())
+            {
+                // https://www.nesdev.org/wiki/MMC3
 
-                    // BG uses $0000, sprite uses $1000 or vice versa.
+                // BG uses $0000, sprite uses $1000 or vice versa.
 
-                    // Clock IRQ counter
-                    cartridge.irq_clock(cpu);
-                }
+                // Clock IRQ counter
+                cartridge.irq_clock(cpu);
             }
 
             if self.x == 0 && self.y == NES_FRAME_HEIGHT as u16 {
@@ -523,7 +523,7 @@ impl PPU {
     }
 
     pub fn reflect_next_line_sprites(&mut self, cartridge: &mut Cartridge) {
-        let target_y = self.y as u16 + 1;
+        let target_y = self.y + 1;
         if target_y >= NES_FRAME_HEIGHT as u16 {
             // No need to reflect sprites.
             return;
@@ -531,7 +531,7 @@ impl PPU {
 
         // Clean up the next line.
         for x in 0..NES_FRAME_WIDTH {
-            let target = &mut self.sprites_layer[target_y as usize * NES_FRAME_WIDTH + x as usize];
+            let target = &mut self.sprites_layer[target_y as usize * NES_FRAME_WIDTH + x];
             if let Some(req) = target {
                 if req.frame() < self.frame_counter {
                     // The request is from the previous frame. Just remove it.

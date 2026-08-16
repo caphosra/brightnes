@@ -1,2 +1,6 @@
 [toolchain]
 channel = "nightly"
+components = [
+    "rust-analyzer",
+    "clippy"
+]

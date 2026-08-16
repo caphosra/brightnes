@@ -43,7 +43,7 @@ impl Read for BlockDeviceDriver<'_> {
 
         let sector_size = self.block_device.sector_size() as u64;
         let start_sector = self.position / sector_size;
-        let end_sector = (end + sector_size - 1) / sector_size;
+        let end_sector = end.div_ceil(sector_size);
 
         let buffer_size = (end_sector - start_sector) * sector_size;
         if self.sector_buffer.len() < buffer_size as usize {
@@ -76,7 +76,7 @@ impl Write for BlockDeviceDriver<'_> {
 
         let sector_size = self.block_device.sector_size() as u64;
         let start_sector = self.position / sector_size;
-        let end_sector = (end + sector_size - 1) / sector_size;
+        let end_sector = end.div_ceil(sector_size);
 
         let buffer_size = (end_sector - start_sector) * sector_size;
         if self.sector_buffer.len() < buffer_size as usize {

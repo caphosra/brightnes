@@ -2,7 +2,7 @@ use core::{arch::asm, ptr::null};
 
 use spin::{Lazy, RwLock};
 use x86_64::{
-    instructions::interrupts,
+    instructions::{hlt, interrupts},
     structures::idt::{InterruptStackFrame, InterruptStackFrameValue},
     VirtAddr,
 };
@@ -67,7 +67,9 @@ impl ProcessSwitcher {
             processes: [
                 ProcessInfo::new(
                     VirtAddr::from_ptr(null::<u8>()),
-                    || loop {},
+                    || loop {
+                        hlt();
+                    },
                     on_system_switched,
                 ),
                 ProcessInfo::new(
@@ -145,7 +147,7 @@ impl ProcessSwitcher {
         }
 
         // Save the current state.
-        let old_state = current_frame.clone();
+        let old_state = **current_frame;
         self.processes[old_mode_idx].saved_state = Some(old_state);
 
         // Call on_changed handler.

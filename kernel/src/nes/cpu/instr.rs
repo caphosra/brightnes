@@ -3,8 +3,8 @@
 // https://www.masswerk.at/6502/6502_instruction_set.html
 //
 
-use alloc::format;
-use alloc::string::String;
+use core::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 use crate::nes::apu::APU;
@@ -109,110 +109,110 @@ pub enum InstrType {
 }
 
 impl InstrType {
-    pub fn to_str(&self) -> &str {
+    pub fn to_str(self) -> &'static str {
         match self {
             // Transfer Instructions
-            &InstrType::LDA => "LDA",
-            &InstrType::LDX => "LDX",
-            &InstrType::LDY => "LDY",
-            &InstrType::STA => "STA",
-            &InstrType::STX => "STX",
-            &InstrType::STY => "STY",
-            &InstrType::TAX => "TAX",
-            &InstrType::TAY => "TAY",
-            &InstrType::TSX => "TSX",
-            &InstrType::TXA => "TXA",
-            &InstrType::TXS => "TXS",
-            &InstrType::TYA => "TYA",
+            InstrType::LDA => "LDA",
+            InstrType::LDX => "LDX",
+            InstrType::LDY => "LDY",
+            InstrType::STA => "STA",
+            InstrType::STX => "STX",
+            InstrType::STY => "STY",
+            InstrType::TAX => "TAX",
+            InstrType::TAY => "TAY",
+            InstrType::TSX => "TSX",
+            InstrType::TXA => "TXA",
+            InstrType::TXS => "TXS",
+            InstrType::TYA => "TYA",
 
             // Stack Instructions
-            &InstrType::PHA => "PHA",
-            &InstrType::PHP => "PHP",
-            &InstrType::PLA => "PLA",
-            &InstrType::PLP => "PLP",
+            InstrType::PHA => "PHA",
+            InstrType::PHP => "PHP",
+            InstrType::PLA => "PLA",
+            InstrType::PLP => "PLP",
 
             // Decrement and Increment Instructions
-            &InstrType::DEC => "DEC",
-            &InstrType::DEX => "DEX",
-            &InstrType::DEY => "DEY",
-            &InstrType::INC => "INC",
-            &InstrType::INX => "INX",
-            &InstrType::INY => "INY",
+            InstrType::DEC => "DEC",
+            InstrType::DEX => "DEX",
+            InstrType::DEY => "DEY",
+            InstrType::INC => "INC",
+            InstrType::INX => "INX",
+            InstrType::INY => "INY",
 
             // Arithmetic Instructions
-            &InstrType::ADC => "ADC",
-            &InstrType::SBC => "SBC",
+            InstrType::ADC => "ADC",
+            InstrType::SBC => "SBC",
 
             // Logical Instructions
-            &InstrType::AND => "AND",
-            &InstrType::EOR => "EOR",
-            &InstrType::ORA => "ORA",
+            InstrType::AND => "AND",
+            InstrType::EOR => "EOR",
+            InstrType::ORA => "ORA",
 
             // Shift Instructions
-            &InstrType::ASL => "ASL",
-            &InstrType::LSR => "LSR",
-            &InstrType::ROL => "ROL",
-            &InstrType::ROR => "ROR",
+            InstrType::ASL => "ASL",
+            InstrType::LSR => "LSR",
+            InstrType::ROL => "ROL",
+            InstrType::ROR => "ROR",
 
             // Flag Instructions
-            &InstrType::CLC => "CLC",
-            &InstrType::CLD => "CLD",
-            &InstrType::CLI => "CLI",
-            &InstrType::CLV => "CLV",
-            &InstrType::SEC => "SEC",
-            &InstrType::SED => "SED",
-            &InstrType::SEI => "SEI",
+            InstrType::CLC => "CLC",
+            InstrType::CLD => "CLD",
+            InstrType::CLI => "CLI",
+            InstrType::CLV => "CLV",
+            InstrType::SEC => "SEC",
+            InstrType::SED => "SED",
+            InstrType::SEI => "SEI",
 
             // Comparison Instructions
-            &InstrType::CMP => "CMP",
-            &InstrType::CPX => "CPX",
-            &InstrType::CPY => "CPY",
+            InstrType::CMP => "CMP",
+            InstrType::CPX => "CPX",
+            InstrType::CPY => "CPY",
 
             // Conditional Branch Instructions
-            &InstrType::BCC => "BCC",
-            &InstrType::BCS => "BCS",
-            &InstrType::BEQ => "BEQ",
-            &InstrType::BMI => "BMI",
-            &InstrType::BNE => "BNE",
-            &InstrType::BPL => "BPL",
-            &InstrType::BVC => "BVC",
-            &InstrType::BVS => "BVS",
+            InstrType::BCC => "BCC",
+            InstrType::BCS => "BCS",
+            InstrType::BEQ => "BEQ",
+            InstrType::BMI => "BMI",
+            InstrType::BNE => "BNE",
+            InstrType::BPL => "BPL",
+            InstrType::BVC => "BVC",
+            InstrType::BVS => "BVS",
 
             // Jump and Subroutine Instructions
-            &InstrType::JMP => "JMP",
-            &InstrType::JSR => "JSR",
-            &InstrType::RTS => "RTS",
+            InstrType::JMP => "JMP",
+            InstrType::JSR => "JSR",
+            InstrType::RTS => "RTS",
 
             // Interrupt Instructions
-            &InstrType::BRK => "BRK",
-            &InstrType::RTI => "RTI",
+            InstrType::BRK => "BRK",
+            InstrType::RTI => "RTI",
 
             // Other Instructions
-            &InstrType::BIT => "BIT",
-            &InstrType::NOP => "NOP",
+            InstrType::BIT => "BIT",
+            InstrType::NOP => "NOP",
 
             // Illegal Instructions
-            &InstrType::ALR => "ALR",
-            &InstrType::ANC => "ANC",
-            &InstrType::ANE => "ANE",
-            &InstrType::ARR => "ARR",
-            &InstrType::DCP => "DCP",
-            &InstrType::ISC => "ISC",
-            &InstrType::LAS => "LAS",
-            &InstrType::LAX => "LAX",
-            &InstrType::LXA => "LXA",
-            &InstrType::RLA => "RLA",
-            &InstrType::RRA => "RRA",
-            &InstrType::SAX => "SAX",
-            &InstrType::SBX => "SBX",
-            &InstrType::SHA => "SHA",
-            &InstrType::SHX => "SHX",
-            &InstrType::SHY => "SHY",
-            &InstrType::SLO => "SLO",
-            &InstrType::SRE => "SRE",
-            &InstrType::TAS => "TAS",
-            &InstrType::USBC => "USBC",
-            &InstrType::JAM => "JAM",
+            InstrType::ALR => "ALR",
+            InstrType::ANC => "ANC",
+            InstrType::ANE => "ANE",
+            InstrType::ARR => "ARR",
+            InstrType::DCP => "DCP",
+            InstrType::ISC => "ISC",
+            InstrType::LAS => "LAS",
+            InstrType::LAX => "LAX",
+            InstrType::LXA => "LXA",
+            InstrType::RLA => "RLA",
+            InstrType::RRA => "RRA",
+            InstrType::SAX => "SAX",
+            InstrType::SBX => "SBX",
+            InstrType::SHA => "SHA",
+            InstrType::SHX => "SHX",
+            InstrType::SHY => "SHY",
+            InstrType::SLO => "SLO",
+            InstrType::SRE => "SRE",
+            InstrType::TAS => "TAS",
+            InstrType::USBC => "USBC",
+            InstrType::JAM => "JAM",
         }
     }
 }
@@ -239,6 +239,43 @@ pub struct Instruction {
     pub instr_type: InstrType,
     pub addr_mode: AddrMode,
     pub cycles: u8,
+}
+
+impl Display for Instruction {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match &self.addr_mode {
+            AddrMode::Implied => write!(f, "{}", self.instr_type.to_str()),
+            AddrMode::Immediate(val) => write!(f, "{} #${:02X}", self.instr_type.to_str(), val),
+            AddrMode::ZeroPage(addr) => write!(f, "{} ${:02X}", self.instr_type.to_str(), addr),
+            AddrMode::ZeroPageX(addr) => {
+                write!(f, "{} ${:02X},X", self.instr_type.to_str(), addr)
+            }
+            AddrMode::ZeroPageY(addr) => {
+                write!(f, "{} ${:02X},Y", self.instr_type.to_str(), addr)
+            }
+            AddrMode::Absolute(addr) => write!(f, "{} ${:04X}", self.instr_type.to_str(), addr),
+            AddrMode::AbsoluteX(addr) => {
+                write!(f, "{} ${:04X},X", self.instr_type.to_str(), addr)
+            }
+            AddrMode::AbsoluteY(addr) => {
+                write!(f, "{} ${:04X},Y", self.instr_type.to_str(), addr)
+            }
+            AddrMode::Indirect(addr) => write!(f, "{} (${:04X})", self.instr_type.to_str(), addr),
+            AddrMode::IndirectX(addr) => {
+                write!(f, "{} (${:02X},X)", self.instr_type.to_str(), addr)
+            }
+            AddrMode::IndirectY(addr) => {
+                write!(f, "{} (${:02X}),Y", self.instr_type.to_str(), addr)
+            }
+            AddrMode::Relative(offset) => {
+                if *offset >= 0 {
+                    write!(f, "{} +${:02X}", self.instr_type.to_str(), offset)
+                } else {
+                    write!(f, "{} -${:02X}", self.instr_type.to_str(), -offset)
+                }
+            }
+        }
+    }
 }
 
 impl Instruction {
@@ -659,41 +696,6 @@ impl Instruction {
             0xFD => instr!(SBC, AbsoluteX, 4),
             0xFE => instr!(INC, AbsoluteX, 6),
             0xFF => instr!(ISC, AbsoluteX, 7),
-        }
-    }
-
-    pub fn to_string(&self) -> String {
-        match &self.addr_mode {
-            AddrMode::Implied => format!("{}", self.instr_type.to_str()),
-            AddrMode::Immediate(val) => format!("{} #${:02X}", self.instr_type.to_str(), val),
-            AddrMode::ZeroPage(addr) => format!("{} ${:02X}", self.instr_type.to_str(), addr),
-            AddrMode::ZeroPageX(addr) => {
-                format!("{} ${:02X},X", self.instr_type.to_str(), addr)
-            }
-            AddrMode::ZeroPageY(addr) => {
-                format!("{} ${:02X},Y", self.instr_type.to_str(), addr)
-            }
-            AddrMode::Absolute(addr) => format!("{} ${:04X}", self.instr_type.to_str(), addr),
-            AddrMode::AbsoluteX(addr) => {
-                format!("{} ${:04X},X", self.instr_type.to_str(), addr)
-            }
-            AddrMode::AbsoluteY(addr) => {
-                format!("{} ${:04X},Y", self.instr_type.to_str(), addr)
-            }
-            AddrMode::Indirect(addr) => format!("{} (${:04X})", self.instr_type.to_str(), addr),
-            AddrMode::IndirectX(addr) => {
-                format!("{} (${:02X},X)", self.instr_type.to_str(), addr)
-            }
-            AddrMode::IndirectY(addr) => {
-                format!("{} (${:02X}),Y", self.instr_type.to_str(), addr)
-            }
-            AddrMode::Relative(offset) => {
-                if *offset >= 0 {
-                    format!("{} +${:02X}", self.instr_type.to_str(), offset)
-                } else {
-                    format!("{} -${:02X}", self.instr_type.to_str(), -offset)
-                }
-            }
         }
     }
 }

@@ -80,7 +80,7 @@ pub enum CartridgeKind {
     Mapper4(Mapper4),
 }
 
-static CARTRIDGE_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
+static CARTRIDGE_PTR: Lazy<Once<usize>> = Lazy::new(Once::new);
 
 impl Cartridge {
     pub const NES_FILE_ADDR: usize = 0x3_000_000;
