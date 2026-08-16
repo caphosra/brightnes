@@ -100,7 +100,7 @@ pub struct APU {
     sampling_counter: f64,
 }
 
-static APU_PTR: Lazy<Once<usize>> = Lazy::new(|| Once::new());
+static APU_PTR: Lazy<Once<usize>> = Lazy::new(Once::new);
 
 impl APU {
     pub const QUARTER_FRAME_CLOCKS: u32 = CPU::CLOCK_FREQ / 240;

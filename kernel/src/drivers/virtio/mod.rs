@@ -184,10 +184,9 @@ impl VirtIODevice {
                         );
 
                         let address_lo =
-                            pci_device.read_config::<u32>(0x10 + (bar_index as u8 * 4)) as u64;
-                        let address_hi = pci_device
-                            .read_config::<u32>(0x10 + ((bar_index + 1) as u8 * 4))
-                            as u64;
+                            pci_device.read_config::<u32>(0x10 + (bar_index * 4)) as u64;
+                        let address_hi =
+                            pci_device.read_config::<u32>(0x10 + ((bar_index + 1) * 4)) as u64;
 
                         // Through monitoring QEMU, it seems that the base address is always 16-byte aligned.
                         // I'm not sure it is true.
@@ -208,10 +207,9 @@ impl VirtIODevice {
                         );
 
                         let address_lo =
-                            pci_device.read_config::<u32>(0x10 + (bar_index as u8 * 4)) as u64;
-                        let address_hi = pci_device
-                            .read_config::<u32>(0x10 + ((bar_index + 1) as u8 * 4))
-                            as u64;
+                            pci_device.read_config::<u32>(0x10 + (bar_index * 4)) as u64;
+                        let address_hi =
+                            pci_device.read_config::<u32>(0x10 + ((bar_index + 1) * 4)) as u64;
 
                         // Through monitoring QEMU, it seems that the base address is always 16-byte aligned.
                         // I'm not sure it is true.
@@ -229,10 +227,9 @@ impl VirtIODevice {
                         );
 
                         let address_lo =
-                            pci_device.read_config::<u32>(0x10 + (bar_index as u8 * 4)) as u64;
-                        let address_hi = pci_device
-                            .read_config::<u32>(0x10 + ((bar_index + 1) as u8 * 4))
-                            as u64;
+                            pci_device.read_config::<u32>(0x10 + (bar_index * 4)) as u64;
+                        let address_hi =
+                            pci_device.read_config::<u32>(0x10 + ((bar_index + 1) * 4)) as u64;
 
                         // Through monitoring QEMU, it seems that the base address is always 16-byte aligned.
                         // I'm not sure it is true.
@@ -323,7 +320,7 @@ impl VirtIODevice {
         }
 
         // Get notify address.
-        let offset = unsafe { read_volatile(&mut self.common_config.queue_notify_off) };
+        let offset = unsafe { read_volatile(&self.common_config.queue_notify_off) };
         let notify_address = unsafe {
             self.notify_base
                 .add((offset as u32 * self.notify_off_multiplier) as usize)

@@ -134,7 +134,7 @@ impl<'a> VirtBlockDevice<'a> {
         len: u32,
         op: BlockDeviceOperation,
     ) -> Result<(), ()> {
-        if len % self.sector_size() != 0 {
+        if !len.is_multiple_of(self.sector_size()) {
             error!(DRV, "Length should be multiple of sector size.");
             return Err(());
         }
@@ -172,7 +172,7 @@ impl<'a> VirtBlockDevice<'a> {
         }
 
         // Write the status byte to the descriptor table.
-        let mut status: u8 = 0;
+        let status: u8 = 0;
         unsafe {
             write_volatile(&mut self.queue.desc[2].addr, &status as *const _ as u64);
             write_volatile(&mut self.queue.desc[2].len, 1);
@@ -184,14 +184,14 @@ impl<'a> VirtBlockDevice<'a> {
 
         loop {
             // Wait until the device processes the request.
-            let used_idx = unsafe { read_volatile(&mut self.queue.used.idx) };
+            let used_idx = unsafe { read_volatile(&self.queue.used.idx) };
             if used_idx != self.queue.last_used_idx {
                 self.queue.last_used_idx = used_idx;
                 break;
             }
         }
 
-        let status = unsafe { read_volatile(&mut status) };
+        let status = unsafe { read_volatile(&status) };
         if status != 0 {
             error!(DRV, "Block device request failed: status={}", status);
             Err(())

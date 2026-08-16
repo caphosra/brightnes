@@ -34,8 +34,7 @@ pub struct System {
 }
 
 impl System {
-    const CARTRIDGE_LIST_MAX: usize =
-        NES_FRAME_HEIGHT as usize / FontManager::FONT_HEIGHT as usize - 3;
+    const CARTRIDGE_LIST_MAX: usize = NES_FRAME_HEIGHT / FontManager::FONT_HEIGHT as usize - 3;
 
     pub fn new() -> Self {
         System {
@@ -46,11 +45,7 @@ impl System {
     }
 
     pub fn has_ram(&self) -> Option<bool> {
-        if let Some(cart) = &self.running_cartridge {
-            Some(cart.has_ram)
-        } else {
-            None
-        }
+        self.running_cartridge.as_ref().map(|cart| cart.has_ram)
     }
 
     pub fn running_cartridge_name(&self) -> Option<&str> {
@@ -70,14 +65,14 @@ impl System {
     }
 
     pub fn load_selected_cartridge(&mut self) {
-        if self.cartridges.len() == 0 {
+        if self.cartridges.is_empty() {
             self.running_cartridge = None;
         } else {
             let cart = &self.cartridges[self.cursor];
             self.running_cartridge = Some(cart.clone());
 
             let mut fs = FILE_SYSTEM.write();
-            fs.load_cartridge(&cart);
+            fs.load_cartridge(cart);
         }
     }
 
@@ -90,7 +85,7 @@ impl System {
     }
 
     pub fn move_cursor_back(&mut self) {
-        if self.cartridges.len() == 0 {
+        if self.cartridges.is_empty() {
             self.cursor = 0;
             self.render(false);
         } else {

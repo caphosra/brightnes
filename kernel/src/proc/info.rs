@@ -268,7 +268,7 @@ impl InfoProc {
             buffer.flush_all();
 
             let mut buffer = PPU_FB.write();
-            Self::render_ppu(&mut buffer, &PPU::get());
+            Self::render_ppu(&mut buffer, PPU::get());
 
             // The background is already drawn.
             buffer.flush(true);

@@ -109,8 +109,8 @@ impl Logger {
     const PREFIX_LEN: usize = 15;
 
     fn log_internal(&mut self, location: LogLocation, level: LogLevel, message: String) {
-        for line in message.split(|c| c == '\n') {
-            if line.len() == 0 {
+        for line in message.split('\n') {
+            if line.is_empty() {
                 self.add_buffer(location, level, line.to_string());
             } else {
                 // Wrap the line if it's too long.

@@ -97,7 +97,7 @@ pub fn extract_elf_program(buffer: &[u8], elf_header: &ELFHeader) {
     }
 
     let start_addr = ml_addr >> 12 << 12;
-    let page_num = ((ms_addr + 0xfff >> 12) - (start_addr >> 12)) as usize;
+    let page_num = (((ms_addr + 0xfff) >> 12) - (start_addr >> 12)) as usize;
     let _ = uefi::boot::allocate_pages(
         AllocateType::Address(start_addr),
         MemoryType::LOADER_CODE,

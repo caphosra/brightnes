@@ -1,6 +1,7 @@
 #![no_main]
 #![no_std]
 #![feature(abi_x86_interrupt)]
+#![allow(clippy::upper_case_acronyms)]
 
 extern crate alloc;
 
@@ -161,14 +162,14 @@ pub fn game_main() -> ! {
                             cpu,
                             cartridge,
                         );
-                        apu.clock(additional_cycles as u32, &mut sound, cpu, cartridge);
+                        apu.clock(additional_cycles, &mut sound, cpu, cartridge);
 
                         instr.cycles as usize + additional_cycles as usize
                     }
                 },
             };
 
-            total_cycles += cycles as usize;
+            total_cycles += cycles;
 
             interrupts::enable();
         }

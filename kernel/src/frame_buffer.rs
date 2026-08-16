@@ -150,9 +150,13 @@ impl FrameBuffer {
         color: PixelColor,
         background: PixelColor,
     ) {
-        for y_idx in 0..FontManager::FONT_HEIGHT as usize {
+        for (y_idx, g) in glyph
+            .iter()
+            .enumerate()
+            .take(FontManager::FONT_HEIGHT as usize)
+        {
             for x_idx in 0..FontManager::FONT_WIDTH as usize {
-                let color = if (glyph[y_idx] & (1 << (7 - x_idx))) != 0 {
+                let color = if (g & (1 << (7 - x_idx))) != 0 {
                     color
                 } else {
                     background

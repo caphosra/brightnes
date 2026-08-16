@@ -1,3 +1,5 @@
+#![allow(clippy::enum_variant_names)]
+
 use core::ptr::{read_volatile, write_volatile};
 
 use crate::{
@@ -203,7 +205,7 @@ impl<'a> VirtSoundDevice<'a> {
         }
 
         // Write the status byte to the descriptor table.
-        let mut status: SoundStatus = SoundStatus::IOError;
+        let status: SoundStatus = SoundStatus::IOError;
         unsafe {
             write_volatile(
                 &mut self.control_queue.desc[1].addr,
@@ -218,14 +220,14 @@ impl<'a> VirtSoundDevice<'a> {
 
         loop {
             // Wait until the device processes the request.
-            let used_idx = unsafe { read_volatile(&mut self.control_queue.used.idx) };
+            let used_idx = unsafe { read_volatile(&self.control_queue.used.idx) };
             if used_idx != self.control_queue.last_used_idx {
                 self.control_queue.last_used_idx = used_idx;
                 break;
             }
         }
 
-        let status = unsafe { read_volatile(&mut status) };
+        let status = unsafe { read_volatile(&status) };
         match status {
             SoundStatus::OK => {}
             SoundStatus::BadMessage => {
@@ -302,7 +304,7 @@ impl<'a> VirtSoundDevice<'a> {
             );
             write_volatile(
                 &mut self.tx_queue.desc[index as usize * 3].next,
-                index as u16 * 3 + 1,
+                index * 3 + 1,
             );
         }
 
@@ -322,7 +324,7 @@ impl<'a> VirtSoundDevice<'a> {
             );
             write_volatile(
                 &mut self.tx_queue.desc[index as usize * 3 + 1].next,
-                index as u16 * 3 + 2,
+                index * 3 + 2,
             );
         }
 
@@ -343,7 +345,6 @@ impl<'a> VirtSoundDevice<'a> {
             write_volatile(&mut self.tx_queue.desc[index as usize * 3 + 2].next, 0);
         }
 
-        self.tx_queue
-            .push(index as u16 * 3, self.tx_queue_notify_addr);
+        self.tx_queue.push(index * 3, self.tx_queue_notify_addr);
     }
 }

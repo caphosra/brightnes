@@ -84,7 +84,7 @@ impl Mapper4 {
         self.two_banks_first = self.bank_select & (1 << 7) == 0;
         match selected_bank {
             0 => {
-                if bank % 2 != 0 {
+                if !bank.is_multiple_of(2) {
                     critical!(BUS, "Expected even CHR bank number but found: {}", bank);
                 }
 
@@ -103,7 +103,7 @@ impl Mapper4 {
                 }
             }
             1 => {
-                if bank % 2 != 0 {
+                if !bank.is_multiple_of(2) {
                     critical!(BUS, "Expected even CHR bank number but found: {}", bank);
                 }
 
@@ -177,7 +177,7 @@ impl Mapper4 {
                 if prg_rom_bank_mode {
                     // $8000-$9FFF: fixed to the second last bank
                     // $C000-$DFFF: switch 8KB PRG bank
-                    self.prg_rom_banks[0] = (self.prg_rom_bank_size() - 2) as usize;
+                    self.prg_rom_banks[0] = self.prg_rom_bank_size() - 2;
                     self.prg_rom_banks[2] = bank as usize;
 
                     log!(CAT, "Update PRG ROM bank at $C000: {}", bank);
@@ -185,7 +185,7 @@ impl Mapper4 {
                     // $8000-$9FFF: switch 8KB PRG bank
                     // $C000-$DFFF: fixed to the second last bank
                     self.prg_rom_banks[0] = bank as usize;
-                    self.prg_rom_banks[2] = (self.prg_rom_bank_size() - 2) as usize;
+                    self.prg_rom_banks[2] = self.prg_rom_bank_size() - 2;
 
                     log!(CAT, "Update PRG ROM bank at $8000: {}", bank);
                 }
@@ -269,7 +269,7 @@ impl CartridgeOperations for Mapper4 {
                 critical!(BUS, "Attempt to write disabled PRG RAM: {:#06X}", addr);
             }
         } else if addr < 0xA000 {
-            if addr % 2 == 0 {
+            if addr.is_multiple_of(2) {
                 // Bank select
                 self.bank_select = data;
             } else {
@@ -277,7 +277,7 @@ impl CartridgeOperations for Mapper4 {
                 self.update_bank(data);
             }
         } else if addr < 0xC000 {
-            if addr % 2 == 0 {
+            if addr.is_multiple_of(2) {
                 // Mirroring
                 let mirroring: Mirroring = (data & 1).into();
                 warn!(
@@ -291,7 +291,7 @@ impl CartridgeOperations for Mapper4 {
                 self.prg_ram_write_protected = data & (1 << 6) == 0;
             }
         } else if addr < 0xE000 {
-            if addr % 2 == 0 {
+            if addr.is_multiple_of(2) {
                 // IRQ latch
                 self.irq_latch_value = data;
             } else {
@@ -299,7 +299,7 @@ impl CartridgeOperations for Mapper4 {
                 self.irq_reload = true;
             }
         } else {
-            if addr % 2 == 0 {
+            if addr.is_multiple_of(2) {
                 // IRQ disable
                 self.irq_enabled = false;
             } else {
