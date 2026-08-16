@@ -13,7 +13,12 @@ use crate::{
     critical,
     drivers::BlockDeviceDriver,
     error, info,
-    nes::{cartridge::Cartridge, cpu::CPU, ppu::PPU},
+    nes::{
+        apu::APU,
+        cartridge::Cartridge,
+        cpu::{InterruptType, CPU},
+        ppu::PPU,
+    },
 };
 
 type FATFileSystem<T> = fatfs::FileSystem<T>;
@@ -194,6 +199,7 @@ impl FileSystem {
         sys: &System,
         cpu: &CPU,
         ppu: &PPU,
+        apu: &APU,
         cartridge: &Cartridge,
     ) -> Result<(), ()> {
         info!(SYS, "Request to save state");
@@ -249,6 +255,18 @@ impl FileSystem {
             serialized_cartridge.len()
         );
 
+        let serialized_apu = to_allocvec_crc32(apu, crc.digest());
+        let serialized_apu = serialized_apu.map_err(|_| {
+            error!(SYS, "Failed to serialize APU state");
+            ()
+        })?;
+
+        file.write_all(&serialized_apu.len().to_le_bytes())
+            .map_err(|_| ())?;
+        file.write_all(&serialized_apu).map_err(|_| ())?;
+
+        info!(SYS, "Saved APU state ({} bytes)", serialized_apu.len());
+
         file.flush().map_err(|_| ())?;
 
         Ok(())
@@ -259,6 +277,7 @@ impl FileSystem {
         sys: &System,
         cpu: &mut CPU,
         ppu: &mut PPU,
+        apu: &mut APU,
         cartridge: &mut Cartridge,
     ) -> Result<(), ()> {
         info!(SYS, "Request to load saved state");
@@ -310,6 +329,28 @@ impl FileSystem {
 
         *cartridge = from_bytes_crc32(&cart_buf, crc.digest()).map_err(|_| {
             error!(SYS, "Failed to deserialize cartridge state");
+        })?;
+
+        match file.read_exact(&mut file_size_buf) {
+            Ok(()) => {}
+            Err(Error::UnexpectedEof) => {
+                cpu.cancel_interrupt(InterruptType::IRQ);
+                info!(SYS, "Loaded legacy state without APU data");
+                return Ok(());
+            }
+            Err(_) => return Err(()),
+        }
+
+        let apu_size = usize::from_le_bytes(file_size_buf);
+
+        let mut apu_buf = vec![0; apu_size];
+        file.read_exact(&mut apu_buf).map_err(|_| ())?;
+
+        info!(SYS, "Received APU state ({} bytes)", apu_size);
+
+        *apu = from_bytes_crc32(&apu_buf, crc.digest()).map_err(|_| {
+            error!(SYS, "Failed to deserialize APU state");
+            ()
         })?;
 
         Ok(())

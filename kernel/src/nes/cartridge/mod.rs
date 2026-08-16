@@ -8,6 +8,7 @@ use spin::{Lazy, Once};
 
 use crate::mem::MemoryAllocator;
 use crate::nes::cartridge::mapper0::Mapper0;
+use crate::nes::cartridge::mapper1::Mapper1;
 use crate::nes::cartridge::mapper2::Mapper2;
 use crate::nes::cartridge::mapper3::Mapper3;
 use crate::nes::cartridge::mapper4::Mapper4;
@@ -76,6 +77,7 @@ pub struct Cartridge {
 #[derive(Serialize, Deserialize)]
 pub enum CartridgeKind {
     Mapper0(Box<Mapper0>),
+    Mapper1(Box<Mapper1>),
     Mapper2(Box<Mapper2>),
     Mapper3(Box<Mapper3>),
     Mapper4(Box<Mapper4>),
@@ -108,6 +110,7 @@ impl Cartridge {
 
         let kind = match mapper {
             0 => CartridgeKind::Mapper0(Box::new(Mapper0::new(prg_rom_size, chr_size))),
+            1 => CartridgeKind::Mapper1(Box::new(Mapper1::new(prg_rom_size, chr_size, mirroring))),
             2 => CartridgeKind::Mapper2(Box::new(Mapper2::new(prg_rom_size, chr_size))),
             3 => CartridgeKind::Mapper3(Box::new(Mapper3::new(prg_rom_size, chr_size))),
             4 => CartridgeKind::Mapper4(Box::new(Mapper4::new(prg_rom_size, chr_size))),
@@ -176,12 +179,22 @@ impl Cartridge {
 
     #[inline(always)]
     pub fn mirroring(&self) -> Mirroring {
-        (self.header.flag6 & 1).into()
+        match &self.kind {
+            CartridgeKind::Mapper1(mapper) => mapper.mirroring(),
+            _ => (self.header.flag6 & 1).into(),
+        }
+    }
+
+    pub fn begin_cpu_instruction(&mut self) {
+        if let CartridgeKind::Mapper1(mapper) = &mut self.kind {
+            mapper.begin_cpu_instruction();
+        }
     }
 
     pub fn read_cpu_mem(&mut self, addr: u16) -> u8 {
         match &mut self.kind {
             CartridgeKind::Mapper0(mapper) => mapper.read_cpu_mem(addr),
+            CartridgeKind::Mapper1(mapper) => mapper.read_cpu_mem(addr),
             CartridgeKind::Mapper2(mapper) => mapper.read_cpu_mem(addr),
             CartridgeKind::Mapper3(mapper) => mapper.read_cpu_mem(addr),
             CartridgeKind::Mapper4(mapper) => mapper.read_cpu_mem(addr),
@@ -191,6 +204,7 @@ impl Cartridge {
     pub fn write_cpu_mem(&mut self, addr: u16, data: u8) {
         match &mut self.kind {
             CartridgeKind::Mapper0(mapper) => mapper.write_cpu_mem(addr, data),
+            CartridgeKind::Mapper1(mapper) => mapper.write_cpu_mem(addr, data),
             CartridgeKind::Mapper2(mapper) => mapper.write_cpu_mem(addr, data),
             CartridgeKind::Mapper3(mapper) => mapper.write_cpu_mem(addr, data),
             CartridgeKind::Mapper4(mapper) => mapper.write_cpu_mem(addr, data),
@@ -200,6 +214,7 @@ impl Cartridge {
     pub fn read_ppu_mem(&mut self, addr: u16) -> u8 {
         match &mut self.kind {
             CartridgeKind::Mapper0(mapper) => mapper.read_ppu_mem(addr),
+            CartridgeKind::Mapper1(mapper) => mapper.read_ppu_mem(addr),
             CartridgeKind::Mapper2(mapper) => mapper.read_ppu_mem(addr),
             CartridgeKind::Mapper3(mapper) => mapper.read_ppu_mem(addr),
             CartridgeKind::Mapper4(mapper) => mapper.read_ppu_mem(addr),
@@ -209,6 +224,7 @@ impl Cartridge {
     pub fn write_ppu_mem(&mut self, addr: u16, data: u8) {
         match &mut self.kind {
             CartridgeKind::Mapper0(mapper) => mapper.write_ppu_mem(addr, data),
+            CartridgeKind::Mapper1(mapper) => mapper.write_ppu_mem(addr, data),
             CartridgeKind::Mapper2(mapper) => mapper.write_ppu_mem(addr, data),
             CartridgeKind::Mapper3(mapper) => mapper.write_ppu_mem(addr, data),
             CartridgeKind::Mapper4(mapper) => mapper.write_ppu_mem(addr, data),
@@ -225,6 +241,7 @@ impl Cartridge {
 
     pub fn working_ram(&mut self) -> Option<&mut [u8]> {
         match &mut self.kind {
+            CartridgeKind::Mapper1(mapper) => Some(mapper.working_ram()),
             CartridgeKind::Mapper4(mapper) => Some(mapper.working_ram()),
             _ => None,
         }
@@ -239,6 +256,7 @@ trait CartridgeOperations {
 }
 
 mod mapper0;
+mod mapper1;
 mod mapper2;
 mod mapper3;
 mod mapper4;

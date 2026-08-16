@@ -10,12 +10,11 @@ use crate::{
         apu::{dmc::DMC, noise::APUNoise, pulse::APUPulse, triangle::APUTriangle},
         cartridge::Cartridge,
         cpu::CPU,
-        ppu::PPU,
     },
 };
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
 pub enum APUFrameCounterMode {
     FourStep = 0,
     FiveStep = 1,
@@ -44,11 +43,23 @@ impl APUFrameCounter {
     pub fn write_reg(&mut self, data: u8) {
         // SD-- ----
 
-        self.mode = if ((data >> 7) & 1) != 0 {
+        let mode = if ((data >> 7) & 1) != 0 {
             APUFrameCounterMode::FiveStep
         } else {
             APUFrameCounterMode::FourStep
         };
+
+        if mode != self.mode {
+            match mode {
+                APUFrameCounterMode::FourStep => {
+                    info!(APU, "APU Frame Counter mode set to Four-Step.");
+                }
+                APUFrameCounterMode::FiveStep => {
+                    info!(APU, "APU Frame Counter mode set to Five-Step.");
+                }
+            }
+        }
+        self.mode = mode;
 
         let new_irq_disabled = ((data >> 6) & 1) != 0;
         if new_irq_disabled != self.irq_disabled {
@@ -176,7 +187,6 @@ impl APU {
         cycles: u32,
         sound: &mut SoundDeviceDriver<SoundSampleType>,
         cpu: &mut CPU,
-        ppu: &mut PPU,
         cartridge: &mut Cartridge,
     ) {
         self.frame_counter.step += cycles;
@@ -186,7 +196,7 @@ impl APU {
         self.squares[1].clock(cycles);
         self.triangle.clock(cycles);
         self.noise.clock(cycles);
-        self.dmc.clock(cycles, cpu, ppu, cartridge);
+        self.dmc.clock(cycles, cpu, cartridge);
 
         while self.frame_counter.step >= Self::QUARTER_FRAME_CLOCKS {
             // Quarter frame comes.

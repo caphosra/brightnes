@@ -33,6 +33,7 @@ KERNEL_SOURCES = ./kernel/Cargo.toml \
 	./kernel/src/nes/apu/pulse.rs \
 	./kernel/src/nes/apu/triangle.rs \
 	./kernel/src/nes/cartridge/mapper0.rs \
+	./kernel/src/nes/cartridge/mapper1.rs \
 	./kernel/src/nes/cartridge/mapper2.rs \
 	./kernel/src/nes/cartridge/mapper3.rs \
 	./kernel/src/nes/cartridge/mapper4.rs \

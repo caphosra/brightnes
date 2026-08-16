@@ -1,10 +1,14 @@
+use alloc::string::ToString;
 use core::fmt::Display;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Mirroring {
     Horizontal,
     Vertical,
+    SingleScreenLower,
+    SingleScreenUpper,
 }
 
 impl From<u8> for Mirroring {
@@ -22,6 +26,8 @@ impl Display for Mirroring {
         match self {
             Mirroring::Horizontal => write!(f, "Horizontal"),
             Mirroring::Vertical => write!(f, "Vertical"),
+            Mirroring::SingleScreenLower => write!(f, "Single Screen Lower"),
+            Mirroring::SingleScreenUpper => write!(f, "Single Screen Upper"),
         }
     }
 }
